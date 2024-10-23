@@ -31,6 +31,11 @@
 #include "rpc/json.h"
 #include "wire/json/read.h"
 #include "lmdb/util.h"
+#include "wallet/node_rpc_proxy.h"
+#include "wallet/wallet2.h"
+
+// #include "common/types.h" 
+#include "rpc/core_rpc_server_commands_defs.h"
 
 namespace lws
 {
@@ -92,6 +97,9 @@ namespace lws
       cryptonote::transaction const& tx,
       std::vector<std::uint64_t> const& out_ids)
     {
+      boost::optional<crypto::key_image> locked_key_image;
+
+      // std::cout<<"***Enter into scan_transaction*** "<<std::endl;
       if (cryptonote::txversion::v4_tx_types < tx.version)
         throw std::runtime_error{"Unsupported tx version"};
 
@@ -99,6 +107,7 @@ namespace lws
       boost::optional<crypto::hash> prefix_hash;
       boost::optional<cryptonote::tx_extra_nonce> extra_nonce;
       std::pair<std::uint8_t, db::output::payment_id_> payment_id;
+      
       // std::cout <<"tx_hash : " << tx.hash << std::endl;
       {
         std::vector<cryptonote::tx_extra_field> extra;
@@ -125,6 +134,81 @@ namespace lws
         else
           extra_nonce = boost::none;
       } // destruct `extra` vector
+
+      {
+      // std::cout<<"Enter into key_image :: "<<std::endl;
+      cryptonote::tx_extra_tx_key_image_proofs key_image_proofs;
+      get_field_from_tx_extra(tx.extra, key_image_proofs);
+
+      // for (auto proof = key_image_proofs.proofs.begin(); proof != key_image_proofs.proofs.end(); proof++)
+      // {
+      // std::cout << "locked_key_images: " << proof->key_image << "\n";
+      // }
+
+      
+
+          if (!key_image_proofs.proofs.empty())
+          {
+              // Assign the key_image from the first proof to locked_key_image
+              locked_key_image = key_image_proofs.proofs.front().key_image;
+              // Alternatively, you could loop through and choose a specific proof if needed
+          }
+    
+      }
+
+
+
+
+
+    // uint64_t locked_funds = 0; // Variable to track the locked amount
+    // NodeRPCProxy m_node_rpc_proxy; // Create an instance of the mocked NodeRPCProxy
+
+    // std::string wallet2::get_subaddress_as_str(const cryptonote::subaddress_index& index) const
+    // {
+    //   cryptonote::account_public_address address = get_subaddress(index);
+    //   return cryptonote::get_account_address_as_str(m_nettype, !index.is_zero(), address);
+    // }
+    // //----------------------------------------------------------------------------------------------------
+    // std::string wallet2::get_integrated_address_as_str(const crypto::hash8& payment_id) const
+    // {
+    //   return cryptonote::get_account_integrated_address_as_str(m_nettype, get_address(), payment_id);
+    // }
+   
+    // std::string primary_address;
+
+    // std::string get_address_as_str() const { return get_subaddress_as_str({0, 0}); }
+
+    // if (locked_key_image)
+    // {  
+    //     const std::string primary_address = get_address_as_str();
+    //     std::optional<std::string> failed;
+    //     auto [success, master_nodes_states] = m_node_rpc_proxy.get_contributed_master_nodes(get_address_as_str());
+    //     if (success)
+    //     {
+    //         for (cryptonote::rpc::GET_MASTER_NODES::response::entry const &entry : master_nodes_states)
+    //         {
+    //             for (auto const &contributor : entry.contributors)
+    //             {
+    //         //         if (contributor.address != get_address_as_str())
+    //         //             continue;
+
+    //                 for (auto const &contribution : contributor.locked_contributions)
+    //                 {
+    //                     crypto::key_image check_image;
+    //                     if (tools::hex_to_type(contribution.key_image, check_image) && *locked_key_image == check_image)
+    //                     {
+    //                         // Found a locked key image; update locked funds
+    //                         locked_funds = contribution.amount;
+    //                         break;
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+
+      
+
 
       for (account& user : users)
       {
@@ -224,6 +308,9 @@ namespace lws
             ext = db::extra(ext | db::ringct_output);
           }
 
+          // Determine if output is locked
+          // bool is_locked = out.unlock_time > timestamp;
+
           if (extra_nonce)
           {
             if (!payment_id.first && cryptonote::get_encrypted_payment_id_from_tx_extra_nonce(extra_nonce->nonce, payment_id.second.short_))
@@ -233,7 +320,7 @@ namespace lws
             }
           }
 
-          const bool added = user.add_out(
+            const bool added = user.add_out(
             db::output{
               db::transaction_link{height, tx_hash},
               db::output::spend_meta_{
@@ -246,13 +333,50 @@ namespace lws
               timestamp,
               tx.unlock_time,
               *prefix_hash,
+              locked_key_image ? *locked_key_image : crypto::key_image{},
               out_data->key,
               mask,
               {0, 0, 0, 0, 0, 0, 0}, // reserved bytes
               db::pack(ext, payment_id.first),
               payment_id.second
+              
             }
           );
+
+
+
+
+
+          
+            // db::output new_output {
+            //   db::transaction_link{height, tx_hash},
+            //   db::output::spend_meta_{
+            //     db::output_id{out.amount, out_ids.at(index)},
+            //     amount,
+            //     mixin,
+            //     boost::numeric_cast<std::uint32_t>(index),
+            //     key.pub_key
+            //   },
+            //   timestamp,
+            //   tx.unlock_time,
+            //   *prefix_hash,
+            //   out_data->key,
+            //   mask,
+            //   {0, 0, 0, 0, 0, 0, 0}, // reserved bytes
+            //   db::pack(ext, payment_id.first),
+            //   payment_id.second
+            // };
+
+            // bool added;
+            // if (is_locked)
+            // {
+            //   added = user.add_locked_output(new_output);
+            // }
+            // else
+            // {
+            //   added = user.add_out(new_output);
+            // }
+        
 
           if (!added)
             MWARNING("Output not added, duplicate public key encountered");

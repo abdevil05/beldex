@@ -53,6 +53,8 @@ namespace lws
       , spends_()
     , outputs_()
     , height_(height)
+    // , locked_pubs_() 
+    // , locked_outputs_() 
   {}
 
   void account::null_check() const
@@ -76,16 +78,27 @@ namespace lws
     account result{immutable_, height_, spendable_, pubs_};
     result.outputs_ = outputs_;
     result.spends_ = spends_;
+
+    // result.locked_pubs_ = locked_pubs_;
+    // result.locked_outputs_ = locked_outputs_;
+
     return result;
   }
 
   void account::updated(db::block_id new_height) noexcept
   {
     height_ = new_height;
+
     spends_.clear();
     spends_.shrink_to_fit();
     outputs_.clear();
     outputs_.shrink_to_fit();
+
+    // Clear and shrink new vectors
+    // locked_pubs_.clear();
+    // locked_pubs_.shrink_to_fit();
+    // locked_outputs_.clear();
+    // locked_outputs_.shrink_to_fit();
   }
 
   db::account_id account::id() const noexcept
@@ -144,6 +157,19 @@ namespace lws
     outputs_.push_back(out);
     return true;
   }
+
+  // bool account::add_locked_output(db::output const& out)
+  // {
+  //   // Ensure that locked outputs are managed separately from regular outputs
+  //   auto existing_pub = std::lower_bound(locked_pubs_.begin(), locked_pubs_.end(), out.pub, sort_pubs{});
+  //   if (existing_pub != locked_pubs_.end() && *existing_pub == out.pub)
+  //       return false;
+
+  //   // Insert the new output
+  //   locked_pubs_.insert(existing_pub, out.pub);
+  //   locked_outputs_.push_back(out);
+  //   return true;
+  // }
 
   void account::add_spend(db::spend const& spend)
   {

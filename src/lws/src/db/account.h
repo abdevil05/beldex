@@ -20,6 +20,8 @@ class account
     std::vector<crypto::public_key> pubs_;
     std::vector<db::spend> spends_;
     std::vector<db::output> outputs_;
+    // std::vector<crypto::public_key> locked_pubs_;       
+    // std::vector<db::output> locked_outputs_; 
     db::block_id height_;
 
     explicit account(std::shared_ptr<const internal> immutable, db::block_id height, std::vector<db::output_id> spendable, std::vector<crypto::public_key> pubs) noexcept;
@@ -80,9 +82,12 @@ class account
 
     //! Track a newly received `out`, \return `false` if `out.pub` is duplicated.
     bool add_out(db::output const& out);
+    
 
     //! Track a possible `spend`.
     void add_spend(db::spend const& spend);
+
+    // bool add_locked_output(db::output const& out);
   };
 
 } //lws

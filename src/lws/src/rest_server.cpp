@@ -1,4 +1,5 @@
 #include "rest_server.h"
+// #include <iostream>
 
 #include <algorithm>
 #include <boost/utility/string_ref.hpp>
@@ -105,25 +106,72 @@ namespace lws
         return {lws::error::account_not_found};
       return {std::make_pair(user->second, std::move(*reader))};
     }
-
+     
+    
     struct get_address_info
     {
       using request = rpc::account_credentials;
-      using response = rpc::get_address_info_response;
-
+      using response = rpc::get_address_info_response; 
+       
       static expect<response> handle(const request& req, db::storage disk)
       {
+      //  std::cout << "get_address_info called....\n";
+       
+      //  bool locked_key_image_processed = false;
+       std::vector<crypto::key_image> processed;
+
+       lws::db::account_address primary_address{req.address.view_public, req.address.spend_public};
+       cryptonote::account_public_address crypto_address;
+       crypto_address.m_view_public_key = primary_address.view_public;
+       crypto_address.m_spend_public_key = primary_address.spend_public;
+
+       std::string wallet_address= cryptonote::get_account_address_as_str(cryptonote::network_type ::TESTNET, false, crypto_address);
+
+      //  std :: cout<<"wallet_address :"<<wallet_address<<std::endl;
+
+        json request_body = {
+            {"jsonrpc", "2.0"},
+            {"id", "0"},
+            {"method", "get_master_nodes"}
+            
+        };
+       
+        auto master_data = cpr::Post(cpr::Url{lws::daemon_add},
+                cpr::Body{request_body.dump()},
+                cpr::Header{ { "Content-Type", "application/json" }});    
+
+        json mn_response = json::parse(master_data.text);
+
+        json request_body_blacklist = {
+            {"jsonrpc", "2.0"},
+            {"id", "0"},
+            {"method", "get_master_node_blacklisted_key_images"}
+            
+        };
+       
+        auto master_data_blacklist = cpr::Post(cpr::Url{lws::daemon_add},
+                cpr::Body{request_body_blacklist.dump()},
+                cpr::Header{ { "Content-Type", "application/json" }});    
+
+        json mn_response_blacklist = json::parse(master_data_blacklist.text);
+
+
+
+        // std::cout << "masternode List size:" << mn_response["result"]["master_node_states"].size() << std::endl;
+        // std::cout << "masternode List size:" << mn_response["result"]["blacklist"].size() << std::endl;
+        // std::cout<<"mn_response_blacklist : " << mn_response_blacklist.dump(4) << std::endl;
+  
         auto user = open_account(req, std::move(disk));
         if (!user)
           return user.error();
 
         response resp{};
 
-        auto outputs = user->second.get_outputs(user->first.id);
+        auto outputs = user->second.get_outputs(user->first.id);  //The code retrieves all the outputs for the user's account
         if (!outputs)
           return outputs.error();
 
-        auto spends = user->second.get_spends(user->first.id);
+        auto spends = user->second.get_spends(user->first.id);  
         if (!spends)
           return spends.error();
 
@@ -140,10 +188,16 @@ namespace lws
         std::vector<db::output::spend_meta_> metas{};
         metas.reserve(outputs->count());
 
+
+        // bool locked_key_image_processed = false;
         for (auto output = outputs->make_iterator(); !output.is_end(); ++output)
         {
+
+
+          // std::cout<<"Enter into output"<<std::endl;
+
           const db::output::spend_meta_ meta =
-            output.get_value<MONERO_FIELD(db::output, spend_meta)>();
+            output.get_value<MONERO_FIELD(db::output, spend_meta)>();        //For each output, it extracts metadata which includes the amount of that output (meta.amount).
 
           // these outputs will usually be in correct order post ringct
           if (metas.empty() || metas.back().id < meta.id)
@@ -152,9 +206,112 @@ namespace lws
             metas.insert(find_metadata(metas, meta.id), meta);
 
           resp.total_received = rpc::safe_uint64(std::uint64_t(resp.total_received) + meta.amount);
-          if (is_locked(output.get_value<MONERO_FIELD(db::output, unlock_time)>(), last->id))
-            resp.locked_funds = rpc::safe_uint64(std::uint64_t(resp.locked_funds) + meta.amount);
+          
+          const crypto::key_image locked_key_image = 
+          output.get_value<MONERO_FIELD(db::output, locked_key_image)>();
+
+          auto it=std::find(processed.begin(),processed.end(),locked_key_image); 
+
+          if (!(it != processed.end())&& locked_key_image!= crypto::key_image{})
+          { 
+
+          // std::cout<<"****** Inside locked_key_image *****" << locked_key_image <<std::endl; 
+
+          bool is_loop_processed=false;  
+
+          for (const auto& item : mn_response_blacklist["result"]["blacklist"])
+          {
+              std::string blacklist_key_image_str = item["key_image"];
+              crypto::key_image blacklist_key_image;
+
+              // Convert the blacklist key image string to crypto::key_image (assuming a proper conversion function)
+              if (!epee::string_tools::hex_to_pod(blacklist_key_image_str, blacklist_key_image))
+              {
+                  std::cerr << "Failed to convert blacklist key image string to crypto::key_image." << std::endl;
+                  continue;
+              }
+
+              // If the locked_key_image matches a blacklist key_image, process this output
+              if (locked_key_image == blacklist_key_image)
+              {
+                  // std::cout << "Matching key image found: " << locked_key_image << std::endl;
+                    resp.locked_funds = rpc::safe_uint64(std::uint64_t(resp.locked_funds) + std::uint64_t(item["amount"]));
+                    
+                    // std::cout << "Locked Fundssssssss " << static_cast<uint64_t>(resp.locked_funds) << std::endl;
+                    // locked_key_image_processed = true;
+                    processed.push_back(locked_key_image);
+                    is_loop_processed=true;
+
+                    break;
+                  
+              }
+
+          }
+
+          if(!(is_loop_processed)){
+
+            for (auto &mn_all : mn_response["result"]["master_node_states"])
+            {
+
+              std::string master_node_pub_key = mn_all["master_node_pubkey"].get<std::string>();
+
+              for (auto &mn_contrib : mn_all["contributors"])
+              {
+                  // Extract the address as a string from the JSON value
+                  std::string address_str = mn_contrib["address"].get<std::string>();
+
+                if (wallet_address!= address_str)
+                  continue;
+
+
+                // std::cout << "Master Node Public Key: " << master_node_pub_key << std::endl;
+
+                for (auto const &contribution : mn_contrib["locked_contributions"])
+                {
+                  crypto::key_image check_image;
+                  std::string key_image_str = contribution["key_image"].get<std::string>();
+                  if (tools::hex_to_type(key_image_str, check_image) && locked_key_image == check_image)
+                  {
+                    // std::cout << "Locked Fundssssssss before : " << static_cast<uint64_t>(resp.locked_funds) << std::endl;
+
+                    // std::cout << "Contribution amount from the list : " <<static_cast<uint64_t>(contribution["amount"]) << std::endl;
+
+                    resp.locked_funds = rpc::safe_uint64(std::uint64_t(resp.locked_funds) + std::uint64_t(contribution["amount"]));
+                    
+                    // std::cout << "Locked Fundssssssss " << static_cast<uint64_t>(resp.locked_funds) << std::endl;
+                    // locked_key_image_processed = true;
+                    processed.push_back(locked_key_image);
+                    break;
+
+                  }
+                }
+              }
+            }  
+
+          }                
+            // std::cout << "Locked Fundssssssss at last : " << static_cast<uint64_t>(resp.locked_funds) << std::endl;
+            
+
+          }
+
+          // std::cout<<"After the if condition of locked_key_image"<<std::endl;
+          
+          if (is_locked(output.get_value<MONERO_FIELD(db::output, unlock_time)>(), last->id)){
+          // std::cout << "meta.amount: " << meta.amount << std::endl;
+          resp.locked_funds = rpc::safe_uint64(std::uint64_t(resp.locked_funds) + meta.amount);
+          }
+        
+
         }
+
+        // std::cout << "All metas before processing spends:" << std::endl;
+        // for (const auto& meta : metas)
+        // {
+        //   std::cout << "ID (High): " << meta.id.high
+        //             << ", ID (Low): " << meta.id.low
+        //             << ", Amount: " << meta.amount
+        //             << std::endl;
+        // }
 
         resp.spent_outputs.reserve(spends->count());
         for (auto const& spend : spends->make_range())
@@ -167,16 +324,38 @@ namespace lws
             };
           }
 
+          //  std::cout << "Spent amount: " << meta->amount << std::endl;
+
+
           resp.spent_outputs.push_back({*meta, spend});
           resp.total_sent = rpc::safe_uint64(std::uint64_t(resp.total_sent) + meta->amount);
         }
+
+
+
+        // Assuming safe_uint64 provides a way to retrieve the underlying value
+        // std::cout << "Total Received: " << static_cast<uint64_t>(resp.total_received) << std::endl;
+        // std::cout << "Total Sent: " << static_cast<uint64_t>(resp.total_sent) << std::endl;
+        // std::cout << "Locked Funds: " << static_cast<uint64_t>(resp.locked_funds) << std::endl;
+
+
+        return resp;
+
+        
+
+
+        
+
+
 
         // resp.rates = client.get_rates();
         // if (!resp.rates && !rates_error_once.test_and_set(std::memory_order_relaxed))
         //   MWARNING("Unable to retrieve exchange rates: " << resp.rates.error().message());
 
-        return resp;
+       
+
       }
+      
     };//get_address_info
 
     struct get_unspent_outs
@@ -184,9 +363,50 @@ namespace lws
       using request = rpc::get_unspent_outs_request;
       using response = rpc::get_unspent_outs_response;
 
+
+
       static expect<response> handle(request req, db::storage disk)
       {
         // using rpc_command = cryptonote::rpc::GET_BASE_FEE_ESTIMATE;
+
+        lws::db::account_address primary_address{req.creds.address.view_public, req.creds.address.spend_public};
+        cryptonote::account_public_address crypto_address;
+        crypto_address.m_view_public_key = primary_address.view_public;
+        crypto_address.m_spend_public_key = primary_address.spend_public;
+
+        std::string wallet_address= cryptonote::get_account_address_as_str(cryptonote::network_type ::TESTNET, false, crypto_address);
+
+
+        std::vector<crypto::key_image> processed;
+
+        json request_body = {
+            {"jsonrpc", "2.0"},
+            {"id", "0"},
+            {"method", "get_master_nodes"}
+            
+        };
+       
+        auto master_data = cpr::Post(cpr::Url{lws::daemon_add},
+                cpr::Body{request_body.dump()},
+                cpr::Header{ { "Content-Type", "application/json" }});    
+
+        json mn_response = json::parse(master_data.text);
+
+        json request_body_blacklist = {
+            {"jsonrpc", "2.0"},
+            {"id", "0"},
+            {"method", "get_master_node_blacklisted_key_images"}
+            
+        };
+       
+        auto master_data_blacklist = cpr::Post(cpr::Url{lws::daemon_add},
+                cpr::Body{request_body_blacklist.dump()},
+                cpr::Header{ { "Content-Type", "application/json" }});    
+
+        json mn_response_blacklist = json::parse(master_data_blacklist.text);
+
+
+
 
         auto user = open_account(req.creds, std::move(disk));
         if (!user)
@@ -228,6 +448,113 @@ namespace lws
           if (out.spend_meta.amount < std::uint64_t(*req.dust_threshold) || out.spend_meta.mixin_count < *req.mixin)
             continue;
 
+          const crypto::key_image locked_key_image =  out.locked_key_image;
+          std::uint64_t value_l = out.spend_meta.amount;
+
+          std::cout<<"value_l :"<<value_l<<std::endl;
+
+          // auto it=std::find(processed.begin(),processed.end(),locked_key_image); 
+          bool should_skip_output = false;
+
+          if (locked_key_image!= crypto::key_image{})
+          { 
+
+          // std::cout<<"****** Inside locked_key_image *****" << locked_key_image <<std::endl; 
+
+          // bool is_loop_processed=false;  
+
+          for (const auto& item : mn_response_blacklist["result"]["blacklist"])
+          {
+              std::string blacklist_key_image_str = item["key_image"];
+              crypto::key_image blacklist_key_image;
+
+              // Convert the blacklist key image string to crypto::key_image (assuming a proper conversion function)
+              if (!epee::string_tools::hex_to_pod(blacklist_key_image_str, blacklist_key_image))
+              {
+                  std::cerr << "Failed to convert blacklist key image string to crypto::key_image." << std::endl;
+                  continue;
+              }
+
+              // If the locked_key_image matches a blacklist key_image, process this output
+              if (locked_key_image == blacklist_key_image && value_l ==item["amount"])
+              {
+                     std::cout<<"****** Inside blacklist_locked_key_image *****" << locked_key_image <<std::endl; 
+                
+                  // std::cout << "Matching key image found: " << locked_key_image << std::endl;
+                    // resp.locked_funds = rpc::safe_uint64(std::uint64_t(resp.locked_funds) + std::uint64_t(item["amount"]));
+                    
+                    // std::cout << "Locked Fundssssssss " << static_cast<uint64_t>(resp.locked_funds) << std::endl;
+                    // locked_key_image_processed = true;
+                    // processed.push_back(locked_key_image);
+
+                    // is_loop_processed=true;
+                    should_skip_output = true;
+                    // continue;
+                    break;
+
+                  
+              }
+          }
+
+          if(!(should_skip_output)){
+
+            for (auto &mn_all : mn_response["result"]["master_node_states"])
+            {
+
+              if (should_skip_output) break;
+
+              std::string master_node_pub_key = mn_all["master_node_pubkey"].get<std::string>();
+
+              for (auto &mn_contrib : mn_all["contributors"])
+              {
+                  // Extract the address as a string from the JSON value
+                  std::string address_str = mn_contrib["address"].get<std::string>();
+
+                if (wallet_address!= address_str)
+                  continue;
+
+
+                // std::cout << "Master Node Public Key: " << master_node_pub_key << std::endl;
+
+                for (auto const &contribution : mn_contrib["locked_contributions"])
+                {
+                  crypto::key_image check_image;
+                  std::string key_image_str = contribution["key_image"].get<std::string>();
+                  std::uint64_t conAmount = contribution["amount"].get<std::uint64_t>();
+
+                  std::cout<<"conAmount :"<<conAmount<<std::endl;  
+
+                  if (tools::hex_to_type(key_image_str, check_image) && locked_key_image == check_image &&  value_l ==conAmount)
+                  {
+                    std::cout<<"****** Inside master_node_states_locked_key_image *****" << locked_key_image <<std::endl; 
+                    // std::cout << "Locked Fundssssssss before : " << static_cast<uint64_t>(resp.locked_funds) << std::endl;
+
+                    // std::cout << "Contribution amount from the list : " <<static_cast<uint64_t>(contribution["amount"]) << std::endl;
+
+                    // resp.locked_funds = rpc::safe_uint64(std::uint64_t(resp.locked_funds) + std::uint64_t(contribution["amount"]));
+                    
+                    // std::cout << "Locked Fundssssssss " << static_cast<uint64_t>(resp.locked_funds) << std::endl;
+                    // locked_key_image_processed = true;
+                    should_skip_output = true;
+                    // continue;
+                    break;
+
+                  }
+                }
+                if (should_skip_output) break;
+              }
+            }  
+
+          }                
+            // std::cout << "Locked Fundssssssss at last : " << static_cast<uint64_t>(resp.locked_funds) << std::endl;
+            
+
+          }
+
+
+
+
+         if (!should_skip_output){
           received += out.spend_meta.amount;
           unspent.push_back({out, {}});
 
@@ -238,6 +565,7 @@ namespace lws
           unspent.back().second.reserve(images->count());
           auto range = images->make_range<MONERO_FIELD(db::key_image, value)>();
           std::copy(range.begin(), range.end(), std::back_inserter(unspent.back().second));
+         }
         }
         // const auto resp = client->receive<rpc_command::Response>(std::chrono::seconds{20}, MLWS_CURRENT_LOCATION);
 
@@ -380,11 +708,17 @@ namespace lws
 
             resp.transactions.back().spent += meta->amount;
 
+            // std::cout << "Outgoing amount for transaction " << next_spend.tx_hash << ": " << resp.transactions.back().spent << std::endl;
+
             ++spend;
             if (!spend.is_end())
               next_spend = spend.get_value<MONERO_FIELD(db::spend, link)>();
           }
         }
+
+        // std::cout << "Total Received in addr_txs: " << static_cast<uint64_t>(resp.total_received) << std::endl;
+
+
 
         return resp;
       }

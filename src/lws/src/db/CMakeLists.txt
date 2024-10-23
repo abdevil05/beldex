@@ -40,5 +40,5 @@ target_link_libraries(beldex-lws-db PUBLIC
     extra
 )
 
-target_include_directories(beldex-lws-db PRIVATE "${CMAKE_SOURCE_DIR}/src/lws/src")
+target_include_directories(beldex-lws-db PRIVATE "${CMAKE_SOURCE_DIR}/src/lws/src" "${CMAKE_SOURCE_DIR}/src/wallet" )
 message("${CMAKE_SOURCE_DIR} : " ${CMAKE_SOURCE_DIR}/src/lws/src)

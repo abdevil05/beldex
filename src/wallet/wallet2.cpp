@@ -6076,6 +6076,7 @@ std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> wallet2::
       if (is_transfer_unlocked(td))
       {
         amount = td.amount();
+        // std::cout << "td.amount() value: " << amount << std::endl;
         blocks_to_unlock = 0;
         time_to_unlock = 0;
       }
@@ -6099,6 +6100,7 @@ std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> wallet2::
         found->second.second.first = std::max(found->second.second.first, blocks_to_unlock);
         found->second.second.second = std::max(found->second.second.second, time_to_unlock);
       }
+      // std::cout << "Key Image in m_transfers: " << td.m_key_image << std::endl;
     }
   }
   return amount_per_subaddr;
@@ -6605,6 +6607,7 @@ bool wallet2::is_transfer_unlocked(const transfer_details& td) const
 //----------------------------------------------------------------------------------------------------
 bool wallet2::is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height, bool unmined_flash, crypto::key_image const *key_image) const
 {
+  // std::cout<<"Enter into is_transfer_unlocked "<<std::endl;
   auto blockchain_height = get_blockchain_current_height();
   if (block_height == 0 && unmined_flash)
   {
@@ -6668,17 +6671,26 @@ bool wallet2::is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height, 
     {
       for (auto const& contributor : entry.contributors)
       {
+
+        // std::cout << "Contributor address: " << contributor.address << std::endl;
+        // std::cout << "Contributor total locked amount (atomic units): " << contributor.amount << std::endl;
+        // std::cout << "Contributor reserved amount (atomic units): " << contributor.reserved << std::endl;
         if (primary_address != contributor.address)
           continue;
 
         for (auto const &contribution : contributor.locked_contributions)
         {
+          // std::cout << "Contribution amount: " << contribution.amount << std::endl;
+
           crypto::key_image check_image;
           if(!tools::hex_to_type(contribution.key_image, check_image))
           {
             MERROR("Failed to parse hex representation of key image: " << contribution.key_image);
             break;
           }
+
+          // std::cout << "Contribution key image (hex): " << contribution.key_image << std::endl;
+
 
           if (*key_image == check_image)
             return false;

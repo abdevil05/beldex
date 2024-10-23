@@ -121,6 +121,8 @@ namespace db
       return less<output_id>(left_bytes, right_bytes);
     }
 
+
+
     int spend_compare(MDB_val const* left, MDB_val const* right) noexcept
     {
       if (left == nullptr || right == nullptr)

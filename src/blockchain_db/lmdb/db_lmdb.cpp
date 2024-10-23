@@ -1363,6 +1363,7 @@ void BlockchainLMDB::remove_spent_key(const crypto::key_image& k_image)
   }
 }
 
+
 BlockchainLMDB::~BlockchainLMDB()
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
