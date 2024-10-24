@@ -324,7 +324,7 @@ namespace lws
             };
           }
 
-          //  std::cout << "Spent amount: " << meta->amount << std::endl;
+           std::cout << "Spent amount: " << meta->amount << std::endl;
 
 
           resp.spent_outputs.push_back({*meta, spend});
@@ -334,8 +334,8 @@ namespace lws
 
 
         // Assuming safe_uint64 provides a way to retrieve the underlying value
-        // std::cout << "Total Received: " << static_cast<uint64_t>(resp.total_received) << std::endl;
-        // std::cout << "Total Sent: " << static_cast<uint64_t>(resp.total_sent) << std::endl;
+        std::cout << "Total Received: " << static_cast<uint64_t>(resp.total_received) << std::endl;
+        std::cout << "Total Sent: " << static_cast<uint64_t>(resp.total_sent) << std::endl;
         // std::cout << "Locked Funds: " << static_cast<uint64_t>(resp.locked_funds) << std::endl;
 
 
