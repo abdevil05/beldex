@@ -1,6 +1,4 @@
 #include "rest_server.h"
-// #include <iostream>
-
 #include <algorithm>
 #include <boost/utility/string_ref.hpp>
 #include <cstring>
@@ -199,8 +197,6 @@ namespace lws
 
           if (!(it != processed.end()) && locked_key_image != crypto::key_image{})
           {
-            // bool is_loop_processed = false;
-
             for (const auto &item : mn_response_blacklist["result"]["blacklist"])
             {
               std::string blacklist_key_image_str = item["key_image"];
@@ -258,7 +254,6 @@ namespace lws
           if (is_locked(output.get_value<MONERO_FIELD(db::output, unlock_time)>(), user->first.scan_height))
           {
             resp.locked_funds = rpc::safe_uint64(std::uint64_t(resp.locked_funds) + meta.amount);
-
           }
         }
 
@@ -279,183 +274,6 @@ namespace lws
         return resp;
       }
     };
-
-
-//  struct get_address_info
-// {
-//   using request = rpc::account_credentials;
-//   using response = rpc::get_address_info_response;
-
-//   static expect<response> handle(const request &req, db::storage disk)
-//   {
-//     std::vector<crypto::key_image> processed;
-
-//     lws::db::account_address primary_address{req.address.view_public, req.address.spend_public};
-//     cryptonote::account_public_address crypto_address;
-//     crypto_address.m_view_public_key = primary_address.view_public;
-//     crypto_address.m_spend_public_key = primary_address.spend_public;
-
-//     std::string wallet_address = cryptonote::get_account_address_as_str(cryptonote::network_type::TESTNET, false, crypto_address);
-
-//     // Fetch master node and blacklist data (same as before)
-//     json request_body = {
-//         {"jsonrpc", "2.0"},
-//         {"id", "0"},
-//         {"method", "get_master_nodes"}
-//     };
-
-//     auto master_data = cpr::Post(cpr::Url{lws::daemon_add},
-//                                  cpr::Body{request_body.dump()},
-//                                  cpr::Header{{"Content-Type", "application/json"}});
-
-//     json mn_response = json::parse(master_data.text);
-
-//     json request_body_blacklist = {
-//         {"jsonrpc", "2.0"},
-//         {"id", "0"},
-//         {"method", "get_master_node_blacklisted_key_images"}
-//     };
-
-//     auto master_data_blacklist = cpr::Post(cpr::Url{lws::daemon_add},
-//                                            cpr::Body{request_body_blacklist.dump()},
-//                                            cpr::Header{{"Content-Type", "application/json"}});
-
-//     json mn_response_blacklist = json::parse(master_data_blacklist.text);
-
-//     auto user = open_account(req, std::move(disk));
-//     if (!user)
-//       return user.error();
-
-//     response resp{};
-
-//     const expect<db::block_info> last = user->second.get_last_block();
-//     if (!last)
-//       return last.error();
-
-//     // Update blockchain height and scanned height
-//     resp.blockchain_height = std::uint64_t(last->id);
-//     resp.transaction_height = resp.blockchain_height;
-//     resp.scanned_height = std::uint64_t(user->first.scan_height);
-//     resp.scanned_block_height = resp.scanned_height;
-//     resp.start_height = std::uint64_t(user->first.start_height);
-
-//     auto outputs = user->second.get_outputs(user->first.id);
-//     if (!outputs)
-//       return outputs.error();
-
-//     auto spends = user->second.get_spends(user->first.id);
-//     if (!spends)
-//       return spends.error();
-
-//     // Separate locked and unlocked funds tracking
-//     std::uint64_t current_locked_funds = 0;
-//     std::uint64_t total_received = 0;
-
-//     std::vector<db::output::spend_meta_> metas{};
-//     metas.reserve(outputs->count());
-
-//     for (auto output = outputs->make_iterator(); !output.is_end(); ++output)
-//     {
-//       const db::output::spend_meta_ meta =
-//           output.get_value<MONERO_FIELD(db::output, spend_meta)>();
-
-//       // Maintain sorted metadata list
-//       if (metas.empty() || metas.back().id < meta.id)
-//         metas.push_back(meta);
-//       else
-//         metas.insert(find_metadata(metas, meta.id), meta);
-
-//       total_received += meta.amount;
-
-//       const crypto::key_image locked_key_image =
-//           output.get_value<MONERO_FIELD(db::output, locked_key_image)>();
-
-//       // Check for blacklisted key images
-//       bool is_blacklisted = false;
-//       for (const auto &item : mn_response_blacklist["result"]["blacklist"])
-//       {
-//         std::string blacklist_key_image_str = item["key_image"];
-//         crypto::key_image blacklist_key_image;
-
-//         if (!epee::string_tools::hex_to_pod(blacklist_key_image_str, blacklist_key_image))
-//         {
-//           std::cerr << "Failed to convert blacklist key image string to crypto::key_image." << std::endl;
-//           continue;
-//         }
-
-//         if (locked_key_image == blacklist_key_image)
-//         {
-//           current_locked_funds += std::uint64_t(item["amount"]);
-//           is_blacklisted = true;
-//           processed.push_back(locked_key_image);
-//           break;
-//         }
-//       }
-
-//       // If not blacklisted, check for master node locked contributions
-//       if (!is_blacklisted)
-//       {
-//         for (auto &mn_all : mn_response["result"]["master_node_states"])
-//         {
-//           for (auto &mn_contrib : mn_all["contributors"])
-//           {
-//             std::string address_str = mn_contrib["address"].get<std::string>();
-
-//             if (wallet_address != address_str)
-//               continue;
-
-//             for (auto const &contribution : mn_contrib["locked_contributions"])
-//             {
-//               crypto::key_image check_image;
-//               std::string key_image_str = contribution["key_image"].get<std::string>();
-//               if (tools::hex_to_type(key_image_str, check_image) && locked_key_image == check_image)
-//               {
-//                 current_locked_funds += std::uint64_t(contribution["amount"]);
-//                 processed.push_back(locked_key_image);
-//                 break;
-//               }
-//             }
-//           }
-//         }
-//       }
-
-//       // Handle time-based or block-height-based locking
-//       std::uint64_t unlock_time = output.get_value<MONERO_FIELD(db::output, unlock_time)>();
-//       bool is_time_locked = is_locked(unlock_time, last->id);
-
-//       // If the output is time-locked, add to current locked funds
-//       // Otherwise, remove from locked funds
-//       if (is_time_locked)
-//       {
-//         current_locked_funds += meta.amount;
-//       }
-//     }
-
-//     // Set the locked funds after processing all outputs
-//     resp.total_received = rpc::safe_uint64(total_received);
-//     resp.locked_funds = rpc::safe_uint64(current_locked_funds);
-
-//     // Process spent outputs
-//     resp.spent_outputs.reserve(spends->count());
-//     std::uint64_t total_sent = 0;
-//     for (auto const &spend : spends->make_range())
-//     {
-//       const auto meta = find_metadata(metas, spend.source);
-//       if (meta == metas.end() || meta->id != spend.source)
-//       {
-//         throw std::logic_error{
-//             "Serious database error, no receive for spend"};
-//       }
-
-//       resp.spent_outputs.push_back({*meta, spend});
-//       total_sent += meta->amount;
-//     }
-
-//     resp.total_sent = rpc::safe_uint64(total_sent);
-
-//     return resp;
-//   }
-// };
 
 
     struct get_unspent_outs
@@ -506,10 +324,8 @@ namespace lws
         if (!user)
           return user.error();
 
-        // rpc_command::request req{};
         uint64_t grace_blocks = 10;
-        //   epee::byte_slice msg = rpc::client::make_message("get_dynamic_fee_estimate", req);
-        //   MONERO_CHECK(client->send(std::move(msg), std::chrono::seconds{10}));
+
         json dynamic_fee = {
             {"jsonrpc", "2.0"},
             {"id", "0"},
@@ -564,10 +380,7 @@ namespace lws
               // If the locked_key_image matches a blacklist key_image, process this output
               if (locked_key_image == blacklist_key_image && value_l == item["amount"])
               {
-                std::cout << "****** Inside blacklist_locked_key_image *****" << locked_key_image << std::endl;
-
                 should_skip_output = true;
-
                 break;
               }
             }
@@ -597,11 +410,8 @@ namespace lws
                     std::string key_image_str = contribution["key_image"].get<std::string>();
                     std::uint64_t conAmount = contribution["amount"].get<std::uint64_t>();
 
-                    std::cout << "conAmount :" << conAmount << std::endl;
-
                     if (tools::hex_to_type(key_image_str, check_image) && locked_key_image == check_image && value_l == conAmount)
                     {
-                      std::cout << "****** Inside master_node_states_locked_key_image *****" << locked_key_image << std::endl;
 
                       should_skip_output = true;
 
@@ -629,7 +439,6 @@ namespace lws
             std::copy(range.begin(), range.end(), std::back_inserter(unspent.back().second));
           }
         }
-        // const auto resp = client->receive<rpc_command::Response>(std::chrono::seconds{20}, MLWS_CURRENT_LOCATION);
 
         if (received < std::uint64_t(req.amount))
           return {lws::error::account_not_found};
@@ -761,9 +570,6 @@ namespace lws
               resp.transactions.back().spends.push_back({*meta, *spend});
 
             resp.transactions.back().spent += meta->amount;
-
-            // std::cout << "Outgoing amount for transaction " << next_spend.tx_hash << ": " << resp.transactions.back().spent << std::endl;
-
             ++spend;
             if (!spend.is_end())
               next_spend = spend.get_value<MONERO_FIELD(db::spend, link)>();
@@ -783,23 +589,15 @@ namespace lws
       {
         using distribution_rpc = cryptonote::rpc::GET_OUTPUT_DISTRIBUTION;
         using histogram_rpc = cryptonote::rpc::GET_OUTPUT_HISTOGRAM;
-        // std::cout <<"1" << std::endl;
+        
         std::vector<std::uint64_t> amounts = std::move(req.amounts.values);
 
         if (50 < req.count || 20 < amounts.size())
           return {lws::error::exceeded_rest_request_limit};
 
-        //     // expect<rpc::client> client = gclient.clone();
-        //     // if (!client)
-        //     //   return client.error();
-        // std::cout <<"2" << std::endl;
-
         const std::greater<std::uint64_t> rsort{};
         std::sort(amounts.begin(), amounts.end(), rsort);
-        const std::size_t ringct_count =
-            amounts.end() - std::lower_bound(amounts.begin(), amounts.end(), 0, rsort);
-        // std::cout <<"3" << std::endl;
-
+        const std::size_t ringct_count = amounts.end() - std::lower_bound(amounts.begin(), amounts.end(), 0, rsort);
         std::vector<lws::histogram> histograms{};
         if (ringct_count < amounts.size())
         {
@@ -972,21 +770,7 @@ namespace lws
             return {std::move(keys)};
           }
         };
-        // std::cout << "before the random_outputs\n";
-        // std::cout << "req.count : " << req.count << std::endl;
-        // for(auto it : amounts)
-        // {
-        //   std::cout <<"amounts "<< it << std::endl;
-        // }
-        // std::cout << "distributions.size() : " << distributions.size() << std::endl;
-        // std::cout << "histograms.size() : " << histograms.size() << std::endl;
-        // for(auto it :histograms)
-        // {
-        //       std::cout <<"amount         " << it.amount        << std::endl;
-        //       std::cout <<"total_count    " << it.total_count   << std::endl;
-        //       std::cout <<"unlocked_count " << it.unlocked_count<< std::endl;
-        //       std::cout <<"recent_count   " << it.recent_count  << std::endl;
-        // }
+
         lws::gamma_picker pick_rct{std::move(distributions)};
         auto rings = pick_random_outputs(
             req.count,
@@ -1047,7 +831,7 @@ namespace lws
 
       static expect<response> handle(request req, db::storage disk)
       {
-        // std::cout <<"inside the login\n";
+        
         if (!key_check(req.creds))
           return {lws::error::bad_view_key};
 
@@ -1111,7 +895,7 @@ namespace lws
             {"id", "0"},
             {"method", "send_raw_transaction"},
             {"params", {{"tx_as_hex", daemon_req.tx_as_hex}, {"do_not_relay", daemon_req.do_not_relay}, {"flash", daemon_req.flash}}}};
-        // std::cout <<"message : " << message.dump() << std::endl;
+        
         auto resp = cpr::Post(cpr::Url{lws::daemon_add},
                               cpr::Body{message.dump()},
                               cpr::Header{{"Content-Type", "application/json"}});

@@ -601,7 +601,6 @@ namespace cryptonote { namespace rpc {
         uint64_t height = block["miner_tx"]["vin"][0]["gen"]["height"];
         res.minor_tx_hashes.emplace_back();
         auto & heightWithMinorHash = res.minor_tx_hashes.back();
-        // std::cout << height << " : " << tools::type_to_hex(get_transaction_hash(blk.miner_tx)) << std::endl;
         heightWithMinorHash.height = height;
         heightWithMinorHash.minorHash = tools::type_to_hex(get_transaction_hash(blk.miner_tx));
       }

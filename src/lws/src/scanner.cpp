@@ -140,13 +140,11 @@ namespace lws
         {
           // Assign the key_image from the first proof to locked_key_image
           locked_key_image = key_image_proofs.proofs.front().key_image;
-          // Alternatively, you could loop through and choose a specific proof if needed
         }
       }
 
       for (account &user : users)
       {
-        // std::cout << "entered in users " << std::endl;
         if (height <= user.scan_height())
           continue; // to next user
 
@@ -214,16 +212,13 @@ namespace lws
             prefix_hash.emplace();
             cryptonote::get_transaction_prefix_hash(tx, *prefix_hash);
           }
-          // std::cout <<"--------------------------"<< std::endl;
-          // std::cout << "height : " << (uint64_t)user.scan_height() << std::endl;
-          // std::cout << "derived_pub : " << derived_pub << std::endl;
-          // std::cout << "user.spend_public() : " <<  user.spend_public() << std::endl;
+
           std::uint64_t amount = out.amount;
-          // std::cout << "tx.version : " << tx.version << std::endl;
+          
           rct::key mask = rct::identity();
           if (!amount && !(ext & db::coinbase_output) && cryptonote::txversion::v1 < tx.version)
           {
-            // const bool bulletproof2 = (rct::RCTType::Bulletproof2 <= tx.rct_signatures.type);
+            
             const bool bulletproof2 = true;
             const auto decrypted = lws::decode_amount(
                 tx.rct_signatures.outPk.at(index).mask, tx.rct_signatures.ecdhInfo.at(index), derived, index, bulletproof2);
