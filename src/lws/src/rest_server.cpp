@@ -117,7 +117,9 @@ namespace lws
         std::vector<crypto::key_image> processed;
 
         lws::db::account_address primary_address{req.address.view_public, req.address.spend_public};
-        cryptonote::account_public_address crypto_address = {primary_address.spend_public,primary_address.view_public}
+        cryptonote::account_public_address crypto_address;
+        crypto_address.m_view_public_key = primary_address.view_public;
+        crypto_address.m_spend_public_key = primary_address.spend_public;
 
         std::string wallet_address = cryptonote::get_account_address_as_str(cryptonote::network_type ::TESTNET, false, crypto_address);
 
