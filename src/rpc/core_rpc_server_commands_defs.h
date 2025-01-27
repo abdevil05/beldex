@@ -228,9 +228,18 @@ namespace rpc {
       KV_MAP_SERIALIZABLE
     };
 
+    struct block_height_minorHash
+    {
+     uint64_t height;
+     std::string minorHash;
+
+      KV_MAP_SERIALIZABLE
+    };
+
     struct response
     {
       std::vector<block_complete_entry_rpc> blocks;     // Array of block complete entries
+      std::vector <block_height_minorHash> minor_tx_hashes;
       uint64_t    start_height;                         // The starting block's height.
       uint64_t    current_height;                       // The current block height.
       std::string status;                               // General RPC error code. "OK" means everything looks good.

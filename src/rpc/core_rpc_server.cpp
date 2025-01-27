@@ -595,6 +595,15 @@ namespace cryptonote { namespace rpc {
       }
 
       block["miner_tx"]["extra"] = extra_res;
+
+      if (block["miner_tx"].contains("vin") && !block["miner_tx"]["vin"].empty() && block["miner_tx"]["vin"][0].contains("gen") && block["miner_tx"]["vin"][0]["gen"].contains("height"))
+      {
+        uint64_t height = block["miner_tx"]["vin"][0]["gen"]["height"];
+        res.minor_tx_hashes.emplace_back();
+        auto & heightWithMinorHash = res.minor_tx_hashes.back();
+        heightWithMinorHash.height = height;
+        heightWithMinorHash.minorHash = tools::type_to_hex(get_transaction_hash(blk.miner_tx));
+      }
       //-----------------------------------------------------------------------
       if (bd.second.size() != blk.tx_hashes.size())
       {
