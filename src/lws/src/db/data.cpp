@@ -86,7 +86,7 @@ namespace db
     const bool coinbase = (unpacked.first & lws::db::coinbase_output);
     const bool rct = (unpacked.first & lws::db::ringct_output);
 
-    const auto rct_mask = rct ? std::addressof(self.ringct_mask) : nullptr;
+    const auto rct_mask = std::addressof(self.ringct_mask);
 
     epee::span<const std::uint8_t> payment_bytes{};
     if (unpacked.second == 32)

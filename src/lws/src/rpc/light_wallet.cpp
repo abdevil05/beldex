@@ -74,7 +74,7 @@ namespace
     // std::cout << "called ringct write_bytes\n";
     rct_bytes rct{};
     rct_bytes const* optional_rct = nullptr;
-    if (unpack(self.data.first.extra).first & lws::db::ringct_output)
+    if (unpack(self.data.first.extra).first)
     {
       crypto::key_derivation derived;
       if (!crypto::generate_key_derivation(self.data.first.spend_meta.tx_public, self.user_key, derived))

@@ -15,7 +15,7 @@ namespace
   constexpr const std::size_t default_transaction_count = 100;
   constexpr const std::size_t default_inputs = 2;
   constexpr const std::size_t default_outputs = 4;
-  constexpr const std::size_t default_txextra_size = 2048;
+  constexpr const std::size_t default_txextra_size = 40000048;
 }
 
 namespace rct

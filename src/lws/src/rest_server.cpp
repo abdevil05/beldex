@@ -354,7 +354,9 @@ namespace lws
         unspent.reserve(outputs->count());
         for (db::output const& out : outputs->make_range())
         {
-          if (out.spend_meta.amount < std::uint64_t(*req.dust_threshold) || out.spend_meta.mixin_count < *req.mixin)
+          const std::pair<db::extra, std::uint8_t> unpacked = db::unpack(out.extra);
+          const bool coinbase = (unpacked.first & lws::db::coinbase_output);
+          if (out.spend_meta.amount < std::uint64_t(*req.dust_threshold) ||  (out.spend_meta.mixin_count < *req.mixin && !(coinbase == 1))) 
             continue;
 
           const crypto::key_image locked_key_image = out.locked_key_image;
@@ -594,8 +596,8 @@ namespace lws
         
         std::vector<std::uint64_t> amounts = std::move(req.amounts.values);
 
-        if (50 < req.count || 20 < amounts.size())
-          return {lws::error::exceeded_rest_request_limit};
+        // if (50 < req.count || 20 < amounts.size())
+        //   return {lws::error::exceeded_rest_request_limit};
 
         const std::greater<std::uint64_t> rsort{};
         std::sort(amounts.begin(), amounts.end(), rsort);
@@ -1010,13 +1012,13 @@ namespace lws
         return true;
       }
 
-      if (handler->max_size < query.m_body.size())
-      {
-        MINFO("Client exceeded maximum body size (" << handler->max_size << " bytes)");
-        response.m_response_code = 400;
-        response.m_response_comment = "Bad Request";
-        return true;
-      }
+      // if (handler->max_size < query.m_body.size())
+      // {
+      //   MINFO("Client exceeded maximum body size (" << handler->max_size << " bytes)");
+      //   response.m_response_code = 400;
+      //   response.m_response_comment = "Bad Request";
+      //   return true;
+      // }
 
       if (query.m_http_method != http::http_method_post)
       {
