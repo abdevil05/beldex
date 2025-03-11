@@ -26,6 +26,7 @@
 #include "util/source_location.h"
 #include "rpc/light_wallet.h"
 #include "wire/json.h"
+#include "config.h"
 namespace lws
 {
   namespace
@@ -121,7 +122,7 @@ namespace lws
         crypto_address.m_view_public_key = primary_address.view_public;
         crypto_address.m_spend_public_key = primary_address.spend_public;
 
-        std::string wallet_address = cryptonote::get_account_address_as_str(cryptonote::network_type ::TESTNET, false, crypto_address);
+        std::string wallet_address = cryptonote::get_account_address_as_str(lws::config::network, false, crypto_address);
 
         json request_body = {
             {"jsonrpc", "2.0"},
@@ -290,7 +291,7 @@ namespace lws
         crypto_address.m_view_public_key = primary_address.view_public;
         crypto_address.m_spend_public_key = primary_address.spend_public;
 
-        std::string wallet_address = cryptonote::get_account_address_as_str(cryptonote::network_type ::TESTNET, false, crypto_address);
+        std::string wallet_address = cryptonote::get_account_address_as_str(lws::config::network, false, crypto_address);
 
         std::vector<crypto::key_image> processed;
 
