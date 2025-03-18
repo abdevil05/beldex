@@ -1089,8 +1089,7 @@ namespace lws
       if (!https)
       {
         boost::system::error_code error{};
-        const boost::asio::ip::address ip_host =
-            ip_host.from_string(url.host, error);
+        const auto ip_host = boost::asio::ip::make_address(url.host, error);
         if (error)
           MONERO_THROW(lws::error::configuration, "Invalid IP address for REST server");
         if (!ip_host.is_loopback() && !config.allow_external)
