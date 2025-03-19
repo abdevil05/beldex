@@ -115,11 +115,15 @@ namespace wire_write
       declared after these functions. */
 
   template<typename W, typename T>
-  inline epee::byte_slice to_bytes(const T& value)
+  inline epee::byte_slice to_bytes(W&& dest, const T& value)
   {
-    W dest{};
     write_bytes(dest, value);
     return dest.take_bytes();
+  }
+  template<typename W, typename T>
+  inline epee::byte_slice to_bytes(const T& value)
+  {
+    return wire_write::to_bytes(W{}, value);
   }
 
   template<typename W, typename T, typename F = wire::identity_>
@@ -135,20 +139,21 @@ namespace wire_write
     dest.end_array();
   }
 
-  template<typename W, typename T>
-  inline bool field(W& dest, const wire::field_<T, true> elem)
+  template<typename W, typename T, unsigned I>
+  inline bool field(W& dest, const wire::field_<T, true, I> elem)
   {
-    dest.key(0, elem.name);
+    dest.key(I, elem.name);
     write_bytes(dest, elem.get_value());
     return true;
   }
 
-  template<typename W, typename T>
-  inline bool field(W& dest, const wire::field_<T, false> elem)
+
+  template<typename W, typename T, unsigned I>
+  inline bool field(W& dest, const wire::field_<T, false, I> elem)
   {
     if (bool(elem.get_value()))
     {
-      dest.key(0, elem.name);
+      dest.key(I, elem.name);
       write_bytes(dest, *elem.get_value());
     }
     return true;
