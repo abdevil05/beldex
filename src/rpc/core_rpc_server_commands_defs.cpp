@@ -1106,6 +1106,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(GET_MASTER_NODES::requested_fields_t)
     KV_SERIALIZE(staking_requirement)
     KV_SERIALIZE(portions_for_operator)
     KV_SERIALIZE(swarm_id)
+    KV_SERIALIZE(swarm)
     KV_SERIALIZE(operator_address)
     KV_SERIALIZE(public_ip)
     KV_SERIALIZE(storage_port)
@@ -1172,6 +1173,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(GET_MASTER_NODES::response::entry)
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(staking_requirement);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(portions_for_operator);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(swarm_id);
+  KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(swarm);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(operator_address);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(public_ip);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(storage_port);

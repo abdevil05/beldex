@@ -2044,6 +2044,7 @@ namespace rpc {
       bool staking_requirement;
       bool portions_for_operator;
       bool swarm_id;
+      bool swarm;
       bool operator_address;
       bool public_ip;
       bool storage_port;
@@ -2113,6 +2114,7 @@ namespace rpc {
         uint64_t                              staking_requirement;           // The staking requirement in atomic units that is required to be contributed to become a Master Node.
         uint64_t                              portions_for_operator;         // The operator percentage cut to take from each reward expressed in portions, see cryptonote_config.h's STAKING_PORTIONS.
         uint64_t                              swarm_id;                      // The identifier of the Master Node's current swarm.
+        std::string                           swarm;                         // The identifier of the Master Node's current swarm, as a 16-character hex string.
         std::string                           operator_address;              // The wallet address of the operator to which the operator cut of the staking reward is sent to.
         std::string                           public_ip;                     // The public ip address of the service node
         uint16_t                              storage_port;                  // The port number associated with the storage server

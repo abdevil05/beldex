@@ -39,6 +39,7 @@
 #include <type_traits>
 #include <variant>
 #include <oxenc/base64.h>
+#include <oxenc/endian.h>
 #include "crypto/crypto.h"
 #include "cryptonote_basic/hardfork.h"
 #include "cryptonote_basic/tx_extra.h"
@@ -3142,6 +3143,10 @@ namespace cryptonote { namespace rpc {
     entry.portions_for_operator         = info.portions_for_operator;
     entry.operator_address              = cryptonote::get_account_address_as_str(m_core.get_nettype(), false/*is_subaddress*/, info.operator_address);
     entry.swarm_id                      = info.swarm_id;
+    std::string raw;
+    raw.resize(sizeof(info.swarm_id));
+    oxenc::write_host_as_big(info.swarm_id, raw.data());
+    entry.swarm = oxenc::to_hex(raw);
     entry.registration_hf_version       = info.registration_hf_version;
 
   }
