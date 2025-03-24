@@ -479,11 +479,6 @@ endif()
 build_external(sodium)
 add_static_target(sodium sodium_external libsodium.a)
 
-
-if(CMAKE_CROSSCOMPILING AND ARCH_TRIPLET MATCHES mingw)
-  set(zmq_patch PATCH_COMMAND patch -p1 -i ${PROJECT_SOURCE_DIR}/utils/build_scripts/libzmq-mingw-closesocket.patch)
-endif()
-
 set(zmq_cross_host "${cross_host}")
 if(IOS AND cross_host MATCHES "-ios$")
   # zmq doesn't like "-ios" for the host, so replace it with -darwin
