@@ -115,11 +115,11 @@ namespace nodetool
   bool node_server<t_payload_net_handler>::init_config()
   {
     TRY_ENTRY();
-    auto storage = peerlist_storage::open(m_config_folder / P2P_NET_DATA_FILENAME);
+    auto storage = peerlist_storage::open(m_config_folder / cryptonote::P2P_NET_DATA_FILENAME);
     if (storage)
       m_peerlist_storage = std::move(*storage);
 
-    m_network_zones[epee::net_utils::zone::public_].m_config.m_support_flags = P2P_SUPPORT_FLAGS;
+    m_network_zones[epee::net_utils::zone::public_].m_config.m_support_flags = cryptonote::p2p::SUPPORT_FLAGS;
     m_first_connection_maker_call = true;
 
     CATCH_ENTRY_L0("node_server::init_config", false);
@@ -316,11 +316,11 @@ namespace nodetool
     std::lock_guard lock{m_host_fails_score_lock};
     uint64_t fails = ++m_host_fails_score[address.host_str()];
     MDEBUG("Host " << address.host_str() << " fail score=" << fails);
-    if(fails > P2P_IP_FAILS_BEFORE_BLOCK)
+    if(fails > cryptonote::p2p::IP_FAILS_BEFORE_BLOCK)
     {
       auto it = m_host_fails_score.find(address.host_str());
       CHECK_AND_ASSERT_MES(it != m_host_fails_score.end(), false, "internal error");
-      it->second = P2P_IP_FAILS_BEFORE_BLOCK/2;
+      it->second = cryptonote::p2p::IP_FAILS_BEFORE_BLOCK/2;
       block_host(address);
     }
     return true;
@@ -335,10 +335,10 @@ namespace nodetool
     bool devnet = command_line::get_arg(vm, cryptonote::arg_devnet_on);
     bool fakenet = command_line::get_arg(vm, cryptonote::arg_regtest_on);
     m_nettype =
-        testnet  ? cryptonote::TESTNET :
-        devnet ? cryptonote::DEVNET :
-        fakenet  ? cryptonote::FAKECHAIN :
-        cryptonote::MAINNET;
+        testnet  ? cryptonote::network_type::TESTNET :
+        devnet ? cryptonote::network_type::DEVNET :
+        fakenet  ? cryptonote::network_type::FAKECHAIN :
+        cryptonote::network_type::MAINNET;
 
     network_zone& public_zone = m_network_zones[epee::net_utils::zone::public_];
     public_zone.m_connect = &public_connect;
@@ -458,9 +458,9 @@ namespace nodetool
       epee::shared_sv this_noise;
       if (proxy.noise)
       {
-        static_assert(sizeof(epee::levin::bucket_head2) < CRYPTONOTE_NOISE_BYTES, "noise bytes too small");
+        static_assert(sizeof(epee::levin::bucket_head2) < cryptonote::NOISE_BYTES, "noise bytes too small");
         if (noise.view.empty())
-          noise = epee::shared_sv{epee::levin::make_noise_notify(CRYPTONOTE_NOISE_BYTES)};
+          noise = epee::shared_sv{epee::levin::make_noise_notify(cryptonote::NOISE_BYTES)};
 
         this_noise = noise;
       }
@@ -573,18 +573,18 @@ namespace nodetool
   std::set<std::string> node_server<t_payload_net_handler>::get_seed_nodes(cryptonote::network_type nettype) const
   {
     std::set<std::string> full_addrs;
-    if (nettype == cryptonote::TESTNET)
+    if (nettype == cryptonote::network_type::TESTNET)
     {
 		full_addrs.insert("test1.rpcnode.stream:29090");
         full_addrs.insert("test2.rpcnode.stream:29090");
     }
-    else if (nettype == cryptonote::DEVNET)
+    else if (nettype == cryptonote::network_type::DEVNET)
     {
 		full_addrs.insert("35.237.218.150:39090");
         full_addrs.insert("35.243.157.236:39090");
         full_addrs.insert("35.237.118.17:39090");
     }
-    else if (nettype == cryptonote::FAKECHAIN)
+    else if (nettype == cryptonote::network_type::FAKECHAIN)
     {
     }
     else
@@ -605,16 +605,16 @@ namespace nodetool
     {
       return {};
     }
-    if (m_nettype == cryptonote::TESTNET)
+    if (m_nettype == cryptonote::network_type::TESTNET)
     {
-      return get_seed_nodes(cryptonote::TESTNET);
+      return get_seed_nodes(cryptonote::network_type::TESTNET);
     }
-    if (m_nettype == cryptonote::DEVNET)
+    if (m_nettype == cryptonote::network_type::DEVNET)
     {
-      return get_seed_nodes(cryptonote::DEVNET);
+      return get_seed_nodes(cryptonote::network_type::DEVNET);
     }
 
-    return get_seed_nodes(cryptonote::MAINNET);
+    return get_seed_nodes(cryptonote::network_type::MAINNET);
   }
   //-----------------------------------------------------------------------------------
   template<class t_payload_net_handler>
@@ -634,18 +634,11 @@ namespace nodetool
     bool res = handle_command_line(vm);
     CHECK_AND_ASSERT_MES(res, false, "Failed to handle command line");
 
-    if (m_nettype == cryptonote::TESTNET)
-    {
-      memcpy(&m_network_id, &::config::testnet::NETWORK_ID, 16);
-    }
-    else if (m_nettype == cryptonote::DEVNET)
-    {
-      memcpy(&m_network_id, &::config::devnet::NETWORK_ID, 16);
-    }
-    else
-    {
-      memcpy(&m_network_id, &::config::NETWORK_ID, 16);
-    }
+    memcpy(&m_network_id,
+      m_nettype == cryptonote::network_type::TESTNET ? &cryptonote::config::testnet::NETWORK_ID :
+      m_nettype == cryptonote::network_type::DEVNET ? &cryptonote::config::devnet::NETWORK_ID :
+      &cryptonote::config::NETWORK_ID,
+      16);
 
     m_config_folder = fs::u8path(command_line::get_arg(vm, cryptonote::arg_data_dir));
     network_zone& public_zone = m_network_zones.at(epee::net_utils::zone::public_);
@@ -665,32 +658,31 @@ namespace nodetool
     for(const auto& p: m_command_line_peers)
       m_network_zones.at(p.adr.get_zone()).m_peerlist.append_with_peer_white(p);
 
-// all peers are now setup
-#ifdef CRYPTONOTE_PRUNING_DEBUG_SPOOF_SEED
-    for (auto& zone : m_network_zones)
-    {
-      std::list<peerlist_entry> plw;
-      while (zone.second.m_peerlist.get_white_peers_count())
+    // all peers are now setup
+    if constexpr (cryptonote::PRUNING_DEBUG_SPOOF_SEED) {
+      for (auto& zone : m_network_zones)
       {
-        plw.push_back(peerlist_entry());
-        zone.second.m_peerlist.get_white_peer_by_index(plw.back(), 0);
-        zone.second.m_peerlist.remove_from_peer_white(plw.back());
-      }
-      for (auto &e:plw)
-        zone.second.m_peerlist.append_with_peer_white(e);
+        std::list<peerlist_entry> plw;
+        while (zone.second.m_peerlist.get_white_peers_count())
+        {
+          plw.push_back(peerlist_entry());
+          zone.second.m_peerlist.get_white_peer_by_index(plw.back(), 0);
+          zone.second.m_peerlist.remove_from_peer_white(plw.back());
+        }
+        for (auto &e:plw)
+          zone.second.m_peerlist.append_with_peer_white(e);
 
-      std::list<peerlist_entry> plg;
-      while (zone.second.m_peerlist.get_gray_peers_count())
-      {
-        plg.push_back(peerlist_entry());
-        zone.second.m_peerlist.get_gray_peer_by_index(plg.back(), 0);
-        zone.second.m_peerlist.remove_from_peer_gray(plg.back());
+        std::list<peerlist_entry> plg;
+        while (zone.second.m_peerlist.get_gray_peers_count())
+        {
+          plg.push_back(peerlist_entry());
+          zone.second.m_peerlist.get_gray_peer_by_index(plg.back(), 0);
+          zone.second.m_peerlist.remove_from_peer_gray(plg.back());
+        }
+        for (auto &e:plg)
+          zone.second.m_peerlist.append_with_peer_gray(e);
       }
-      for (auto &e:plg)
-        zone.second.m_peerlist.append_with_peer_gray(e);
     }
-#endif
-
     //only in case if we really sure that we have external visible ip
     m_have_address = true;
 
@@ -706,7 +698,7 @@ namespace nodetool
     for (auto& zone : m_network_zones)
     {
       zone.second.m_net_server.get_config_object().set_handler(this);
-      zone.second.m_net_server.get_config_object().m_invoke_timeout = P2P_DEFAULT_INVOKE_TIMEOUT;
+      zone.second.m_net_server.get_config_object().m_invoke_timeout = std::chrono::milliseconds{cryptonote::p2p::DEFAULT_INVOKE_TIMEOUT}.count();
 
       if (!zone.second.m_bind_ip.empty())
       {
@@ -837,7 +829,7 @@ namespace nodetool
     for (auto& zone : m_network_zones)
       zone.second.m_peerlist.get_peerlist(active);
 
-    const auto state_file_path = m_config_folder / P2P_NET_DATA_FILENAME;
+    const auto state_file_path = m_config_folder / cryptonote::P2P_NET_DATA_FILENAME;
     if (!m_peerlist_storage.store(state_file_path, active))
     {
       MWARNING("Failed to save config to file " << state_file_path);
@@ -875,8 +867,11 @@ namespace nodetool
     LOG_PRINT_CC_L0(context_,"do_handshake_with_peer");
     network_zone& zone = m_network_zones.at(context_.m_remote_address.get_zone());
 
-    typename COMMAND_HANDSHAKE::request arg{};
-    typename COMMAND_HANDSHAKE::response rsp{};
+    using request_t = typename COMMAND_HANDSHAKE::request;
+    using response_t = typename COMMAND_HANDSHAKE::response;
+
+    request_t arg{};
+    response_t rsp{};
     get_local_node_data(arg.node_data, zone);
     m_payload_handler.get_payload_sync_data(arg.payload_data);
 
@@ -884,8 +879,8 @@ namespace nodetool
     std::atomic<bool> hsh_result(false);
     bool timeout = false;
     LOG_PRINT_CC_L0(context_,"do_handshake_with_peer COMMAND_HANDSHAKE");
-    bool r = epee::net_utils::async_invoke_remote_command2<typename COMMAND_HANDSHAKE::response>(context_.m_connection_id, COMMAND_HANDSHAKE::ID, arg, zone.m_net_server.get_config_object(),
-      [this, &pi, &ev, &hsh_result, &just_take_peerlist, &context_, &timeout](int code, typename COMMAND_HANDSHAKE::response&& rsp, p2p_connection_context& context)
+    bool r = epee::net_utils::async_invoke_remote_command2<response_t>(context_.m_connection_id, COMMAND_HANDSHAKE::ID, arg, zone.m_net_server.get_config_object(),
+      [this, &pi, &ev, &hsh_result, &just_take_peerlist, &context_, &timeout](int code, response_t&& rsp, p2p_connection_context& context)
     {
       BELDEX_DEFER { ev.set_value(); };
       if(code < 0)
@@ -937,7 +932,7 @@ namespace nodetool
         LOG_DEBUG_CC(context, " COMMAND_HANDSHAKE(AND CLOSE) INVOKED OK");
       }
       context_ = context;
-    }, P2P_DEFAULT_HANDSHAKE_INVOKE_TIMEOUT);
+    }, std::chrono::milliseconds{cryptonote::p2p::DEFAULT_HANDSHAKE_INVOKE_TIMEOUT}.count());
 
     if(r)
     {
@@ -965,13 +960,16 @@ namespace nodetool
   template<class t_payload_net_handler>
   bool node_server<t_payload_net_handler>::do_peer_timed_sync(const epee::net_utils::connection_context_base& context_, peerid_type peer_id)
   {
-    typename COMMAND_TIMED_SYNC::request arg{};
+    using request_t = typename COMMAND_TIMED_SYNC::request;
+    using response_t = typename COMMAND_TIMED_SYNC::response;
+    request_t arg{};
+
     LOG_PRINT_CC_L0(context_,"do_peer_timed_sync");
     m_payload_handler.get_payload_sync_data(arg.payload_data);
 
     network_zone& zone = m_network_zones.at(context_.m_remote_address.get_zone());
-    bool r = epee::net_utils::async_invoke_remote_command2<typename COMMAND_TIMED_SYNC::response>(context_.m_connection_id, COMMAND_TIMED_SYNC::ID, arg, zone.m_net_server.get_config_object(),
-      [this](int code, typename COMMAND_TIMED_SYNC::response&& rsp, p2p_connection_context& context)
+    bool r = epee::net_utils::async_invoke_remote_command2<response_t>(context_.m_connection_id, COMMAND_TIMED_SYNC::ID, arg, zone.m_net_server.get_config_object(),
+      [this](int code, response_t&& rsp, p2p_connection_context& context)
     {
       context.m_in_timedsync = false;
       if(code < 0)
@@ -1232,10 +1230,8 @@ namespace nodetool
     if(it == m_conn_fails_cache.end())
       return false;
 
-    if(time(NULL) - it->second > P2P_FAILED_ADDR_FORGET_SECONDS)
-      return false;
-    else
-      return true;
+    auto ago = std::chrono::system_clock::now() - std::chrono::system_clock::from_time_t(it->second);
+    return ago <= cryptonote::p2p::FAILED_ADDR_FORGET;
   }
   //-----------------------------------------------------------------------------------
   template<class t_payload_net_handler>
@@ -1308,7 +1304,7 @@ namespace nodetool
       const size_t limit = use_white_list ? 20 : std::numeric_limits<size_t>::max();
       for (int step = 0; step < 2; ++step)
       {
-        bool skip_duplicate_class_B = step == 0 && m_nettype == cryptonote::MAINNET;
+        bool skip_duplicate_class_B = step == 0 && m_nettype == cryptonote::network_type::MAINNET;
         size_t idx = 0, skipped = 0;
         zone.m_peerlist.foreach (use_white_list, [&classB, &filtered, &idx, &skipped, skip_duplicate_class_B, limit, next_needed_pruning_stripe](const peerlist_entry &pe){
           if (filtered.size() >= limit)
@@ -1344,7 +1340,7 @@ namespace nodetool
         // if using the white list, we first pick in the set of peers we've already been using earlier
         random_index = get_random_index_with_fixed_probability(std::min<uint64_t>(filtered.size() - 1, 20));
         std::lock_guard lock{m_used_stripe_peers_mutex};
-        if (next_needed_pruning_stripe > 0 && next_needed_pruning_stripe <= (1ul << CRYPTONOTE_PRUNING_LOG_STRIPES) && !m_used_stripe_peers[next_needed_pruning_stripe-1].empty())
+        if (next_needed_pruning_stripe > 0 && next_needed_pruning_stripe <= (1ul << cryptonote::PRUNING_LOG_STRIPES) && !m_used_stripe_peers[next_needed_pruning_stripe-1].empty())
         {
           const epee::net_utils::network_address na = m_used_stripe_peers[next_needed_pruning_stripe-1].front();
           m_used_stripe_peers[next_needed_pruning_stripe-1].pop_front();
@@ -1506,7 +1502,7 @@ namespace nodetool
 
     for(auto& zone : m_network_zones)
     {
-      size_t base_expected_white_connections = (zone.second.m_config.m_net_config.max_out_connection_count*P2P_DEFAULT_WHITELIST_CONNECTIONS_PERCENT)/100;
+      size_t base_expected_white_connections = (zone.second.m_config.m_net_config.max_out_connection_count * cryptonote::p2p::DEFAULT_WHITELIST_CONNECTIONS_PERCENT)/100;
 
       size_t conn_count = get_outgoing_connections_count(zone.second);
       while(conn_count < zone.second.m_config.m_net_config.max_out_connection_count)
@@ -1515,8 +1511,8 @@ namespace nodetool
         if(conn_count < expected_white_connections)
         {
           //start from anchor list
-          while (get_outgoing_connections_count(zone.second) < P2P_DEFAULT_ANCHOR_CONNECTIONS_COUNT
-            && make_expected_connections_count(zone.second, anchor, P2P_DEFAULT_ANCHOR_CONNECTIONS_COUNT));
+          while (get_outgoing_connections_count(zone.second) < cryptonote::p2p::DEFAULT_ANCHOR_CONNECTIONS_COUNT
+            && make_expected_connections_count(zone.second, anchor, cryptonote::p2p::DEFAULT_ANCHOR_CONNECTIONS_COUNT));
           //then do white list
           while (get_outgoing_connections_count(zone.second) < expected_white_connections
             && make_expected_connections_count(zone.second, white, expected_white_connections));
@@ -1744,7 +1740,7 @@ namespace nodetool
       });
     }
 
-    std::for_each(cncts.begin(), cncts.end(), [&](const typename local_connects_type::value_type& vl){do_peer_timed_sync(vl.first, vl.second);});
+    std::for_each(cncts.begin(), cncts.end(), [&](const auto& vl){do_peer_timed_sync(vl.first, vl.second);});
 
     MDEBUG("FINISHED PEERLIST IDLE HANDSHAKE");
     return true;
@@ -1770,7 +1766,7 @@ namespace nodetool
         else if (ipv4.port() == be.rpc_port)
           ignore = true;
       }
-      if (be.pruning_seed && (be.pruning_seed < tools::make_pruning_seed(1, CRYPTONOTE_PRUNING_LOG_STRIPES) || be.pruning_seed > tools::make_pruning_seed(1ul << CRYPTONOTE_PRUNING_LOG_STRIPES, CRYPTONOTE_PRUNING_LOG_STRIPES)))
+      if (be.pruning_seed && (be.pruning_seed < tools::make_pruning_seed(1, cryptonote::PRUNING_LOG_STRIPES) || be.pruning_seed > tools::make_pruning_seed(1ul << cryptonote::PRUNING_LOG_STRIPES, cryptonote::PRUNING_LOG_STRIPES)))
         ignore = true;
       if (ignore)
       {
@@ -1782,9 +1778,9 @@ namespace nodetool
       }
       local_peerlist[i].last_seen = 0;
 
-#ifdef CRYPTONOTE_PRUNING_DEBUG_SPOOF_SEED
-      be.pruning_seed = tools::make_pruning_seed(1 + (be.adr.as<epee::net_utils::ipv4_network_address>().ip()) % (1ul << CRYPTONOTE_PRUNING_LOG_STRIPES), CRYPTONOTE_PRUNING_LOG_STRIPES);
-#endif
+    if constexpr (cryptonote::PRUNING_DEBUG_SPOOF_SEED)
+      be.pruning_seed = tools::make_pruning_seed(1 + (be.adr.as<epee::net_utils::ipv4_network_address>().ip()) % (1ul << cryptonote::PRUNING_LOG_STRIPES), cryptonote::PRUNING_LOG_STRIPES);
+
     }
     return true;
   }
@@ -1994,8 +1990,8 @@ namespace nodetool
       address = epee::net_utils::network_address{epee::net_utils::ipv6_network_address(ipv6_addr, node_data.my_port)};
     }
     peerid_type pr = node_data.peer_id;
-    LOG_PRINT_CC_L0(context,"try_ping start ip:" << ip << " port:" << port << " timeout:" << zone.m_config.m_net_config.ping_connection_timeout );
-    bool r = zone.m_net_server.connect_async(ip, port, zone.m_config.m_net_config.ping_connection_timeout, [cb, /*context,*/ address, pr, this](
+    LOG_PRINT_CC_L0(context,"try_ping start ip:" << ip << " port:" << port << " timeout:" << zone.m_config.m_net_config.ping_connection_timeout.count());
+    bool r = zone.m_net_server.connect_async(ip, port, zone.m_config.m_net_config.ping_connection_timeout.count(), [cb, /*context,*/ address, pr, this](
       const typename net_server::t_connection_context& ping_context,
       const boost::system::error_code& ec)->bool
     {
@@ -2061,14 +2057,17 @@ namespace nodetool
     if(context.m_remote_address.get_zone() != epee::net_utils::zone::public_)
       return false;
 
-    COMMAND_REQUEST_SUPPORT_FLAGS::request support_flags_request{};
-    bool r = epee::net_utils::async_invoke_remote_command2<typename COMMAND_REQUEST_SUPPORT_FLAGS::response>
+    
+    using request_t = typename COMMAND_REQUEST_SUPPORT_FLAGS::request;
+    using response_t = typename COMMAND_REQUEST_SUPPORT_FLAGS::response;
+    request_t support_flags_request{};
+    bool r = epee::net_utils::async_invoke_remote_command2<response_t>
     (
       context.m_connection_id,
       COMMAND_REQUEST_SUPPORT_FLAGS::ID,
       support_flags_request,
       m_network_zones.at(epee::net_utils::zone::public_).m_net_server.get_config_object(),
-      [=](int code, const typename COMMAND_REQUEST_SUPPORT_FLAGS::response& rsp, p2p_connection_context& context_)
+      [=](int code, const response_t& rsp, p2p_connection_context& context_)
       {
         if(code < 0)
         {
@@ -2078,7 +2077,7 @@ namespace nodetool
         LOG_PRINT_CC_L0(context_,"try_get_support_flags response");
         f(context_, rsp.support_flags);
       },
-      P2P_DEFAULT_HANDSHAKE_INVOKE_TIMEOUT
+      std::chrono::milliseconds{cryptonote::p2p::DEFAULT_HANDSHAKE_INVOKE_TIMEOUT}.count()
     );
 
     return r;
@@ -2099,7 +2098,7 @@ namespace nodetool
     network_zone& zone = m_network_zones.at(zone_type);
 
     std::vector<peerlist_entry> local_peerlist_new;
-    zone.m_peerlist.get_peerlist_head(local_peerlist_new, true, P2P_DEFAULT_PEERS_IN_HANDSHAKE);
+    zone.m_peerlist.get_peerlist_head(local_peerlist_new, true, cryptonote::p2p::DEFAULT_PEERS_IN_HANDSHAKE);
 
     //only include out peers we did not already send
     rsp.local_peerlist_new.reserve(local_peerlist_new.size());
@@ -2369,7 +2368,7 @@ namespace nodetool
   bool node_server<t_payload_net_handler>::set_max_out_peers(network_zone& zone, int64_t max)
   {
     if (max == -1)
-      max = P2P_DEFAULT_CONNECTIONS_COUNT_OUT;
+      max = cryptonote::p2p::DEFAULT_CONNECTIONS_COUNT_OUT;
     LOG_PRINT_L0("set_max_out_peers " << max);
     zone.m_config.m_net_config.max_out_connection_count = max;
     return true;
@@ -2379,7 +2378,7 @@ namespace nodetool
   bool node_server<t_payload_net_handler>::set_max_in_peers(network_zone& zone, int64_t max)
   {
     if (max == -1)
-      max = P2P_DEFAULT_CONNECTIONS_COUNT_IN;
+      max = cryptonote::p2p::DEFAULT_CONNECTIONS_COUNT_IN;
     LOG_PRINT_L0("set_max_in_peers " << max);
     zone.m_config.m_net_config.max_in_connection_count = max;
     return true;
@@ -2501,7 +2500,7 @@ namespace nodetool
     if (address.get_zone() != epee::net_utils::zone::public_)
       return false; // Unable to determine how many connections from host
 
-    const size_t max_connections = m_nettype == cryptonote::MAINNET ? 1 : 20;
+    const size_t max_connections = m_nettype == cryptonote::network_type::MAINNET ? 1 : 20;
     size_t count = 0;
 
     m_network_zones.at(epee::net_utils::zone::public_).m_net_server.get_config_object().foreach_connection([&](const p2p_connection_context& cntxt)
@@ -2555,7 +2554,7 @@ namespace nodetool
   void node_server<t_payload_net_handler>::add_used_stripe_peer(const typename t_payload_net_handler::connection_context &context)
   {
     const uint32_t stripe = tools::get_pruning_stripe(context.m_pruning_seed);
-    if (stripe == 0 || stripe > (1ul << CRYPTONOTE_PRUNING_LOG_STRIPES))
+    if (stripe == 0 || stripe > (1ul << cryptonote::PRUNING_LOG_STRIPES))
       return;
     const uint32_t index = stripe - 1;
     std::lock_guard lock{m_used_stripe_peers_mutex};
@@ -2569,7 +2568,7 @@ namespace nodetool
   void node_server<t_payload_net_handler>::remove_used_stripe_peer(const typename t_payload_net_handler::connection_context &context)
   {
     const uint32_t stripe = tools::get_pruning_stripe(context.m_pruning_seed);
-    if (stripe == 0 || stripe > (1ul << CRYPTONOTE_PRUNING_LOG_STRIPES))
+    if (stripe == 0 || stripe > (1ul << cryptonote::PRUNING_LOG_STRIPES))
       return;
     const uint32_t index = stripe - 1;
     std::lock_guard lock{m_used_stripe_peers_mutex};
@@ -2628,7 +2627,7 @@ namespace nodetool
 
     typename net_server::t_connection_context con{};
     const bool res = zone.m_net_server.connect(address, port,
-      zone.m_config.m_net_config.connection_timeout,
+      zone.m_config.m_net_config.connection_timeout.count(),
       con, zone.m_bind_ip);
 
     if (res)

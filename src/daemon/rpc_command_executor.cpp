@@ -37,6 +37,7 @@
 #include "daemon/rpc_command_executor.h"
 #include "common/median.h"
 #include "epee/int-util.h"
+#include "beldex_economy.h"
 #include "rpc/core_rpc_server_commands_defs.h"
 #include "cryptonote_core/master_node_rules.h"
 #include "cryptonote_basic/hardfork.h"
@@ -57,6 +58,8 @@
 #define BELDEX_DEFAULT_LOG_CATEGORY "daemon"
 
 using namespace cryptonote::rpc;
+
+using cryptonote::hf;
 
 namespace daemonize {
 
@@ -360,8 +363,8 @@ bool rpc_command_executor::print_peer_list_stats() {
     return false;
 
   tools::msg_writer()
-    << "White list size: " << res.white_list.size() << "/" << P2P_LOCAL_WHITE_PEERLIST_LIMIT << " (" << res.white_list.size() *  100.0 / P2P_LOCAL_WHITE_PEERLIST_LIMIT << "%)" << std::endl
-    << "Gray list size: " << res.gray_list.size() << "/" << P2P_LOCAL_GRAY_PEERLIST_LIMIT << " (" << res.gray_list.size() *  100.0 / P2P_LOCAL_GRAY_PEERLIST_LIMIT << "%)";
+    << "White list size: " << res.white_list.size() << "/" << cryptonote::p2p::LOCAL_WHITE_PEERLIST_LIMIT << " (" << res.white_list.size() *  100.0 / cryptonote::p2p::LOCAL_WHITE_PEERLIST_LIMIT << "%)" << std::endl
+    << "Gray list size: " << res.gray_list.size() << "/" << cryptonote::p2p::LOCAL_GRAY_PEERLIST_LIMIT << " (" << res.gray_list.size() *  100.0 / cryptonote::p2p::LOCAL_GRAY_PEERLIST_LIMIT << "%)";
 
   return true;
 }
@@ -534,16 +537,16 @@ bool rpc_command_executor::show_status() {
       str << " was used";
   }
 
-  if (hfres.version < HF_VERSION_POS && !has_mining_info)
+  if (hfres.version < cryptonote::feature::POS && !has_mining_info)
     str << ", mining info unavailable";
   if (has_mining_info && !mining_busy && mres.active)
     str << ", mining at " << get_mining_speed(mres.speed);
 
-  if (hfres.version < HF_VERSION_POS)
+  if (hfres.version < cryptonote::feature::POS)
     str << ", net hash " << get_mining_speed(ires.difficulty / ires.target);
 
   str << ", v" << (ires.version.empty() ? "?.?.?" : ires.version);
-  str << "(net v" << +hfres.version << ')';
+  str << "(net v" << static_cast<int>(hfres.version) << ')';
   if (hfres.earliest_height)
     print_fork_extra_info(str, *hfres.earliest_height, net_height, ires.target);
 
@@ -1055,7 +1058,7 @@ bool rpc_command_executor::print_transaction_pool_stats() {
   else
   {
     uint64_t backlog = (res.pool_stats.bytes_total + full_reward_zone - 1) / full_reward_zone;
-    backlog_message = fmt::format("estimated {} block ({} minutes ) backlog", backlog, backlog * TARGET_BLOCK_TIME / 1min);
+    backlog_message = fmt::format("estimated {} block ({} minutes ) backlog", backlog, backlog * cryptonote::TARGET_BLOCK_TIME / 1min);
   }
 
   tools::msg_writer() << n_transactions << " tx(es), " << res.pool_stats.bytes_total << " bytes total (min " << res.pool_stats.bytes_min << ", max " << res.pool_stats.bytes_max << ", avg " << avg_bytes << ", median " << res.pool_stats.bytes_med << ")" << std::endl
@@ -1399,7 +1402,7 @@ bool rpc_command_executor::alt_chain_info(const std::string &tip, size_t above, 
         tools::msg_writer() << "Time span: " << tools::get_human_readable_timespan(std::chrono::seconds(dt));
         cryptonote::difficulty_type start_difficulty = bhres.block_headers.back().difficulty;
         if (start_difficulty > 0)
-          tools::msg_writer() << "Approximated " << 100.f * tools::to_seconds(TARGET_BLOCK_TIME_OLD) * chain.length / dt << "% of network hash rate";  //old block time
+          tools::msg_writer() << "Approximated " << 100.f * tools::to_seconds(cryptonote::old::TARGET_BLOCK_TIME_12) * chain.length / dt << "% of network hash rate";  //old block time
         else
           tools::fail_msg_writer() << "Bad cumulative difficulty reported by dameon";
       }
@@ -1418,7 +1421,7 @@ bool rpc_command_executor::print_blockchain_dynamic_stats(uint64_t nblocks)
 
   if (!invoke<GET_INFO>({}, ires, "Failed to retrieve node info") ||
       !invoke<GET_BASE_FEE_ESTIMATE>({}, feres, "Failed to retrieve current fee info") ||
-      !invoke<HARD_FORK_INFO>({HF_VERSION_PER_BYTE_FEE}, hfres, "Failed to retrieve hard fork info"))
+      !invoke<HARD_FORK_INFO>({static_cast<uint8_t>(cryptonote::feature::PER_BYTE_FEE)}, hfres, "Failed to retrieve hard fork info"))
     return false;
 
   tools::msg_writer() << "Height: " << ires.height << ", diff " << ires.difficulty << ", cum. diff " << ires.cumulative_difficulty
@@ -1525,7 +1528,7 @@ bool rpc_command_executor::sync_info()
     for (const auto &s: res.spans)
     {
       std::string address = epee::string_tools::pad_string(s.remote_address, 24);
-      std::string pruning_seed = epee::string_tools::to_string_hex(tools::get_pruning_seed(s.start_block_height, std::numeric_limits<uint64_t>::max(), CRYPTONOTE_PRUNING_LOG_STRIPES));
+      std::string pruning_seed = epee::string_tools::to_string_hex(tools::get_pruning_seed(s.start_block_height, std::numeric_limits<uint64_t>::max(), cryptonote::PRUNING_LOG_STRIPES));
       if (s.size == 0)
       {
         tools::success_msg_writer() << address << "  " << s.nblocks << "/" << pruning_seed << " (" << s.start_block_height << " - " << (s.start_block_height + s.nblocks - 1) << ")  -";
@@ -1582,7 +1585,7 @@ static void print_participation_history(std::ostringstream &stream, std::vector<
   }
 }
 
-static void append_printable_master_node_list_entry(cryptonote::network_type nettype, bool detailed_view, uint64_t blockchain_height, uint64_t entry_index, GET_MASTER_NODES::response::entry const &entry, std::string &buffer,uint8_t hf_version)
+static void append_printable_master_node_list_entry(cryptonote::network_type nettype, bool detailed_view, uint64_t blockchain_height, uint64_t entry_index, GET_MASTER_NODES::response::entry const &entry, std::string &buffer)
 {
   const char indent1[] = "  ";
   const char indent2[] = "    ";
@@ -1607,21 +1610,22 @@ static void append_printable_master_node_list_entry(cryptonote::network_type net
   uint64_t const now = time(nullptr);
   {
     uint64_t expiry_height = 0;
-    if (entry.registration_hf_version >= cryptonote::network_version_11_infinite_staking)
+    auto reg_hf = static_cast<hf>(entry.registration_hf_version);
+    if (reg_hf >= hf::hf11_infinite_staking)
     {
       expiry_height = entry.requested_unlock_height;
     }
-    else if (entry.registration_hf_version >= cryptonote::network_version_10_bulletproofs)
+    else if (reg_hf >= hf::hf10_bulletproofs)
     {
         expiry_height = entry.registration_height + master_nodes::staking_num_lock_blocks(nettype,entry.registration_hf_version);
-        expiry_height += STAKING_REQUIREMENT_LOCK_BLOCKS_EXCESS;
+        expiry_height += cryptonote::old::STAKING_REQUIREMENT_LOCK_BLOCKS_EXCESS;
     }
     else
     {
         expiry_height = entry.registration_height + master_nodes::staking_num_lock_blocks(nettype,entry.registration_hf_version);
     }
 
-    stream << indent2 << "Registration: Hardfork Version: " << entry.registration_hf_version << "; Height: " << entry.registration_height << "; Expiry: ";
+    stream << indent2 << "Registration: Hardfork Version: " << static_cast<int>(entry.registration_hf_version) << "; Height: " << entry.registration_height << "; Expiry: ";
     if (expiry_height == master_nodes::KEY_IMAGE_AWAITING_UNLOCK_HEIGHT)
     {
         stream << "Staking Infinitely (stake unlock not requested)\n";
@@ -1629,7 +1633,7 @@ static void append_printable_master_node_list_entry(cryptonote::network_type net
     else
     {
       uint64_t delta_height      = (blockchain_height >= expiry_height) ? 0 : expiry_height - blockchain_height;
-      uint64_t expiry_epoch_time = now + (delta_height * tools::to_seconds(TARGET_BLOCK_TIME));
+      uint64_t expiry_epoch_time = now + (delta_height * tools::to_seconds(cryptonote::TARGET_BLOCK_TIME));
       stream << expiry_height << " (in " << delta_height << ") blocks\n";
       stream << indent2 << "Expiry Date (estimated): " << get_date_time(expiry_epoch_time) << " (" << get_human_time_ago(expiry_epoch_time, now) << ")\n";
     }
@@ -1642,7 +1646,7 @@ static void append_printable_master_node_list_entry(cryptonote::network_type net
 
   if (detailed_view) // Print operator information
   {
-    stream << indent2 << "Operator Cut (\% Of Reward): " << to_string_rounded((entry.portions_for_operator / (double)STAKING_PORTIONS) * 100.0, 2) << "%\n";
+    stream << indent2 << "Operator Cut (\% Of Reward): " << to_string_rounded((entry.portions_for_operator / (double)cryptonote::old::STAKING_PORTIONS) * 100.0, 2) << "%\n";
     stream << indent2 << "Operator Address: " << entry.operator_address << "\n";
   }
 
@@ -1750,7 +1754,7 @@ static void append_printable_master_node_list_entry(cryptonote::network_type net
   if (entry.active) {
     stream << indent2 << "Current Status: ACTIVE\n";
     stream << indent2 << "Downtime Credits: " << entry.earned_downtime_blocks << " blocks"
-      << " (about " << to_string_rounded(entry.earned_downtime_blocks / (double) BLOCKS_PER_HOUR, 2)  << " hours)";
+      << " (about " << to_string_rounded(entry.earned_downtime_blocks / (double) cryptonote::BLOCKS_PER_HOUR, 2)  << " hours)";
 
     if (entry.earned_downtime_blocks < master_nodes::DECOMMISSION_MINIMUM)
       stream << " (Note: " << master_nodes::DECOMMISSION_MINIMUM << " blocks required to enable deregistration delay)";
@@ -1799,10 +1803,10 @@ bool rpc_command_executor::print_mn(const std::vector<std::string> &args)
       return false;
 
     cryptonote::network_type nettype =
-      get_info_res.mainnet  ? cryptonote::MAINNET :
-      get_info_res.devnet ? cryptonote::DEVNET :
-      get_info_res.testnet  ? cryptonote::TESTNET :
-      cryptonote::UNDEFINED;
+      get_info_res.mainnet  ? cryptonote::network_type::MAINNET :
+      get_info_res.devnet ? cryptonote::network_type::DEVNET :
+      get_info_res.testnet  ? cryptonote::network_type::TESTNET :
+      cryptonote::network_type::UNDEFINED;
     uint64_t curr_height = get_info_res.height;
 
     std::vector<const GET_MASTER_NODES::response::entry*> unregistered;
@@ -1865,17 +1869,16 @@ bool rpc_command_executor::print_mn(const std::vector<std::string> &args)
 
     std::string unregistered_print_data;
     std::string registered_print_data;
-    const uint8_t hf_version = cryptonote::get_network_version(nettype, curr_height);
     for (size_t i = 0; i < unregistered.size(); i++)
     {
       if (i) unregistered_print_data.append("\n");
-      append_printable_master_node_list_entry(nettype, detailed_view, curr_height, i, *unregistered[i], unregistered_print_data, hf_version);
+      append_printable_master_node_list_entry(nettype, detailed_view, curr_height, i, *unregistered[i], unregistered_print_data);
     }
 
     for (size_t i = 0; i < registered.size(); i++)
     {
       if (i) registered_print_data.append("\n");
-      append_printable_master_node_list_entry(nettype, detailed_view, curr_height, i, *registered[i], registered_print_data,hf_version);
+      append_printable_master_node_list_entry(nettype, detailed_view, curr_height, i, *registered[i], registered_print_data);
     }
 
     if (unregistered.size() > 0)
@@ -1954,10 +1957,10 @@ static uint64_t get_amount_to_make_portions(uint64_t amount, uint64_t portions)
 {
   uint64_t lo, hi, resulthi, resultlo;
   lo = mul128(amount, portions, &hi);
-  if (lo > UINT64_MAX - (STAKING_PORTIONS - 1))
+  if (lo > UINT64_MAX - (cryptonote::old::STAKING_PORTIONS - 1))
     hi++;
-  lo += STAKING_PORTIONS-1;
-  div128_64(hi, lo, STAKING_PORTIONS, &resulthi, &resultlo);
+  lo += cryptonote::old::STAKING_PORTIONS-1;
+  div128_64(hi, lo, cryptonote::old::STAKING_PORTIONS, &resulthi, &resultlo);
   return resultlo;
 }
 
@@ -1965,7 +1968,7 @@ static uint64_t get_actual_amount(uint64_t amount, uint64_t portions)
 {
   uint64_t lo, hi, resulthi, resultlo;
   lo = mul128(amount, portions, &hi);
-  div128_64(hi, lo, STAKING_PORTIONS, &resulthi, &resultlo);
+  div128_64(hi, lo, cryptonote::old::STAKING_PORTIONS, &resulthi, &resultlo);
   return resultlo;
 }
 
@@ -2009,16 +2012,16 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
   }
 
   uint64_t block_height = std::max(res.height, res.target_height);
-  uint8_t hf_version = hf_res.version;
+  auto hf_version = hf_res.version;
 #if defined(BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
   cryptonote::network_type const nettype = cryptonote::FAKECHAIN;
 #else
   cryptonote::network_type const nettype =
-    res.mainnet  ? cryptonote::MAINNET :
-    res.devnet ? cryptonote::DEVNET :
-    res.testnet  ? cryptonote::TESTNET :
-    res.nettype == "fakechain" ? cryptonote::FAKECHAIN :
-    cryptonote::UNDEFINED;
+    res.mainnet  ? cryptonote::network_type::MAINNET :
+    res.devnet ? cryptonote::network_type::DEVNET :
+    res.testnet  ? cryptonote::network_type::TESTNET :
+    res.nettype == "fakechain" ? cryptonote::network_type::FAKECHAIN :
+    cryptonote::network_type::UNDEFINED;
 #endif
 
   // Query the latest block we've synced and check that the timestamp is sensible, issue a warning if not
@@ -2058,7 +2061,7 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
              master_nodes::get_staking_requirement(block_height + 30 * 24)); // allow 1 day
 
   // anything less than DUST will be added to operator stake
-  const uint64_t DUST = MAX_NUMBER_OF_CONTRIBUTORS;
+  const uint64_t DUST = beldex::MAX_NUMBER_OF_CONTRIBUTORS;
   std::cout << "\n BELDEX MASTER NODE REGISTRATION "<< std::endl;
     std::cout << "Current staking requirement: " << cryptonote::print_money(staking_requirement) << " " << cryptonote::get_unit() << std::endl;
 
@@ -2082,8 +2085,8 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
       register_step prev_step = register_step::is_open_stake__operator_address_to_reserve;
       bool is_solo_stake;
       size_t num_participants = 1;
-      uint64_t operator_fee_portions = STAKING_PORTIONS;
-      uint64_t portions_remaining = STAKING_PORTIONS;
+      uint64_t operator_fee_portions = cryptonote::old::STAKING_PORTIONS;
+      uint64_t portions_remaining = cryptonote::old::STAKING_PORTIONS;
       uint64_t total_reserved_contributions = 0;
       std::vector<std::string> addresses;
       std::vector<uint64_t> contributions;
@@ -2120,7 +2123,7 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
         {
           std::string address_str;
           state.addresses.push_back(address_str); 
-          state.contributions.push_back(STAKING_PORTIONS);
+          state.contributions.push_back(cryptonote::old::STAKING_PORTIONS);
           state.portions_remaining = 0;
           state.total_reserved_contributions += staking_requirement;
           state.prev_step = step;
@@ -2189,7 +2192,7 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
 
       case register_step::is_open_stake__how_many_more_contributors:
       {
-        std::string prompt = "Number of additional contributors [1-" + std::to_string(MAX_NUMBER_OF_CONTRIBUTORS - 1) + "]";
+        std::string prompt = "Number of additional contributors [1-" + std::to_string(beldex::MAX_NUMBER_OF_CONTRIBUTORS - 1) + "]";
         std::string input;
         last_input_result = input_line_back_cancel_get_input(prompt.c_str(), input);
 
@@ -2203,9 +2206,9 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
         }
 
         long additional_contributors = strtol(input.c_str(), NULL, 10 /*base 10*/);
-        if (additional_contributors < 1 || additional_contributors > (MAX_NUMBER_OF_CONTRIBUTORS - 1))
+        if (additional_contributors < 1 || additional_contributors > (beldex::MAX_NUMBER_OF_CONTRIBUTORS - 1))
         {
-          std::cout << "Invalid value. Should be between [1-" << (MAX_NUMBER_OF_CONTRIBUTORS - 1) << "]" << std::endl;
+          std::cout << "Invalid value. Should be between [1-" << (beldex::MAX_NUMBER_OF_CONTRIBUTORS - 1) << "]" << std::endl;
           continue;
         }
 
@@ -2412,8 +2415,8 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
         assert(state.addresses.size() == state.contributions.size());
         const uint64_t amount_left = staking_requirement - state.total_reserved_contributions;
 
-        std::cout << "Summary:" << std::endl;
-        std::cout << "Operating costs as % of reward: " << (state.operator_fee_portions * 100.0 / static_cast<double>(STAKING_PORTIONS)) << "%" << std::endl;
+        std::cout << "nRegistration Summary:" << std::endl;
+        std::cout << "Operating costs as % of reward: " << (state.operator_fee_portions * 100.0 / static_cast<double>(cryptonote::old::STAKING_PORTIONS)) << "%" << std::endl;
         printf("%-16s%-9s%-19s%-s\n", "Contributor", "Address", "Contribution", "Contribution(%)");
         printf("%-16s%-9s%-19s%-s\n", "___________", "_______", "____________", "_______________");
 
@@ -2423,7 +2426,7 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
           uint64_t amount = get_actual_amount(staking_requirement, state.contributions[i]);
           if (amount_left <= DUST && i == 0)
             amount += amount_left; // add dust to the operator.
-          printf("%-16s%-9s%-19s%-.9f\n", participant_name.c_str(), state.addresses[i].substr(0, 6).c_str(), cryptonote::print_money(amount).c_str(), (double)state.contributions[i] * 100 / (double)STAKING_PORTIONS);
+          printf("%-16s%-9s%-19s%-.9f\n", participant_name.c_str(), state.addresses[i].substr(0, 6).c_str(), cryptonote::print_money(amount).c_str(), (double)state.contributions[i] * 100 / (double)cryptonote::old::STAKING_PORTIONS);
         }
 
         if (amount_left > DUST)

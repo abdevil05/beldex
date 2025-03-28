@@ -56,6 +56,7 @@
 #include "common/command_line.h"
 #include "common/periodic_task.h"
 #include "common/fs.h"
+#include "common/util.h"
 
 PUSH_WARNINGS
 DISABLE_VS_WARNINGS(4355)
@@ -201,12 +202,12 @@ namespace nodetool
       void set_config_defaults() noexcept
       {
         // at this moment we have a hardcoded config
-        m_config.m_net_config.handshake_interval = P2P_DEFAULT_HANDSHAKE_INTERVAL;
-        m_config.m_net_config.packet_max_size = P2P_DEFAULT_PACKET_MAX_SIZE;
+        m_config.m_net_config.handshake_interval = tools::to_seconds(cryptonote::p2p::DEFAULT_HANDSHAKE_INTERVAL);
+        m_config.m_net_config.packet_max_size = cryptonote::p2p::DEFAULT_PACKET_MAX_SIZE;
         m_config.m_net_config.config_id = 0;
-        m_config.m_net_config.connection_timeout = P2P_DEFAULT_CONNECTION_TIMEOUT;
-        m_config.m_net_config.ping_connection_timeout = P2P_DEFAULT_PING_CONNECTION_TIMEOUT;
-        m_config.m_net_config.send_peerlist_sz = P2P_DEFAULT_PEERS_IN_HANDSHAKE;
+        m_config.m_net_config.connection_timeout = cryptonote::p2p::DEFAULT_CONNECTION_TIMEOUT;
+        m_config.m_net_config.ping_connection_timeout = cryptonote::p2p::DEFAULT_PING_CONNECTION_TIMEOUT;
+        m_config.m_net_config.send_peerlist_sz = cryptonote::p2p::DEFAULT_PEERS_IN_HANDSHAKE;
         m_config.m_support_flags = 0; // only set in public zone
       }
     };
@@ -253,9 +254,9 @@ namespace nodetool
     uint32_t get_max_out_public_peers() const;
     void change_max_in_public_peers(size_t count);
     uint32_t get_max_in_public_peers() const;
-    virtual bool block_host(const epee::net_utils::network_address &adress, time_t seconds = P2P_IP_BLOCKTIME);
+    virtual bool block_host(const epee::net_utils::network_address &adress, time_t seconds = tools::to_seconds(cryptonote::p2p::IP_BLOCK_TIME));
     virtual bool unblock_host(const epee::net_utils::network_address &address);
-    virtual bool block_subnet(const epee::net_utils::ipv4_network_subnet &subnet, time_t seconds = P2P_IP_BLOCKTIME);
+    virtual bool block_subnet(const epee::net_utils::ipv4_network_subnet &subnet, time_t seconds = tools::to_seconds(cryptonote::p2p::IP_BLOCK_TIME));
     virtual bool unblock_subnet(const epee::net_utils::ipv4_network_subnet &subnet);
     virtual bool is_host_blocked(const epee::net_utils::network_address &address, time_t *seconds) { return !is_remote_host_allowed(address, seconds); }
     virtual std::map<std::string, time_t> get_blocked_hosts() { std::shared_lock lock{m_blocked_hosts_lock}; return m_blocked_hosts; }
@@ -416,7 +417,7 @@ namespace nodetool
     t_payload_net_handler& m_payload_handler;
     peerlist_storage m_peerlist_storage;
 
-    tools::periodic_task m_peer_handshake_idle_maker_interval{std::chrono::seconds{P2P_DEFAULT_HANDSHAKE_INTERVAL}};
+    tools::periodic_task m_peer_handshake_idle_maker_interval{std::chrono::seconds{cryptonote::p2p::DEFAULT_HANDSHAKE_INTERVAL}};
     tools::periodic_task m_connections_maker_interval{1s};
     tools::periodic_task m_peerlist_store_interval{30min};
     tools::periodic_task m_gray_peerlist_housekeeping_interval{1min};
@@ -456,14 +457,14 @@ namespace nodetool
     std::map<std::string, uint64_t> m_host_fails_score;
 
     std::mutex m_used_stripe_peers_mutex;
-    std::array<std::list<epee::net_utils::network_address>, 1 << CRYPTONOTE_PRUNING_LOG_STRIPES> m_used_stripe_peers;
+    std::array<std::list<epee::net_utils::network_address>, 1 << cryptonote::PRUNING_LOG_STRIPES> m_used_stripe_peers;
 
     boost::uuids::uuid m_network_id;
     cryptonote::network_type m_nettype;
   };
 
-    const int64_t default_limit_up = P2P_DEFAULT_LIMIT_RATE_UP;      // kB/s
-    const int64_t default_limit_down = P2P_DEFAULT_LIMIT_RATE_DOWN;  // kB/s
+    const int64_t default_limit_up = cryptonote::p2p::DEFAULT_LIMIT_RATE_UP;      // kB/s
+    const int64_t default_limit_down = cryptonote::p2p::DEFAULT_LIMIT_RATE_DOWN;  // kB/s
     extern const command_line::arg_descriptor<std::string> arg_p2p_bind_ip;
     extern const command_line::arg_descriptor<std::string> arg_p2p_bind_ipv6_address;
     extern const command_line::arg_descriptor<std::string, false, true, 2> arg_p2p_bind_port;

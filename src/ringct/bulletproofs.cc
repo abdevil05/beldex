@@ -68,7 +68,7 @@ static rct::keyV vector_dup(const rct::key &x, size_t n);
 static rct::key inner_product(const rct::keyV &a, const rct::keyV &b);
 
 static constexpr size_t maxN = 64;
-static constexpr size_t maxM = BULLETPROOF_MAX_OUTPUTS;
+static constexpr size_t maxM = cryptonote::TX_BULLETPROOF_MAX_OUTPUTS;;
 static rct::key Hi[maxN*maxM], Gi[maxN*maxM];
 static ge_p3 Hi_p3[maxN*maxM], Gi_p3[maxN*maxM];
 static std::shared_ptr<straus_cached_data> straus_HiGi_cache;
@@ -99,7 +99,7 @@ static inline bool is_reduced(const rct::key &scalar)
 
 static rct::key get_exponent(const rct::key &base, size_t idx)
 {
-  static const std::string domain_separator(config::HASH_KEY_BULLETPROOF_EXPONENT);
+  static const std::string domain_separator(cryptonote::hashkey::BULLETPROOF_EXPONENT);
   std::string hashed = std::string((const char*)base.bytes, sizeof(base)) + domain_separator + tools::get_varint_data(idx);
   rct::key e;
   ge_p3 e_p3;

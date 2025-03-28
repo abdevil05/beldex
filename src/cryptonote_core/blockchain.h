@@ -639,7 +639,7 @@ namespace cryptonote
      *
      * @return pair of {per-size, per-output} fees
      */
-    static byte_and_output_fees get_dynamic_base_fee(uint64_t block_reward, size_t median_block_weight, uint8_t version);
+    static byte_and_output_fees get_dynamic_base_fee(uint64_t block_reward, size_t median_block_weight, hf version);
 
     /**
      * @brief get dynamic per kB or byte fee estimate for the next few blocks
@@ -801,7 +801,7 @@ namespace cryptonote
      *
      * @return the version
      */
-    uint8_t get_network_version(std::optional<uint64_t> height = std::nullopt) const;
+    hf get_network_version(std::optional<uint64_t> height = std::nullopt) const;
 
     /**
      * @brief remove transactions from the transaction pool (if present)
@@ -1312,7 +1312,7 @@ namespace cryptonote
      *
      * @return false if anything is found wrong with the miner transaction, otherwise true
      */
-    bool prevalidate_miner_transaction(const block& b, uint64_t height, uint8_t hf_version);
+    bool prevalidate_miner_transaction(const block& b, uint64_t height, hf hf_version);
 
     /**
      * @brief validates a miner (coinbase) transaction
@@ -1329,7 +1329,7 @@ namespace cryptonote
      *
      * @return false if anything is found wrong with the miner transaction, otherwise true
      */
-    bool validate_miner_transaction(const block& b, size_t cumulative_block_weight, uint64_t fee, uint64_t& base_reward, uint64_t already_generated_coins, uint8_t version);
+    bool validate_miner_transaction(const block& b, size_t cumulative_block_weight, uint64_t fee, uint64_t& base_reward, uint64_t already_generated_coins, hf version);
 
     /**
      * @brief reverts the blockchain to its previous state following a failed switch

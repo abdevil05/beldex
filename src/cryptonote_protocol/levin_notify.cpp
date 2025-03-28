@@ -46,19 +46,11 @@
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "net.p2p.tx"
 
-namespace cryptonote
-{
-namespace levin
+namespace cryptonote::levin
 {
   namespace
   {
     constexpr std::size_t connection_id_reserve_size = 100;
-
-    constexpr const std::chrono::minutes noise_min_epoch{CRYPTONOTE_NOISE_MIN_EPOCH};
-    constexpr const std::chrono::seconds noise_epoch_range{CRYPTONOTE_NOISE_EPOCH_RANGE};
-
-    constexpr const std::chrono::seconds noise_min_delay{CRYPTONOTE_NOISE_MIN_DELAY};
-    constexpr const std::chrono::seconds noise_delay_range{CRYPTONOTE_NOISE_DELAY_RANGE};
 
     /*! Select a randomized duration from 0 to `range`. The precision will be to
         the systems `steady_clock`. As an example, supplying 3 seconds to this
@@ -199,7 +191,7 @@ namespace levin
           connection_count(0),
           is_public(is_public)
       {
-        for (std::size_t count = 0; !noise.view.empty() && count < CRYPTONOTE_NOISE_CHANNELS; ++count)
+        for (std::size_t count = 0; !noise.view.empty() && count < NOISE_CHANNELS; ++count)
           channels.emplace_back(io_service);
       }
 
@@ -311,7 +303,7 @@ namespace levin
         noise_channel& channel = zone_->channels.at(channel_);
         assert(channel.strand.running_in_this_thread());
         static_assert(
-          CRYPTONOTE_MAX_FRAGMENTS <= (noise_min_epoch / (noise_min_delay + noise_delay_range)),
+          MAX_FRAGMENTS <= static_cast<size_t>(NOISE_MIN_EPOCH / (NOISE_MIN_DELAY + NOISE_DELAY_RANGE)),
           "Max fragments more than the max that can be sent in an epoch"
         );
 
@@ -403,7 +395,7 @@ namespace levin
           return;
 
         noise_channel& channel = zone->channels.at(index);
-        channel.next_noise.expires_at(start + noise_min_delay + random_duration(noise_delay_range));
+        channel.next_noise.expires_at(start + NOISE_MIN_DELAY + random_duration(NOISE_DELAY_RANGE));
         channel.next_noise.async_wait(
           channel.strand.wrap(send_noise{std::move(zone), index})
         );
@@ -497,7 +489,7 @@ namespace levin
     if (!zone_->noise.view.empty())
     {
       const auto now = std::chrono::steady_clock::now();
-      start_epoch{zone_, noise_min_epoch, noise_epoch_range, CRYPTONOTE_NOISE_CHANNELS}();
+      start_epoch{zone_, NOISE_MIN_EPOCH, NOISE_EPOCH_RANGE, NOISE_CHANNELS}();
       for (std::size_t channel = 0; channel < zone_->channels.size(); ++channel)
         send_noise::wait(now, zone_, channel);
     }
@@ -511,12 +503,12 @@ namespace levin
     if (!zone_)
       return {false, false};
 
-    return {!zone_->noise.view.empty(), CRYPTONOTE_NOISE_CHANNELS <= zone_->connection_count};
+    return {!zone_->noise.view.empty(), NOISE_CHANNELS <= zone_->connection_count};
   }
 
   void notify::new_out_connection()
   {
-    if (!zone_ || zone_->noise.view.empty() || CRYPTONOTE_NOISE_CHANNELS <= zone_->connection_count)
+    if (!zone_ || zone_->noise.view.empty() || NOISE_CHANNELS <= zone_->connection_count)
       return;
 
     zone_->strand.dispatch(
@@ -557,7 +549,7 @@ namespace levin
         MINFO("send_txs covert send in \"noise\" channel");
       // covert send in "noise" channel
       static_assert(
-        CRYPTONOTE_MAX_FRAGMENTS * CRYPTONOTE_NOISE_BYTES <= LEVIN_DEFAULT_MAX_PACKET_SIZE, "most nodes will reject this fragment setting"
+        MAX_FRAGMENTS * NOISE_BYTES <= LEVIN_DEFAULT_MAX_PACKET_SIZE, "most nodes will reject this fragment setting"
       );
 
       // padding is not useful when using noise mode
@@ -565,7 +557,7 @@ namespace levin
       epee::shared_sv message{epee::levin::make_fragmented_notify(
         zone_->noise.view, NOTIFY_NEW_TRANSACTIONS::ID, epee::strspan<std::uint8_t>(payload)
       )};
-      if (CRYPTONOTE_MAX_FRAGMENTS * zone_->noise.size() < message.size())
+      if (MAX_FRAGMENTS * zone_->noise.size() < message.size())
       {
         MERROR("notify::send_txs provided message exceeding covert fragment size");
         return false;
@@ -591,5 +583,4 @@ namespace levin
 
     return true;
   }
-} // levin
-} // net
+} // cryptonote::levin

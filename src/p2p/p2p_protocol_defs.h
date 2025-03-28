@@ -148,8 +148,8 @@ namespace nodetool
 
     uint32_t max_out_connection_count;
     uint32_t max_in_connection_count;
-    uint32_t connection_timeout;
-    uint32_t ping_connection_timeout;
+    std::chrono::milliseconds connection_timeout;
+    std::chrono::milliseconds ping_connection_timeout;
     uint32_t handshake_interval;
     uint32_t packet_max_size;
     uint32_t config_id;
@@ -172,7 +172,7 @@ namespace nodetool
   };
   
 
-#define P2P_COMMANDS_POOL_BASE 1000
+  inline constexpr int P2P_COMMANDS_POOL_BASE = 1000;
 
   /************************************************************************/
   /*                                                                      */

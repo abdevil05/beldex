@@ -867,10 +867,10 @@ bool simple_wallet::print_fee_info(const std::vector<std::string> &args/* = std:
   typical_fees << print_money(typical_fee) << " (" << tools::allowed_priority_strings[1] << ")";
 
   auto hf_version = m_wallet->get_hard_fork_version();
-  if (hf_version && *hf_version >= HF_VERSION_FLASH)
+  if (hf_version && *hf_version >= feature::FLASH)
   {
     uint64_t pct = m_wallet->get_fee_percent(tools::tx_priority_flash, txtype::standard);
-    uint64_t fixed = FLASH_BURN_FIXED;
+    uint64_t fixed = beldex::FLASH_BURN_FIXED;
 
     uint64_t typical_flash_fee = (base_fee.first * typical_size + base_fee.second * typical_outs) * pct / 100 + fixed;
 
@@ -2439,7 +2439,7 @@ bool simple_wallet::set_ignore_outputs_above(const std::vector<std::string> &arg
       return true;
     }
     if (amount == 0)
-      amount = MONEY_SUPPLY;
+      amount = beldex::MONEY_SUPPLY;
     m_wallet->ignore_outputs_above(amount);
     m_wallet->rewrite(m_wallet_file, pwd_container->password());
   }
@@ -3442,7 +3442,7 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm)
     fail_msg_writer() << tr("Can't specify more than one of --testnet and --devnet");
     return false;
   }
-  network_type const nettype = testnet ? TESTNET : devnet ? DEVNET : MAINNET;
+  network_type const nettype = testnet ? network_type::TESTNET : devnet ? network_type::DEVNET : network_type::MAINNET;
 
   epee::wipeable_string multisig_keys;
   epee::wipeable_string password;
@@ -4775,7 +4775,7 @@ void simple_wallet::on_money_received(uint64_t height, const crypto::hash &txid,
       tr("idx ") << subaddr_index;
   }
 
-  const uint64_t warn_height = m_wallet->nettype() == TESTNET ? 1000000 : m_wallet->nettype() == DEVNET ? 0 : 1650000;
+  const uint64_t warn_height = m_wallet->nettype() == network_type::TESTNET ? 1000000 : m_wallet->nettype() == network_type::DEVNET ? 0 : 1650000;
   if (height >= warn_height)
   {
     std::vector<tx_extra_field> tx_extra_fields;
@@ -5700,7 +5700,7 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
       LOG_PRINT_L0("confirm_and_send_tx 3");
       if (lock_time_in_blocks > 0)
       {
-        float days = lock_time_in_blocks / (double) BLOCKS_PER_DAY;
+        double days = lock_time_in_blocks / (double) BLOCKS_PER_DAY;
         prompt << boost::format(tr(".\nThis transaction (including %s change) will unlock on block %llu, in approximately %s days (assuming 2 minutes per block)")) % cryptonote::print_money(change) % ((unsigned long long)unlock_block) % days;
       }
 
@@ -5714,7 +5714,7 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
         {
           if (auto* in_to_key = std::get_if<txin_to_key>(&vin))
           {
-            if (in_to_key->key_offsets.size() != CRYPTONOTE_DEFAULT_TX_MIXIN + 1)
+            if (in_to_key->key_offsets.size() != cryptonote::TX_OUTPUT_DECOYS + 1)
               default_ring_size = false;
           }
         }
@@ -5975,7 +5975,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
       unlock_block = bc_height + locked_blocks;
     }
 
-    std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+    auto hf_version = m_wallet->get_hard_fork_version();
     if (!hf_version)
     {
       fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
@@ -5983,7 +5983,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
     }
 
     beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, txtype::standard, priority, burn_amount);
-    ptx_vector = m_wallet->create_transactions_2(dsts, CRYPTONOTE_DEFAULT_TX_MIXIN, unlock_block, priority, extra, m_current_subaddress_account, subaddr_indices, tx_params);
+    ptx_vector = m_wallet->create_transactions_2(dsts, cryptonote::TX_OUTPUT_DECOYS, unlock_block, priority, extra, m_current_subaddress_account, subaddr_indices, tx_params);
 
     if (ptx_vector.empty())
     {
@@ -6960,14 +6960,14 @@ bool simple_wallet::bns_encrypt(std::vector<std::string> args)
     return false;
   }
 
-  std::string reason;
-  std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+  auto hf_version = m_wallet->get_hard_fork_version();
   if (!hf_version)
   {
     tools::fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
     return false;
   }
 
+  std::string reason;
   if (!bns::validate_bns_name(name, &reason))
   {
     tools::fail_msg_writer() << "Invalid BNS name '" << name << "': " << reason;
@@ -6981,7 +6981,7 @@ bool simple_wallet::bns_encrypt(std::vector<std::string> args)
     return false;
   }
 
-  bool old_argon2 = type == bns::mapping_type::bchat && *hf_version < cryptonote::network_version_17_POS;
+  bool old_argon2 = type == bns::mapping_type::bchat && *hf_version < hf::hf17_POS;
   if (!mval.encrypt(name, nullptr, old_argon2))
   {
     tools::fail_msg_writer() << "Value encryption failed";
@@ -7397,7 +7397,7 @@ bool simple_wallet::coin_burn(std::vector<std::string> args)
   {
     std::vector<uint8_t> extra;
     std::vector<tools::wallet2::pending_tx> ptx_vector;
-    std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+    auto hf_version = m_wallet->get_hard_fork_version();
     if (!hf_version)
     {
       fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
@@ -7407,7 +7407,7 @@ bool simple_wallet::coin_burn(std::vector<std::string> args)
     beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, txtype::coin_burn, priority, burn_amount);
     // transaction process called
     if(burn_amount){
-      ptx_vector = m_wallet->create_transactions_2({}, CRYPTONOTE_DEFAULT_TX_MIXIN, 0, priority, extra, m_current_subaddress_account, subaddr_indices, tx_params);
+      ptx_vector = m_wallet->create_transactions_2({}, cryptonote::TX_OUTPUT_DECOYS, 0, priority, extra, m_current_subaddress_account, subaddr_indices, tx_params);
     }else{
       tools::wallet2::transfer_container transfers;
       bool available = false;
@@ -7436,7 +7436,7 @@ bool simple_wallet::coin_burn(std::vector<std::string> args)
         return false;
       }
 
-      ptx_vector = m_wallet->create_transactions_burn(ki, outputs, CRYPTONOTE_DEFAULT_TX_MIXIN, 0, priority, extra);
+      ptx_vector = m_wallet->create_transactions_burn(ki, outputs, cryptonote::TX_OUTPUT_DECOYS, 0, priority, extra);
     }
 
     if (ptx_vector.empty())
@@ -7850,7 +7850,7 @@ bool simple_wallet::sweep_main(uint32_t account, uint64_t below, Transfer transf
   SCOPED_WALLET_UNLOCK();
   try
   {
-    auto ptx_vector = m_wallet->create_transactions_all(below, info.address, info.is_subaddress, outputs, CRYPTONOTE_DEFAULT_TX_MIXIN, unlock_block /* unlock_time */, priority, extra, account, subaddr_indices);
+    auto ptx_vector = m_wallet->create_transactions_all(below, info.address, info.is_subaddress, outputs, cryptonote::TX_OUTPUT_DECOYS, unlock_block /* unlock_time */, priority, extra, account, subaddr_indices);
     sweep_main_internal(sweep_type_t::all_or_below, ptx_vector, info, priority == tools::tx_priority_flash);
   }
   catch (const std::exception &e)
@@ -7946,7 +7946,7 @@ bool simple_wallet::sweep_single(const std::vector<std::string> &args_)
   try
   {
     // figure out what tx will be necessary
-    auto ptx_vector = m_wallet->create_transactions_single(ki, info.address, info.is_subaddress, outputs, CRYPTONOTE_DEFAULT_TX_MIXIN, 0 /* unlock_time */, priority, extra);
+    auto ptx_vector = m_wallet->create_transactions_single(ki, info.address, info.is_subaddress, outputs, cryptonote::TX_OUTPUT_DECOYS, 0 /* unlock_time */, priority, extra);
     sweep_main_internal(sweep_type_t::single, ptx_vector, info, priority == tools::tx_priority_flash);
   }
   catch (const std::exception& e)
@@ -9974,8 +9974,8 @@ bool simple_wallet::wallet_info(const std::vector<std::string> &args)
     type = tr("Normal");
   message_writer() << tr("Type: ") << type;
   message_writer() << tr("Network type: ") << (
-    m_wallet->nettype() == cryptonote::TESTNET ? tr("Testnet") :
-    m_wallet->nettype() == cryptonote::DEVNET ? tr("Devnet") : tr("Mainnet"));
+    m_wallet->nettype() == cryptonote::network_type::TESTNET ? tr("Testnet") :
+    m_wallet->nettype() == cryptonote::network_type::DEVNET ? tr("Devnet") : tr("Mainnet"));
   return true;
 }
 
@@ -10389,9 +10389,9 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       success_msg_writer() << "Timestamp: " << tools::get_human_readable_timestamp(pd.m_timestamp);
       success_msg_writer() << "Amount: " << print_money(pd.m_amount);
       success_msg_writer() << "Payment ID: " << payment_id;
-      if (pd.m_unlock_time < CRYPTONOTE_MAX_BLOCK_NUMBER)
+      if (pd.m_unlock_time < MAX_BLOCK_NUMBER)
       {
-        uint64_t bh = std::max(pd.m_unlock_time, pd.m_block_height + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17);
+        uint64_t bh = std::max(pd.m_unlock_time, pd.m_block_height + DEFAULT_TX_SPENDABLE_AGE_V17);
         uint64_t suggested_threshold = 0;
         if (!pd.m_unmined_flash)
         {
@@ -10410,7 +10410,7 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
         uint64_t current_time = static_cast<uint64_t>(time(NULL));
 
 
-        uint64_t threshold = current_time + tools::to_seconds(CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V3);
+        uint64_t threshold = current_time + tools::to_seconds(LOCKED_TX_ALLOWED_DELTA_BLOCKS * TARGET_BLOCK_TIME);
         if (threshold >= pd.m_unlock_time)
           success_msg_writer() << "unlocked for " << tools::get_human_readable_timespan(std::chrono::seconds(threshold - pd.m_unlock_time));
         else
@@ -10449,9 +10449,9 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       success_msg_writer() << "Change: " << print_money(change);
       success_msg_writer() << "Fee: " << print_money(fee);
       success_msg_writer() << "Destinations: " << dests;
-      if (pd.m_unlock_time < CRYPTONOTE_MAX_BLOCK_NUMBER)
+      if (pd.m_unlock_time < MAX_BLOCK_NUMBER)
       {
-        uint64_t bh = std::max(pd.m_unlock_time, pd.m_block_height + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17);
+        uint64_t bh = std::max(pd.m_unlock_time, pd.m_block_height + DEFAULT_TX_SPENDABLE_AGE_V17);
         if (bh >= last_block_height)
           success_msg_writer() << "Locked: " << (bh - last_block_height) << " blocks to unlock";
         else
@@ -10460,7 +10460,7 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       else
       {
         uint64_t current_time = static_cast<uint64_t>(time(NULL));
-        uint64_t threshold = current_time + tools::to_seconds(CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V3);
+        uint64_t threshold = current_time + tools::to_seconds(LOCKED_TX_ALLOWED_DELTA_BLOCKS * TARGET_BLOCK_TIME);
         if (threshold >= pd.m_unlock_time)
           success_msg_writer() << "unlocked for " << tools::get_human_readable_timespan(std::chrono::seconds(threshold - pd.m_unlock_time));
         else

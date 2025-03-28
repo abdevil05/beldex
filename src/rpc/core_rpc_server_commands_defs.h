@@ -599,7 +599,7 @@ namespace rpc {
       uint32_t threads_count;            // Number of running mining threads.
       std::string address;               // Account address daemon is mining to. Empty if not mining.
       std::string pow_algorithm;         // Current hashing algorithm name
-      uint32_t block_target;             // The expected time to solve per block, i.e. TARGET_BLOCK_TIME_OLD
+      uint32_t block_target;             // The expected time to solve per block, i.e. TARGET_BLOCK_TIME_12
       uint64_t block_reward;             // Block reward for the current block being mined.
       uint64_t difficulty;               // The difficulty for the current block being mined.
 
@@ -1441,7 +1441,8 @@ namespace rpc {
 
     struct response
     {
-      uint8_t version;          // The major block version for the fork.
+      hf version;               // The major block version for the fork.
+      uint8_t revision;         // The network revision of this daemon (e.g. 1 for HF 19.1).
       bool enabled;             // Indicates whether hard fork is enforced (that is, at or above the requested hardfork)
       std::optional<uint64_t> earliest_height; // Block height at which hard fork will be enabled.
       std::optional<uint64_t> last_height; // The last block height at which this hard fork will be active; will be omitted if this beldexd is not aware of any future hard fork.
@@ -2092,7 +2093,7 @@ namespace rpc {
       struct entry {
         std::string                           master_node_pubkey;           // The public key of the Master Node.
         uint64_t                              registration_height;           // The height at which the registration for the Master Node arrived on the blockchain.
-        uint16_t                              registration_hf_version;       // The hard fork at which the registration for the Master Node arrived on the blockchain.
+        hf                                    registration_hf_version;       // The hard fork at which the registration for the Master Node arrived on the blockchain.
         uint64_t                              requested_unlock_height;       // The height at which contributions will be released and the Master Node expires. 0 if not requested yet.
         uint64_t                              last_reward_block_height;      // The height that determines when this service node will next receive a reward.  This field is updated when receiving a reward, but is also updated when a MN is activated, recommissioned, or has an IP change position reset.
         uint32_t                              last_reward_transaction_index; // When multiple Master Nodes register (or become active/reactivated) at the same height (i.e. have the same last_reward_block_height), this field contains the activating transaction position in the block which is used to break ties in determining which MN is next in the reward list.

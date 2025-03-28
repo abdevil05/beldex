@@ -42,7 +42,7 @@ namespace dandelionpp
 {
     namespace
     {
-        constexpr const std::size_t expected_max_channels = CRYPTONOTE_NOISE_CHANNELS;
+        constexpr const std::size_t expected_max_channels = cryptonote::NOISE_CHANNELS;
 
         // could be in util somewhere
         struct key_less

@@ -160,11 +160,11 @@ daemon::daemon(boost::program_options::variables_map vm_) :
       if (restricted && restricted_rpc_port != 0)
         std::swap(main_rpc_port, restricted_rpc_port);
       else if (command_line::get_arg(vm, cryptonote::arg_testnet_on))
-        main_rpc_port = config::testnet::RPC_DEFAULT_PORT;
+        main_rpc_port = cryptonote::config::testnet::RPC_DEFAULT_PORT;
       else if (command_line::get_arg(vm, cryptonote::arg_devnet_on))
-        main_rpc_port = config::devnet::RPC_DEFAULT_PORT;
+        main_rpc_port = cryptonote::config::devnet::RPC_DEFAULT_PORT;
       else
-        main_rpc_port = config::RPC_DEFAULT_PORT;
+        main_rpc_port = cryptonote::config::RPC_DEFAULT_PORT;
     }
     if (main_rpc_port && main_rpc_port == restricted_rpc_port)
       restricted = true;
