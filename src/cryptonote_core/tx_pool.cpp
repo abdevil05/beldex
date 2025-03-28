@@ -1826,6 +1826,11 @@ end:
     size_t const max_total_weight = 2 * median_weight - COINBASE_BLOB_RESERVED_SIZE;
     std::unordered_set<crypto::key_image> k_images;
 
+    // Track BNS buys because we can't put more than one for the same BNS name into the same block
+    // (otherwise the *block* will fail but validation won't, because validation here won't see the
+    // earlier tx has having taken effect, but the block addition will).
+    std::unordered_set<crypto::hash> bns_buys;
+  
     LOG_PRINT_L2("Filling block template, median weight " << median_weight << ", " << m_txs_by_fee_and_receive_time.size() << " txes in the pool");
 
     LockedTXN lock(m_blockchain);
@@ -1920,6 +1925,24 @@ end:
       {
         LOG_PRINT_L2("  key images already seen");
         continue;
+      }
+      if (tx.type == txtype::beldex_name_system) {
+        // TX validation above has checked that this isn't an BNS buy for a name that is already
+        // registered, but it can't check that we don't create such a conflict from trying to
+        // put two conflicting registrations in the same block: when actually processing such a
+        // block the second one *would* be invalid because processing the first one created it.
+        //
+        // We only filter buys based on name_hash here which means technically we might
+        // over-filter (e.g. if there is both a bchat + wallet BNS) but that's not a big deal
+        // (one of the two will just get delayed for a block), and perfectly figuring out
+        // whether two might conflict is complicated enough that it's not worth doing here.
+        cryptonote::tx_extra_beldex_name_system bns;
+        if (cryptonote::get_field_from_tx_extra(tx.extra, bns) && bns.is_buying() &&
+          !bns_buys.emplace(bns.name_hash).second) {
+
+          LOG_PRINT_L2("  conflicting BNS buy in mempool");
+          continue;
+        }
       }
 
       bl.tx_hashes.push_back(sorted_it.second);
