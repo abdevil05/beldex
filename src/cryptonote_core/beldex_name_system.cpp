@@ -2333,11 +2333,19 @@ bool name_system_db::save_settings(uint64_t top_height, crypto::hash const &top_
 
 bool name_system_db::prune_db(uint64_t height)
 {
-  if (!bind_and_run(bns_sql_type::pruning, prune_mappings_sql, nullptr, height)) return false;
-  if (!sql_run_statement(bns_sql_type::pruning, prune_owners_sql, nullptr)) return false;
+  bool result = false;
+  if (db) {
+    if (bind_and_run(bns_sql_type::pruning, prune_mappings_sql, nullptr, height))
+      if (sql_run_statement(bns_sql_type::pruning, prune_owners_sql, nullptr))
+        result = true;
 
-  this->last_processed_height = (height - 1);
-  return true;
+    MDEBUG("Detach request for BNS (last processed is" <<  this->last_processed_height << "), " << (result ? "detached" : "failed to detach") << " to " << height);
+
+    if (result)
+      this->last_processed_height = (height - 1);
+  }
+
+  return result;
 }
 
 owner_record name_system_db::get_owner_by_key(bns::generic_owner const &owner)
