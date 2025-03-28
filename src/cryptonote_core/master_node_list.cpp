@@ -123,7 +123,7 @@ namespace master_nodes
 
     std::sort(result.begin(), result.end(),
       [](const pubkey_and_mninfo &a, const pubkey_and_mninfo &b) {
-        return memcmp(reinterpret_cast<const void*>(&a), reinterpret_cast<const void*>(&b), sizeof(a)) < 0;
+        return a.first < b.first;
       });
     return result;
   }
