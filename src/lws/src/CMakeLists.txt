@@ -40,6 +40,7 @@ add_executable(beldex-lws-admin admin_main.cpp)
 target_link_libraries(beldex-lws-admin PRIVATE 
 beldex-lws-db
 beldex-lws-common
+beldex-lws-rpc
 beldex-lws-wire-json
 )
 
