@@ -2517,7 +2517,7 @@ namespace cryptonote { namespace rpc {
       if (!tools::hex_to_type(txid_hex, txid))
       {
         if (!res.status.empty()) res.status += ", ";
-        res.status += "invalid transaction id: " + txid;
+        res.status += "invalid transaction id: " + txid_hex;
         continue;
       }
       cryptonote::blobdata txblob;

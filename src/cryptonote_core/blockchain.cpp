@@ -405,6 +405,24 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
 
   return true;
 }
+
+static bool exec_detach_hooks(
+        Blockchain& blockchain,
+        uint64_t detach_height,
+        std::vector<BlockchainDetachedHook> hooks, // have to change
+        bool by_pop_blocks,
+        bool load_missing_blocks = true) {
+
+    detached_info hook_data{detach_height, by_pop_blocks};
+    for (const auto& hook : hooks)
+        hook(hook_data);
+
+    bool result = true;
+    if (load_missing_blocks)
+        result = blockchain.load_missing_blocks_into_beldex_subsystems();
+    return result;
+}
+
 //------------------------------------------------------------------
 //FIXME: possibly move this into the constructor, to avoid accidentally
 //       dereferencing a null BlockchainDB pointer
@@ -566,10 +584,18 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nett
   for (const auto& hook : m_init_hooks)
     hook();
 
-  if (!m_db->is_read_only() && !load_missing_blocks_into_beldex_subsystems())
+  if (!m_db->is_read_only())
   {
-    MERROR("Failed to load blocks into beldex subsystems");
-    return false;
+    if (!exec_detach_hooks(
+      *this,
+      m_db->height(),
+      m_blockchain_detached_hooks,
+      /*by_pop_blocks*/ false,
+      /*load_missing_blocks_into_beldex_subsystems*/ true)) 
+    {
+        MERROR("Failed to load blocks into beldex subsystems");
+        return false;
+    }
   }
 
   return true;
@@ -680,11 +706,7 @@ void Blockchain::pop_blocks(uint64_t nblocks)
     return;
   }
 
-  detached_info hook_data{m_db->height(), /*by_pop_blocks=*/true};
-  for (const auto& hook : m_blockchain_detached_hooks)
-    hook(hook_data);
-  load_missing_blocks_into_beldex_subsystems();
-
+  exec_detach_hooks(*this, m_db->height(), m_blockchain_detached_hooks, /*by_pop_blocks=*/true);
   if (stop_batch)
     m_db->batch_stop();
 }
@@ -998,11 +1020,7 @@ bool Blockchain::rollback_blockchain_switching(const std::list<block_and_checkpo
     pop_block_from_blockchain();
   }
 
-  // Revert all changes from switching to the alt chain before adding the original chain back in
-  detached_info rollback_hook_data{rollback_height, /*by_pop_blocks=*/false};
-  for (const auto& hook : m_blockchain_detached_hooks)
-    hook(rollback_hook_data);
-  load_missing_blocks_into_beldex_subsystems();
+  exec_detach_hooks(*this, rollback_height, m_blockchain_detached_hooks, /*by_pop_blocks=*/false);
 
   //return back original chain
   for (auto& entry : original_chain)
@@ -1062,10 +1080,7 @@ bool Blockchain::switch_to_alternative_blockchain(const std::list<block_extended
   }
 
   auto split_height = m_db->height();
-  detached_info split_hook_data{split_height, /*by_pop_blocks=*/false};
-  for (const auto& hook : m_blockchain_detached_hooks)
-    hook(split_hook_data);
-  load_missing_blocks_into_beldex_subsystems();
+  exec_detach_hooks(*this, split_height, m_blockchain_detached_hooks, /*by_pop_blocks=*/false);
 
   //connecting new alternative chain
   for(auto alt_ch_iter = alt_chain.begin(); alt_ch_iter != alt_chain.end(); alt_ch_iter++)
@@ -4128,7 +4143,7 @@ bool Blockchain::basic_block_checks(cryptonote::block const &blk, bool alt_block
     }
 
     // this is a cheap test
-    // HF19 TODO: remove the requirement that minor_version must be >= network version
+    // HF20 TODO: remove the requirement that minor_version must be >= network version
     if (auto v = get_network_version(blk_height); (v > hf::none) && (blk.major_version != v || (blk.major_version < hf::hf20_bulletproof_plusplus && blk.minor_version < static_cast<uint8_t>(v))))
     {
       LOG_PRINT_L1("Block with id: " << blk_hash << ", has invalid version " << static_cast<int>(blk.major_version) << "." << +blk.minor_version <<
@@ -4170,8 +4185,11 @@ bool Blockchain::basic_block_checks(cryptonote::block const &blk, bool alt_block
       }
     }
 
-    // HF19 TODO: remove the requirement that minor_version must be >= network version
-    if (required_major_version > hf::none && blk.major_version != required_major_version || (blk.major_version < hf::hf20_bulletproof_plusplus && blk.minor_version < static_cast<uint8_t>(required_major_version)))
+    // HF20 TODO: remove the requirement that minor_version must be >= network version
+    if ((required_major_version > hf::none) && 
+        (blk.major_version != required_major_version ||
+          (blk.major_version < hf::hf20_bulletproof_plusplus &&
+            blk.minor_version < static_cast<uint8_t>(required_major_version))))
     {
       MGINFO_RED("Block with id: " << blk_hash << ", has invalid version " << static_cast<int>(blk.major_version) << "." << +blk.minor_version <<
               "; current: " << static_cast<int>(required_major_version) << "." << static_cast<int>(required_major_version) << " for height " << blk_height);
@@ -4452,9 +4470,12 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
 
   auto abort_block = beldex::defer([&]() {
       pop_block_from_blockchain();
-      detached_info hook_data{m_db->height(), false /*by_pop_blocks*/};
-      for (const auto& hook : m_blockchain_detached_hooks)
-        hook(hook_data);
+      exec_detach_hooks(
+          *this,
+          m_db->height(),
+          m_blockchain_detached_hooks,
+          /*by_pop_blocks=*/false,
+          /*load_missing_blocks=*/false);
   });
 
   // TODO(beldex): Not nice, making the hook take in a vector of pair<transaction,
@@ -5271,7 +5292,7 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
   } while(0); \
 
   // generate sorted tables for all amounts and absolute offsets
-  size_t tx_index = 0, block_index = 0;
+  size_t tx_index = 0;
   for (const auto &entry : blocks_entry)
   {
     if (m_cancel)
@@ -5336,7 +5357,6 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
 
       }
     }
-    ++block_index;
   }
 
   // sort and remove duplicate absolute_offsets in offset_map

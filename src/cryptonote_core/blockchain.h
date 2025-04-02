@@ -1022,6 +1022,8 @@ namespace cryptonote
      */
     void flush_invalid_blocks();
 
+    bool load_missing_blocks_into_beldex_subsystems();
+
 #ifndef IN_UNIT_TESTS
   private:
 #endif
@@ -1048,8 +1050,6 @@ namespace cryptonote
     };
 
     bool create_block_template_internal(block& b, const crypto::hash *from_block, block_template_info const &info, difficulty_type& di, uint64_t& height, uint64_t& expected_reward, const blobdata& ex_nonce);
-
-    bool load_missing_blocks_into_beldex_subsystems();
 
     // TODO: evaluate whether or not each of these typedefs are left over from blockchain_storage
     typedef std::unordered_set<crypto::key_image> key_images_container;
