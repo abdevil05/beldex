@@ -174,7 +174,7 @@ bool NodeRPCProxy::get_earliest_height(uint8_t version, uint64_t &earliest_heigh
   return true;
 }
 
-std::optional<uint8_t> NodeRPCProxy::get_hardfork_version() const
+std::optional<cryptonote::hf> NodeRPCProxy::get_hardfork_version() const
 {
   if (m_offline)
     return std::nullopt;

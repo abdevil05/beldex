@@ -645,7 +645,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(GET_TRANSFERS::request)
   KV_SERIALIZE_OPT(coinbase, true);
   KV_SERIALIZE(filter_by_height);
   KV_SERIALIZE(min_height);
-  KV_SERIALIZE_OPT(max_height, (uint64_t)CRYPTONOTE_MAX_BLOCK_NUMBER);
+  KV_SERIALIZE_OPT(max_height, cryptonote::MAX_BLOCK_NUMBER);
   KV_SERIALIZE(account_index);
   KV_SERIALIZE(subaddr_indices);
   KV_SERIALIZE_OPT(all_accounts, false);

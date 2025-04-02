@@ -91,7 +91,7 @@ namespace cryptonote
       ++nlr;
     nlr += 6;
     const size_t bp_size = 32 * (9 + 2 * nlr);
-    CHECK_AND_ASSERT_THROW_MES_L1(n_outputs <= BULLETPROOF_MAX_OUTPUTS, "maximum number of outputs is " + std::to_string(BULLETPROOF_MAX_OUTPUTS) + " per transaction");
+    CHECK_AND_ASSERT_THROW_MES_L1(n_outputs <= TX_BULLETPROOF_MAX_OUTPUTS, "maximum number of outputs is " + std::to_string(TX_BULLETPROOF_MAX_OUTPUTS) + " per transaction");
     CHECK_AND_ASSERT_THROW_MES_L1(bp_base * n_padded_outputs >= bp_size, "Invalid bulletproof clawback: bp_base " + std::to_string(bp_base) + ", n_padded_outputs "
         + std::to_string(n_padded_outputs) + ", bp_size " + std::to_string(bp_size));
     const uint64_t bp_clawback = (bp_base * n_padded_outputs - bp_size) * 4 / 5;
@@ -392,11 +392,11 @@ namespace cryptonote
       //
       // TODO: get rid of the user-configurable default_decimal_point nonsense and just multiply
       // this value by the `COIN` constant.
-      for (size_t i = 0; i < CRYPTONOTE_DISPLAY_DECIMAL_POINT; i++)
+      for (size_t i = 0; i < beldex::DISPLAY_DECIMAL_POINT; i++)
       {
         if (amount > std::numeric_limits<uint64_t>::max() / 10)
           return false; // would overflow
-        amount *= 10;
+        amount *= 10;  // have to change
       }
     }
 
@@ -407,10 +407,10 @@ namespace cryptonote
       return false; // fractional part contains non-digit
 
     // If too long, but with insignificant 0's, trim them off
-    while (parts[1].size() > CRYPTONOTE_DISPLAY_DECIMAL_POINT && parts[1].back() == '0')
+    while (parts[1].size() > beldex::DISPLAY_DECIMAL_POINT && parts[1].back() == '0')
       parts[1].remove_suffix(1);
 
-    if (parts[1].size() > CRYPTONOTE_DISPLAY_DECIMAL_POINT)
+    if (parts[1].size() > beldex::DISPLAY_DECIMAL_POINT)
       return false; // fractional part has too many significant digits
 
     uint64_t fractional;
@@ -419,7 +419,7 @@ namespace cryptonote
 
     // Scale up the value if it wasn't a full fractional value, e.g. if we have "10.45" then we
     // need to convert the 45 we just parsed to 450'000'000.
-    for (size_t i = parts[1].size(); i < CRYPTONOTE_DISPLAY_DECIMAL_POINT; i++)
+    for (size_t i = parts[1].size(); i < beldex::DISPLAY_DECIMAL_POINT; i++)
       fractional *= 10;
 
     if (fractional > std::numeric_limits<uint64_t>::max() - amount)
@@ -637,10 +637,10 @@ namespace cryptonote
     return true;
   }
 
-  bool add_master_node_state_change_to_tx_extra(std::vector<uint8_t>& tx_extra, const tx_extra_master_node_state_change& state_change, const uint8_t hf_version)
+  bool add_master_node_state_change_to_tx_extra(std::vector<uint8_t>& tx_extra, const tx_extra_master_node_state_change& state_change, const hf hf_version)
   {
     tx_extra_field field;
-    if (hf_version < network_version_13_checkpointing)
+    if (hf_version < hf::hf13_checkpointing)
     {
 
       CHECK_AND_ASSERT_MES(state_change.state == master_nodes::new_state::deregister, false, "internal error: cannot construct an old deregistration for a non-deregistration state change (before hardfork v12)");
@@ -809,9 +809,9 @@ namespace cryptonote
     add_tx_extra<tx_extra_master_node_winner>(tx_extra, winner);
   }
   //---------------------------------------------------------------
-  bool get_master_node_state_change_from_tx_extra(const std::vector<uint8_t>& tx_extra, tx_extra_master_node_state_change &state_change, const uint8_t hf_version)
+  bool get_master_node_state_change_from_tx_extra(const std::vector<uint8_t>& tx_extra, tx_extra_master_node_state_change &state_change, const hf hf_version)
   {
-    if (hf_version >= cryptonote::network_version_13_checkpointing) {
+    if (hf_version >= hf::hf13_checkpointing) {
       // Look for a new-style state change field:
       return get_field_from_tx_extra(tx_extra, state_change);
     }
@@ -1103,7 +1103,7 @@ namespace cryptonote
   std::string get_unit(unsigned int decimal_point)
   {
     if (decimal_point == (unsigned int)-1)
-      decimal_point = CRYPTONOTE_DISPLAY_DECIMAL_POINT;
+      decimal_point = beldex::DISPLAY_DECIMAL_POINT;
     switch (decimal_point)
     {
       case 9:
@@ -1122,7 +1122,7 @@ namespace cryptonote
   std::string print_money(uint64_t amount, unsigned int decimal_point)
   {
     if (decimal_point == (unsigned int)-1)
-      decimal_point = CRYPTONOTE_DISPLAY_DECIMAL_POINT;
+      decimal_point = beldex::DISPLAY_DECIMAL_POINT;
     std::string s = std::to_string(amount);
     if(s.size() < decimal_point+1)
     {
@@ -1386,12 +1386,12 @@ namespace cryptonote
       LOG_ERROR("get_registration_hash addresses.size() != portions.size()");
       return false;
     }
-    uint64_t portions_left = STAKING_PORTIONS;
+    uint64_t portions_left = old::STAKING_PORTIONS;
     for (uint64_t portion : portions)
     {
       if (portion > portions_left)
       {
-        LOG_ERROR(tr("Your registration has more than ") << STAKING_PORTIONS << tr(" portions, this registration is invalid!"));
+        LOG_ERROR(tr("Your registration has more than ") << old::STAKING_PORTIONS << tr(" portions, this registration is invalid!"));
         return false;
       }
       portions_left -= portion;

@@ -128,13 +128,13 @@ namespace cryptonote {
     timestamps.push_back(timestamp);
     difficulties.push_back(cumulative_difficulty);
 
-    bool before_hf16 = !is_hard_fork_at_least(nettype, network_version_17_POS, chain_height);
+    bool before_hf16 = !is_hard_fork_at_least(nettype, hf::hf17_POS, chain_height);
 
     // Trim down arrays
-    while (timestamps.size() > DIFFICULTY_BLOCKS_COUNT(before_hf16))
+    while (timestamps.size() > old::DIFFICULTY_BLOCKS_COUNT(before_hf16))
       timestamps.erase(timestamps.begin());
 
-    while (difficulties.size() > DIFFICULTY_BLOCKS_COUNT(before_hf16))
+    while (difficulties.size() > old::DIFFICULTY_BLOCKS_COUNT(before_hf16))
       difficulties.erase(difficulties.begin());
   }
 
@@ -167,15 +167,15 @@ namespace cryptonote {
   {
     auto result = difficulty_calc_mode::normal;
 
-    if (!is_hard_fork_at_least(nettype, cryptonote::network_version_10_bulletproofs, height))
+    if (!is_hard_fork_at_least(nettype, hf::hf10_bulletproofs, height))
       result = difficulty_calc_mode::use_old_lwma;
     // HF12 switches to RandomX with a likely drastically reduced hashrate versus Turtle, so override
     // difficulty for the first difficulty window blocks:
-    else if (auto randomx_start_height = get_hard_fork_heights(nettype, network_version_13_checkpointing).first;
-        randomx_start_height && height >= *randomx_start_height && height <= *randomx_start_height + DIFFICULTY_WINDOW)
+    else if (auto randomx_start_height = get_hard_fork_heights(nettype, hf::hf13_checkpointing).first;
+        randomx_start_height && height >= *randomx_start_height && height <= *randomx_start_height + old::DIFFICULTY_WINDOW)
       result = difficulty_calc_mode::hf12_override;
-    else if (auto POS_start_height = get_hard_fork_heights(nettype, network_version_17_POS).first;
-        nettype == MAINNET && POS_start_height && height >= *POS_start_height && height <= *POS_start_height + DIFFICULTY_WINDOW)
+    else if (auto POS_start_height = get_hard_fork_heights(nettype, hf::hf17_POS).first;
+        nettype == MAINNET && POS_start_height && height >= *POS_start_height && height <= *POS_start_height + old::DIFFICULTY_WINDOW)
       result = difficulty_calc_mode::hf16_override;
 
     return result;
@@ -187,7 +187,7 @@ namespace cryptonote {
                                      difficulty_calc_mode mode)
   {
     const int64_t T = static_cast<int64_t>(target_seconds);
-    size_t N        = DIFFICULTY_WINDOW;
+    size_t N        = old::DIFFICULTY_WINDOW;
 
     // Return a difficulty of 1 for first 4 blocks if it's the start of the chain.
     if (timestamps.size() < 4) {

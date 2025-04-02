@@ -193,7 +193,7 @@ namespace rct {
         CHECK_AND_ASSERT_MES(proof.L.size() >= 6, 0, "Invalid bulletproof L size");
         CHECK_AND_ASSERT_MES(proof.L.size() == proof.R.size(), 0, "Mismatched bulletproof L/R size");
         static const size_t extra_bits = 4;
-        static_assert((1 << extra_bits) == BULLETPROOF_MAX_OUTPUTS, "log2(BULLETPROOF_MAX_OUTPUTS) is out of date");
+        static_assert((1 << extra_bits) == cryptonote::TX_BULLETPROOF_MAX_OUTPUTS, "log2(TX_BULLETPROOF_MAX_OUTPUTS) is out of date");
         CHECK_AND_ASSERT_MES(proof.L.size() <= 6 + extra_bits, 0, "Invalid bulletproof L size");
         CHECK_AND_ASSERT_MES(proof.V.size() <= (1u<<(proof.L.size()-6)), 0, "Invalid bulletproof V/L");
         CHECK_AND_ASSERT_MES(proof.V.size() * 2 > (1u<<(proof.L.size()-6)), 0, "Invalid bulletproof V/L");
@@ -220,7 +220,7 @@ namespace rct {
         CHECK_AND_ASSERT_MES(proof.L.size() >= 6, 0, "Invalid bulletproof L size");
         CHECK_AND_ASSERT_MES(proof.L.size() == proof.R.size(), 0, "Mismatched bulletproof L/R size");
         static const size_t extra_bits = 4;
-        static_assert((1 << extra_bits) == BULLETPROOF_MAX_OUTPUTS, "log2(BULLETPROOF_MAX_OUTPUTS) is out of date");
+        static_assert((1 << extra_bits) == cryptonote::TX_BULLETPROOF_MAX_OUTPUTS, "log2(TX_BULLETPROOF_MAX_OUTPUTS) is out of date");
         CHECK_AND_ASSERT_MES(proof.L.size() <= 6 + extra_bits, 0, "Invalid bulletproof L size");
         return 1 << (proof.L.size() - 6);
     }

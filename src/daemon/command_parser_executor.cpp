@@ -490,12 +490,12 @@ bool command_parser_executor::start_mining(const std::vector<std::string>& args)
 
   cryptonote::address_parse_info info;
   cryptonote::network_type nettype;
-  if (cryptonote::get_account_address_from_str(info, cryptonote::MAINNET, args.front()))
-    nettype = cryptonote::MAINNET;
-  else if (cryptonote::get_account_address_from_str(info, cryptonote::TESTNET, args.front()))
-    nettype = cryptonote::TESTNET;
-  else if (cryptonote::get_account_address_from_str(info, cryptonote::DEVNET, args.front()))
-    nettype = cryptonote::DEVNET;
+  if (cryptonote::get_account_address_from_str(info, cryptonote::network_type::MAINNET, args.front()))
+    nettype = cryptonote::network_type::MAINNET;
+  else if (cryptonote::get_account_address_from_str(info, cryptonote::network_type::TESTNET, args.front()))
+    nettype = cryptonote::network_type::TESTNET;
+  else if (cryptonote::get_account_address_from_str(info, cryptonote::network_type::DEVNET, args.front()))
+    nettype = cryptonote::network_type::DEVNET;
   else
   {
     std::cout << "target account address has wrong format" << std::endl;
@@ -506,8 +506,8 @@ bool command_parser_executor::start_mining(const std::vector<std::string>& args)
     tools::fail_msg_writer() << "subaddress for mining reward is not yet supported!";
     return true;
   }
-  if(nettype != cryptonote::MAINNET)
-    std::cout << "Mining to a " << (nettype == cryptonote::TESTNET ? "testnet" : "devnet") << " address, make sure this is intentional!";
+  if(nettype != cryptonote::network_type::MAINNET)
+    std::cout << "Mining to a " << (nettype == cryptonote::network_type::TESTNET ? "testnet" : "devnet") << " address, make sure this is intentional!";
 
   std::string_view threads_val    = tools::find_prefixed_value(args.begin() + 1, args.end(), "threads="sv);
   std::string_view num_blocks_val = tools::find_prefixed_value(args.begin() + 1, args.end(), "num_blocks="sv);
@@ -667,7 +667,7 @@ bool command_parser_executor::ban(const std::vector<std::string>& args)
 {
   if (args.size() != 1 && args.size() != 2) return false;
   std::string ip = args[0];
-  time_t seconds = P2P_IP_BLOCKTIME;
+  time_t seconds = tools::to_seconds(cryptonote::p2p::IP_BLOCK_TIME);
   if (args.size() > 1)
   {
     try

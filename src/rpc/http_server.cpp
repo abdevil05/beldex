@@ -602,7 +602,7 @@ namespace cryptonote::rpc {
 
     auto net = m_server.nettype();
     m_server_header = "beldexd/"s + (m_restricted ? std::to_string(BELDEX_VERSION[0]) : std::string{BELDEX_VERSION_FULL})
-      + (net == MAINNET ? " mainnet" : net == TESTNET ? " testnet" : net == DEVNET ? " devnet" : net == FAKECHAIN ? " fakenet" : " unknown net");
+      + (net == network_type::MAINNET ? " mainnet" : net == network_type::TESTNET ? " testnet" : net == network_type::DEVNET ? " devnet" : net == network_type::FAKECHAIN ? " fakenet" : " unknown net");
 
     m_startup_promise.set_value(true);
     m_sent_startup = true;

@@ -114,7 +114,7 @@ int main(int argc, char* argv[])
   std::string opt_data_dir = command_line::get_arg(vm, cryptonote::arg_data_dir);
   bool opt_testnet = command_line::get_arg(vm, cryptonote::arg_testnet_on);
   bool opt_devnet = command_line::get_arg(vm, cryptonote::arg_devnet_on);
-  network_type net_type = opt_testnet ? TESTNET : opt_devnet ? DEVNET : MAINNET;
+  network_type net_type = opt_testnet ? network_type::TESTNET : opt_devnet ? network_type::DEVNET : network_type::MAINNET;
   block_start = command_line::get_arg(vm, arg_block_start);
   block_stop = command_line::get_arg(vm, arg_block_stop);
   bool do_inputs = command_line::get_arg(vm, arg_inputs);

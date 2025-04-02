@@ -479,11 +479,6 @@ endif()
 build_external(sodium)
 add_static_target(sodium sodium_external libsodium.a)
 
-
-if(CMAKE_CROSSCOMPILING AND ARCH_TRIPLET MATCHES mingw)
-  set(zmq_patch PATCH_COMMAND patch -p1 -i ${PROJECT_SOURCE_DIR}/utils/build_scripts/libzmq-mingw-closesocket.patch)
-endif()
-
 set(zmq_cross_host "${cross_host}")
 if(IOS AND cross_host MATCHES "-ios$")
   # zmq doesn't like "-ios" for the host, so replace it with -darwin
@@ -592,7 +587,7 @@ endif()
 add_static_target(CURL::libcurl curl_external libcurl.a)
 set(libcurl_link_libs zlib)
 if(CMAKE_CROSSCOMPILING AND ARCH_TRIPLET MATCHES mingw)
-  list(APPEND libcurl_link_libs ws2_32)
+  list(APPEND libcurl_link_libs ws2_32;bcrypt)
 elseif(APPLE)
   list(APPEND libcurl_link_libs "-framework SystemConfiguration")
 endif()

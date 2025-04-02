@@ -113,10 +113,10 @@ Blockchain::block_extended_info::block_extended_info(const alt_block_data_t &src
 Blockchain::Blockchain(tx_memory_pool& tx_pool, master_nodes::master_node_list& master_node_list):
   m_db(), m_tx_pool(tx_pool), m_current_block_cumul_weight_limit(0), m_current_block_cumul_weight_median(0),
   m_max_prepare_blocks_threads(4), m_db_sync_on_blocks(true), m_db_sync_threshold(1), m_db_sync_mode(db_async), m_db_default_sync(false), m_fast_sync(true), m_show_time_stats(false), m_sync_counter(0), m_bytes_to_sync(0), m_cancel(false),
-  m_long_term_block_weights_window(CRYPTONOTE_LONG_TERM_BLOCK_WEIGHT_WINDOW_SIZE),
+  m_long_term_block_weights_window(LONG_TERM_BLOCK_WEIGHT_WINDOW_SIZE),
   m_long_term_effective_median_block_weight(0),
   m_long_term_block_weights_cache_tip_hash(crypto::null_hash),
-  m_long_term_block_weights_cache_rolling_median(CRYPTONOTE_LONG_TERM_BLOCK_WEIGHT_WINDOW_SIZE),
+  m_long_term_block_weights_cache_rolling_median(LONG_TERM_BLOCK_WEIGHT_WINDOW_SIZE),
   m_master_node_list(master_node_list),
   m_btc_valid(false),
   m_batch_success(true),
@@ -300,8 +300,8 @@ uint64_t Blockchain::get_current_blockchain_height(bool lock) const
 //------------------------------------------------------------------
 bool Blockchain::load_missing_blocks_into_beldex_subsystems()
 {
-  uint64_t const mnl_height   = std::max(hard_fork_begins(m_nettype, network_version_9_master_nodes).value_or(0), m_master_node_list.height() + 1);
-  uint64_t const bns_height   = std::max(hard_fork_begins(m_nettype, network_version_18_bns).value_or(0),          m_bns_db.height() + 1);
+  uint64_t const mnl_height   = std::max(hard_fork_begins(m_nettype, hf::hf9_master_nodes).value_or(0), m_master_node_list.height() + 1);
+  uint64_t const bns_height   = std::max(hard_fork_begins(m_nettype, hf::hf18_bns).value_or(0),          m_bns_db.height() + 1);
   uint64_t const end_height   = m_db->height();
   uint64_t const start_height = std::min(end_height, std::min(bns_height, mnl_height));
   
@@ -369,7 +369,7 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
 
         checkpoint_t *checkpoint_ptr = nullptr;
         checkpoint_t checkpoint;
-        if (blk.major_version >= cryptonote::network_version_14_enforce_checkpoints && get_checkpoint(block_height, checkpoint))
+        if (blk.major_version >= hf::hf14_enforce_checkpoints && get_checkpoint(block_height, checkpoint))
             checkpoint_ptr = &checkpoint;
 
         try {
@@ -405,6 +405,24 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
 
   return true;
 }
+
+static bool exec_detach_hooks(
+        Blockchain& blockchain,
+        uint64_t detach_height,
+        std::vector<BlockchainDetachedHook> hooks, // have to change
+        bool by_pop_blocks,
+        bool load_missing_blocks = true) {
+
+    detached_info hook_data{detach_height, by_pop_blocks};
+    for (const auto& hook : hooks)
+        hook(hook_data);
+
+    bool result = true;
+    if (load_missing_blocks)
+        result = blockchain.load_missing_blocks_into_beldex_subsystems();
+    return result;
+}
+
 //------------------------------------------------------------------
 //FIXME: possibly move this into the constructor, to avoid accidentally
 //       dereferencing a null BlockchainDB pointer
@@ -412,7 +430,7 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nett
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
 
-  CHECK_AND_ASSERT_MES(nettype != FAKECHAIN || test_options, false, "fake chain network type used without options");
+  CHECK_AND_ASSERT_MES(nettype != network_type::FAKECHAIN || test_options, false, "fake chain network type used without options");
 
   auto lock = tools::unique_locks(m_tx_pool, *this);
 
@@ -439,7 +457,7 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nett
   // in integration mode or --regtest
   m_nettype = nettype;
 #else
-  m_nettype = test_options != NULL ? FAKECHAIN : nettype;
+  m_nettype = test_options != NULL ? network_type::FAKECHAIN : nettype;
 #endif
 
   if (!m_checkpoints.init(m_nettype, m_db))
@@ -471,7 +489,7 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nett
   {
   }
 
-  if (m_nettype != FAKECHAIN)
+  if (m_nettype != network_type::FAKECHAIN)
     m_db->fixup(m_nettype);
 
   db_rtxn_guard rtxn_guard(m_db);
@@ -490,7 +508,7 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nett
   m_async_thread = std::thread{[this] { m_async_service.run(); }};
 
 #if defined(PER_BLOCK_CHECKPOINT)
-  if (m_nettype != FAKECHAIN)
+  if (m_nettype != network_type::FAKECHAIN)
     load_compiled_in_block_hashes(get_checkpoints);
 #endif
 
@@ -503,8 +521,8 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nett
     uint64_t top_height;
     const crypto::hash top_id = m_db->top_block_hash(&top_height);
     const block top_block = m_db->get_top_block();
-    const uint8_t ideal_hf_version = get_network_version(top_height);
-    if (ideal_hf_version <= 1 || ideal_hf_version == top_block.major_version)
+    const auto ideal_hf_version = get_network_version(top_height);
+    if (ideal_hf_version <= hf::hf1 || ideal_hf_version == top_block.major_version)
     {
       if (num_popped_blocks > 0)
         MGINFO("Initial popping done, top block: " << top_id << ", top height: " << top_height << ", block version: " << (uint64_t)top_block.major_version);
@@ -566,10 +584,18 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nett
   for (const auto& hook : m_init_hooks)
     hook();
 
-  if (!m_db->is_read_only() && !load_missing_blocks_into_beldex_subsystems())
+  if (!m_db->is_read_only())
   {
-    MERROR("Failed to load blocks into beldex subsystems");
-    return false;
+    if (!exec_detach_hooks(
+      *this,
+      m_db->height(),
+      m_blockchain_detached_hooks,
+      /*by_pop_blocks*/ false,
+      /*load_missing_blocks_into_beldex_subsystems*/ true)) 
+    {
+        MERROR("Failed to load blocks into beldex subsystems");
+        return false;
+    }
   }
 
   return true;
@@ -649,8 +675,8 @@ void Blockchain::pop_blocks(uint64_t nblocks)
   auto lock = tools::unique_locks(m_tx_pool, *this);
 
   bool stop_batch = m_db->batch_start();
-  uint8_t hf_version = get_network_version();
-  uint64_t blocks_expected_per_day = (hf_version>=cryptonote::network_version_17_POS) ? BLOCKS_PER_DAY : BLOCKS_PER_DAY_OLD ;
+  auto hf_version = get_network_version();
+  uint64_t blocks_expected_per_day = (hf_version >= hf::hf17_POS) ? BLOCKS_PER_DAY : old::BLOCKS_PER_DAY_12 ;
   try
   {
     const uint64_t blockchain_height = m_db->height();
@@ -680,11 +706,7 @@ void Blockchain::pop_blocks(uint64_t nblocks)
     return;
   }
 
-  detached_info hook_data{m_db->height(), /*by_pop_blocks=*/true};
-  for (const auto& hook : m_blockchain_detached_hooks)
-    hook(hook_data);
-  load_missing_blocks_into_beldex_subsystems();
-
+  exec_detach_hooks(*this, m_db->height(), m_blockchain_detached_hooks, /*by_pop_blocks=*/true);
   if (stop_batch)
     m_db->batch_stop();
 }
@@ -736,7 +758,7 @@ block Blockchain::pop_block_from_blockchain()
     {
       cryptonote::tx_verification_context tvc{};
 
-      uint8_t version = get_network_version(m_db->height());
+      hf version = get_network_version(m_db->height());
 
       // We assume that if they were in a block, the transactions are already
       // known to the network as a whole. However, if we had mined that block,
@@ -933,7 +955,7 @@ difficulty_type Blockchain::get_difficulty_for_next_block(bool POS)
   if (POS)
     return POS_FIXED_DIFFICULTY;
 
-  uint8_t const hf_version = get_network_version();
+  const auto hf_version = get_network_version();
   crypto::hash top_hash = get_tail_id();
   {
     std::unique_lock diff_lock{m_cache.m_difficulty_lock};
@@ -954,7 +976,7 @@ difficulty_type Blockchain::get_difficulty_for_next_block(bool POS)
       m_nettype, m_cache.m_timestamps, m_cache.m_difficulties, chain_height, m_cache.m_timestamps_and_difficulties_height);
   uint64_t diff = next_difficulty_v2(m_cache.m_timestamps,
                                      m_cache.m_difficulties,
-                                     tools::to_seconds((hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD)),
+                                     tools::to_seconds((hf_version >= hf::hf17_POS ? TARGET_BLOCK_TIME: old::TARGET_BLOCK_TIME_12)),
                                      difficulty_mode(m_nettype, chain_height));
 
   m_cache.m_timestamps_and_difficulties_height = chain_height;
@@ -998,11 +1020,7 @@ bool Blockchain::rollback_blockchain_switching(const std::list<block_and_checkpo
     pop_block_from_blockchain();
   }
 
-  // Revert all changes from switching to the alt chain before adding the original chain back in
-  detached_info rollback_hook_data{rollback_height, /*by_pop_blocks=*/false};
-  for (const auto& hook : m_blockchain_detached_hooks)
-    hook(rollback_hook_data);
-  load_missing_blocks_into_beldex_subsystems();
+  exec_detach_hooks(*this, rollback_height, m_blockchain_detached_hooks, /*by_pop_blocks=*/false);
 
   //return back original chain
   for (auto& entry : original_chain)
@@ -1062,10 +1080,7 @@ bool Blockchain::switch_to_alternative_blockchain(const std::list<block_extended
   }
 
   auto split_height = m_db->height();
-  detached_info split_hook_data{split_height, /*by_pop_blocks=*/false};
-  for (const auto& hook : m_blockchain_detached_hooks)
-    hook(split_hook_data);
-  load_missing_blocks_into_beldex_subsystems();
+  exec_detach_hooks(*this, split_height, m_blockchain_detached_hooks, /*by_pop_blocks=*/false);
 
   //connecting new alternative chain
   for(auto alt_ch_iter = alt_chain.begin(); alt_ch_iter != alt_chain.end(); alt_ch_iter++)
@@ -1154,11 +1169,11 @@ difficulty_type Blockchain::get_difficulty_for_alternative_chain(const std::list
   {
     bool before_hf16 = true;
     if (alt_chain.size())
-      before_hf16 = alt_chain.back().bl.major_version < network_version_17_POS;
+      before_hf16 = alt_chain.back().bl.major_version < hf::hf17_POS;
     else
-      before_hf16 = !is_hard_fork_at_least(m_nettype, cryptonote::network_version_17_POS, get_current_blockchain_height());
+      before_hf16 = !is_hard_fork_at_least(m_nettype, hf::hf17_POS, get_current_blockchain_height());
 
-    block_count = DIFFICULTY_BLOCKS_COUNT(before_hf16);
+    block_count = old::DIFFICULTY_BLOCKS_COUNT(before_hf16);
   }
 
   std::vector<uint64_t> timestamps;
@@ -1219,7 +1234,7 @@ difficulty_type Blockchain::get_difficulty_for_alternative_chain(const std::list
   auto hf_version = cryptonote::get_network_version(m_nettype, height);
   return next_difficulty_v2(timestamps,
                             cumulative_difficulties,
-                            tools::to_seconds((hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD)),
+                            tools::to_seconds((hf_version>=hf::hf17_POS?TARGET_BLOCK_TIME:old::TARGET_BLOCK_TIME_12)),
                             difficulty_mode(m_nettype, height));
 }
 //------------------------------------------------------------------
@@ -1228,7 +1243,7 @@ difficulty_type Blockchain::get_difficulty_for_alternative_chain(const std::list
 //   one input, of type txin_gen, with height set to the block's height
 //   correct miner tx unlock time
 //   a non-overflowing tx amount (dubious necessity on this check)
-bool Blockchain::prevalidate_miner_transaction(const block& b, uint64_t height, uint8_t hf_version)
+bool Blockchain::prevalidate_miner_transaction(const block& b, uint64_t height, hf hf_version)
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   CHECK_AND_ASSERT_MES(b.miner_tx.vin.size() == 1, false, "coinbase transaction in the block has no inputs");
@@ -1239,9 +1254,9 @@ bool Blockchain::prevalidate_miner_transaction(const block& b, uint64_t height, 
     return false;
   }
   MDEBUG("Miner tx hash: " << get_transaction_hash(b.miner_tx));
-  CHECK_AND_ASSERT_MES(b.miner_tx.unlock_time == height + CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW, false, "coinbase transaction transaction has the wrong unlock time=" << b.miner_tx.unlock_time << ", expected " << height + CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW);
+  CHECK_AND_ASSERT_MES(b.miner_tx.unlock_time == height + MINED_MONEY_UNLOCK_WINDOW, false, "coinbase transaction transaction has the wrong unlock time=" << b.miner_tx.unlock_time << ", expected " << height + MINED_MONEY_UNLOCK_WINDOW);
 
-  if (hf_version >= cryptonote::network_version_13_checkpointing)
+  if (hf_version >= hf::hf13_checkpointing)
   {
     if (b.miner_tx.type != txtype::standard)
     {
@@ -1253,12 +1268,12 @@ bool Blockchain::prevalidate_miner_transaction(const block& b, uint64_t height, 
     txversion max_version = transaction::get_min_version_for_hf(hf_version);
     if (b.miner_tx.version < min_version || b.miner_tx.version > max_version)
     {
-      MERROR_VER("Coinbase invalid version: " << b.miner_tx.version << " for hardfork: " << hf_version << " min/max version:  " << min_version << "/" << max_version);
+      MERROR_VER("Coinbase invalid version: " << b.miner_tx.version << " for hardfork: " << static_cast<int>(hf_version) << " min/max version:  " << min_version << "/" << max_version);
       return false;
     }
   }
 
-  if (hf_version >= HF_VERSION_REJECT_SIGS_IN_COINBASE) // Enforce empty rct signatures for miner transactions,
+  if (hf_version >= feature::REJECT_SIGS_IN_COINBASE) // Enforce empty rct signatures for miner transactions,
     CHECK_AND_ASSERT_MES(b.miner_tx.rct_signatures.type == rct::RCTType::Null, false, "RingCT signatures not allowed in coinbase transactions");
 
   //check outs overflow
@@ -1275,7 +1290,7 @@ bool Blockchain::prevalidate_miner_transaction(const block& b, uint64_t height, 
 }
 //------------------------------------------------------------------
 // This function validates the miner transaction reward
-bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_block_weight, uint64_t fee, uint64_t& base_reward, uint64_t already_generated_coins, uint8_t version)
+bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_block_weight, uint64_t fee, uint64_t& base_reward, uint64_t already_generated_coins, hf version)
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   //validate reward
@@ -1286,14 +1301,14 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
   }
 
   uint64_t median_weight;
-  if (version >= HF_VERSION_EFFECTIVE_SHORT_TERM_MEDIAN_IN_PENALTY)
+  if (version >= feature::EFFECTIVE_SHORT_TERM_MEDIAN_IN_PENALTY)
   {
     median_weight = m_current_block_cumul_weight_median;
   }
   else
   {
     std::vector<uint64_t> last_blocks_weights;
-    get_last_n_blocks_weights(last_blocks_weights, CRYPTONOTE_REWARD_BLOCKS_WINDOW);
+    get_last_n_blocks_weights(last_blocks_weights, REWARD_BLOCKS_WINDOW);
     median_weight = tools::median(std::move(last_blocks_weights));
   }
 
@@ -1301,7 +1316,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
   beldex_block_reward_context block_reward_context = {};
   block_reward_context.fee                       = fee;
   block_reward_context.height                    = height;
-  block_reward_context.testnet_override          = nettype() == TESTNET && height < 386000;
+  block_reward_context.testnet_override          = nettype() == network_type::TESTNET && height < 386000;
   if (!calc_batched_governance_reward(height, block_reward_context.batched_governance))
   {
     MERROR_VER("Failed to calculate batched governance reward");
@@ -1327,9 +1342,9 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     }
   }
 
-  if (already_generated_coins != 0 && block_has_governance_output(nettype(), b))
+  if (already_generated_coins != 0 && block_has_governance_output(nettype(), b) && version < hf::hf20_bulletproof_plusplus)
   {
-    if (version >= network_version_17_POS && reward_parts.governance_paid == 0)
+    if (version >= hf::hf17_POS && reward_parts.governance_paid == 0)
     {
       MERROR("Governance reward should not be 0 after hardfork v17 if this height has a governance output because it is the batched payout height");
       return false;
@@ -1357,7 +1372,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
   // TODO(beldex): eliminate all floating point math in reward calculations.
   uint64_t max_base_reward = reward_parts.base_miner + reward_parts.governance_paid + reward_parts.master_node_total + 1;
   uint64_t max_money_in_use = max_base_reward + reward_parts.miner_fee;
-  if (money_in_use > max_money_in_use)
+  if (money_in_use > max_money_in_use && version < hf::hf20_bulletproof_plusplus)
   {
     MERROR_VER("coinbase transaction spends too much money (" << print_money(money_in_use) << "). Maximum block reward is "
             << print_money(max_money_in_use) << " (= " << print_money(max_base_reward) << " base + " << print_money(reward_parts.miner_fee) << " fees)");
@@ -1573,7 +1588,7 @@ bool Blockchain::create_block_template_internal(block& b, const crypto::hash *fr
    block weight, so first miner transaction generated with fake amount of money, and with phase we know think we know expected block weight
    */
   //make blocks coin-base tx looks close to real coinbase tx to get truthful blob weight
-  uint8_t hf_version = b.major_version;
+  auto hf_version = b.major_version;
   auto miner_tx_context =
       info.is_miner
           ? beldex_miner_tx_context::miner_block(m_nettype, info.miner_address, m_master_node_list.get_block_leader())
@@ -1585,7 +1600,7 @@ bool Blockchain::create_block_template_internal(block& b, const crypto::hash *fr
   }
 
     crypto::signature security_signature;
-    if ((hf_version >= network_version_12_security_signature) && info.is_miner){
+    if ((hf_version >= hf::hf12_security_signature) && info.is_miner){
         crypto::hash hash = cryptonote::make_security_hash_from(height,
                                                                 b);
         const std::string skey_string = "8616b3fbc071ba5ed64e50cd4350691fa8fb07610fb61b698f2c989d1b30ea08";
@@ -1960,7 +1975,7 @@ bool Blockchain::handle_alternative_block(const block& b, const crypto::hash& id
 
     uint64_t block_reward = get_outs_money_amount(b.miner_tx);
     const uint64_t prev_generated_coins = alt_chain.size() ? prev_data.already_generated_coins : m_db->get_block_already_generated_coins(blk_height - 1);
-    alt_data.already_generated_coins = (block_reward < (MONEY_SUPPLY - prev_generated_coins)) ? prev_generated_coins + block_reward : MONEY_SUPPLY;
+    alt_data.already_generated_coins = (block_reward < (beldex::MONEY_SUPPLY - prev_generated_coins)) ? prev_generated_coins + block_reward : beldex::MONEY_SUPPLY;
     m_db->add_alt_block(id, alt_data, cryptonote::block_to_blob(b), checkpoint_blob.empty() ? nullptr : &checkpoint_blob);
 
     // Check current height for pre-existing checkpoint
@@ -2038,7 +2053,7 @@ bool Blockchain::handle_alternative_block(const block& b, const crypto::hash& id
   bool const alt_chain_has_more_checkpoints  = (num_checkpoints_on_alt_chain > num_checkpoints_on_chain);
   bool const alt_chain_has_equal_checkpoints = (num_checkpoints_on_alt_chain == num_checkpoints_on_chain);
 
-  if (b.major_version >= cryptonote::network_version_17_POS)
+  if (b.major_version >= hf::hf17_POS)
   {
     // In POS, we move away from the concept of difficulty to solve ties
     // between chains. We calculate the preferred chain using a simpler system.
@@ -2110,7 +2125,7 @@ bool Blockchain::handle_alternative_block(const block& b, const crypto::hash& id
     difficulty_type const main_chain_cumulative_difficulty = m_db->get_block_cumulative_difficulty(m_db->height() - 1);
     bool const alt_chain_has_greater_pow       = alt_data.cumulative_difficulty > main_chain_cumulative_difficulty;
 
-    if (b.major_version >= network_version_14_enforce_checkpoints)
+    if (b.major_version >= hf::hf14_enforce_checkpoints)
     {
       if (alt_chain_has_more_checkpoints || (alt_chain_has_greater_pow && alt_chain_has_equal_checkpoints))
       {
@@ -2402,8 +2417,8 @@ uint64_t Blockchain::get_num_mature_outputs(uint64_t amount) const
   {
     const tx_out_index toi = m_db->get_output_tx_and_index(amount, num_outs - 1);
     const uint64_t height = m_db->get_tx_block_height(toi.first);
-    const uint8_t hf_version = get_network_version(height);
-    if ((height + (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE) )<= blockchain_height)
+    const hf hf_version = get_network_version(height);
+    if ((height + (hf_version>=hf::hf17_POS?DEFAULT_TX_SPENDABLE_AGE_V17:old::DEFAULT_TX_SPENDABLE_AGE) )<= blockchain_height)
       break;
     --num_outs;
   }
@@ -2763,7 +2778,7 @@ bool Blockchain::find_blockchain_supplement(const std::list<crypto::hash>& qbloc
     stop_height = tools::get_next_pruned_block_height(start_height, current_height, pruning_seed);
   }
   size_t count = 0;
-  hashes.reserve(std::min((size_t)(stop_height - start_height), (size_t)BLOCKS_IDS_SYNCHRONIZING_DEFAULT_COUNT));
+  hashes.reserve(std::min((size_t)(stop_height - start_height), BLOCKS_IDS_SYNCHRONIZING_DEFAULT_COUNT));
   for(size_t i = start_height; i < stop_height && count < BLOCKS_IDS_SYNCHRONIZING_DEFAULT_COUNT; i++, count++)
   {
     hashes.push_back(m_db->get_block_hash_from_height(i));
@@ -2857,7 +2872,7 @@ bool Blockchain::add_block_as_invalid(cryptonote::block const &block)
   return true;
 }
 
-uint8_t Blockchain::get_network_version(std::optional<uint64_t> height) const {
+hf Blockchain::get_network_version(std::optional<uint64_t> height) const {
   if (!height) height = get_current_blockchain_height();
   return cryptonote::get_network_version(m_nettype, *height);
 }
@@ -3068,8 +3083,8 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
 
   // from v10, allow bulletproofs
   auto height = get_current_blockchain_height();
-  const uint8_t hf_version = get_network_version(height);
-  if (hf_version < network_version_8) {
+  const hf hf_version = get_network_version(height);
+  if (hf_version < hf::hf8) {
     const bool bulletproof = rct::is_rct_bulletproof(tx.rct_signatures.type);
     if (bulletproof || !tx.rct_signatures.p.bulletproofs.empty())
     {
@@ -3083,7 +3098,7 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
     // The HF10 block height itself was allowed to (and did) have a Borromean tx as an exception
     // to the HF10 rules so that a borderline tx didn't end up unmineable, hence the strict `>`
     // here:
-    if (auto hf10_height = hard_fork_begins(m_nettype, network_version_10_bulletproofs);
+    if (auto hf10_height = hard_fork_begins(m_nettype, hf::hf10_bulletproofs);
         hf10_height && height > *hf10_height)
     {
       MERROR_VER("Borromean range proofs are not allowed after v10");
@@ -3092,21 +3107,21 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
     }
   }
 
-  if (hf_version < HF_VERSION_SMALLER_BP) {
+  if (hf_version < feature::SMALLER_BP) {
     if (tx.rct_signatures.type == rct::RCTType::Bulletproof2)
     {
-      MERROR_VER("Ringct type " << (unsigned)rct::RCTType::Bulletproof2 << " is not allowed before v" << HF_VERSION_SMALLER_BP);
+      MERROR_VER("Ringct type " << (unsigned)rct::RCTType::Bulletproof2 << " is not allowed before v" << static_cast<int>(feature::SMALLER_BP));
       tvc.m_invalid_output = true;
       return false;
     }
   }
 
-  if (hf_version > HF_VERSION_SMALLER_BP) {
+  if (hf_version > feature::SMALLER_BP) {
     if (tx.version >= txversion::v4_tx_types && tx.is_transfer())
     {
       if (tx.rct_signatures.type == rct::RCTType::Bulletproof)
       {
-        MERROR_VER("Ringct type " << (unsigned)rct::RCTType::Bulletproof << " is not allowed from v" << (HF_VERSION_SMALLER_BP + 1));
+        MERROR_VER("Ringct type " << (unsigned)rct::RCTType::Bulletproof << " is not allowed after v" << static_cast<int>(feature::SMALLER_BP));
         tvc.m_invalid_output = true;
         return false;
       }
@@ -3114,11 +3129,11 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
   }
 
   // Disallow CLSAGs before the CLSAG hardfork
-  if (hf_version < HF_VERSION_CLSAG) {
+  if (hf_version < feature::CLSAG) {
     if (tx.version >= txversion::v4_tx_types && tx.is_transfer()) {
       if (tx.rct_signatures.type == rct::RCTType::CLSAG)
       {
-        MERROR_VER("Ringct type " << (unsigned)rct::RCTType::CLSAG << " is not allowed before v" << HF_VERSION_CLSAG);
+        MERROR_VER("Ringct type " << (unsigned)rct::RCTType::CLSAG << " is not allowed before v" << static_cast<int>(feature::CLSAG));
         tvc.m_invalid_output = true;
         return false;
       }
@@ -3128,12 +3143,12 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
   // Require CLSAGs starting 10 blocks after the CLSAG-enabling hard fork (the 10 block buffer is to
   // allow staggling txes around fork time to still make it into a block).
   // NB: there *are* such txes on mainnet in this 10-block window so this code has to stay.
-  if (hf_version >= HF_VERSION_CLSAG
+  if (hf_version >= feature::CLSAG
       && tx.rct_signatures.type < rct::RCTType::CLSAG
       && tx.version >= txversion::v4_tx_types && tx.is_transfer()
-      && (hf_version > HF_VERSION_CLSAG || height >= 10 + *hard_fork_begins(m_nettype, HF_VERSION_CLSAG)))
+      && (hf_version > feature::CLSAG || height >= 10 + *hard_fork_begins(m_nettype, feature::CLSAG)))
   {
-    MERROR_VER("Ringct type " << (unsigned)tx.rct_signatures.type << " is not allowed from v" << HF_VERSION_CLSAG);
+    MERROR_VER("Ringct type " << (unsigned)tx.rct_signatures.type << " is not allowed from v" << static_cast<int>(feature::CLSAG));
     tvc.m_invalid_output = true;
     return false;
   }
@@ -3267,9 +3282,9 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
 
   if (tx.is_transfer())
   {
-    if (tx.type != txtype::beldex_name_system && tx.type != txtype::coin_burn && hf_version >= HF_VERSION_MIN_2_OUTPUTS && tx.vout.size() < 2)
+    if (tx.type != txtype::beldex_name_system && tx.type != txtype::coin_burn && hf_version >= feature::MIN_2_OUTPUTS && tx.vout.size() < 2)
     {
-      MERROR_VER("Tx " << get_transaction_hash(tx) << " has fewer than two outputs, which is not allowed as of hardfork " << +HF_VERSION_MIN_2_OUTPUTS);
+      MERROR_VER("Tx " << get_transaction_hash(tx) << " has fewer than two outputs, which is not allowed as of hardfork " << static_cast<int>(feature::MIN_2_OUTPUTS));
       tvc.m_too_few_outputs = true;
       return false;
     }
@@ -3294,11 +3309,11 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         CHECK_AND_ASSERT_MES(in_to_key.key_offsets.size(), false, "empty in_to_key.key_offsets in transaction with id " << get_transaction_hash(tx));
 
         // Mixin Check, from hard fork 7, we require mixin at least 9, always.
-        if (((hf_version <=7) && (in_to_key.key_offsets.size() - 1 < 6) && tx.version == txversion::v2_ringct) ||
-		    ((hf_version ==8) && (in_to_key.key_offsets.size() - 1 < 7) ) ||
-            ((hf_version >8 ) && (in_to_key.key_offsets.size() - 1 != CRYPTONOTE_DEFAULT_TX_MIXIN)))
+        if (((hf_version <= hf::hf7 ) && (in_to_key.key_offsets.size() - 1 < 6) && tx.version == txversion::v2_ringct) ||
+		    ((hf_version == hf::hf8) && (in_to_key.key_offsets.size() - 1 < 7) ) ||
+            ((hf_version > hf::hf8 ) && (in_to_key.key_offsets.size() - 1 != cryptonote::TX_OUTPUT_DECOYS)))
         {
-          MERROR_VER("Tx " << get_transaction_hash(tx) << " has incorrect ring size (" << in_to_key.key_offsets.size() - 1 << ", expected (" << CRYPTONOTE_DEFAULT_TX_MIXIN << ")");
+          MERROR_VER("Tx " << get_transaction_hash(tx) << " has incorrect ring size (" << in_to_key.key_offsets.size() - 1 << ", expected (" << cryptonote::TX_OUTPUT_DECOYS << ")");
           tvc.m_low_mixin = true;
           return false;
         }
@@ -3343,7 +3358,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
       //
       // Master Node Checks
       //
-      if (hf_version >= cryptonote::network_version_11_infinite_staking)
+      if (hf_version >= hf::hf11_infinite_staking)
       {
         const auto &blacklist = m_master_node_list.get_blacklisted_key_images();
         for (const auto &entry : blacklist)
@@ -3366,9 +3381,9 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
       }
     }
 
-    if (hf_version >= HF_VERSION_ENFORCE_MIN_AGE)
+    if (hf_version >= feature::ENFORCE_MIN_AGE)
     {
-      const uint8_t spendable_age = (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE);
+      const uint8_t spendable_age = (hf_version >= hf::hf17_POS ? DEFAULT_TX_SPENDABLE_AGE_V17: old::DEFAULT_TX_SPENDABLE_AGE);
       CHECK_AND_ASSERT_MES((*pmax_used_block_height + spendable_age) <= m_db->height(),
           false, "Transaction spends at least one output which is too young");
     }
@@ -3522,7 +3537,7 @@ if (tx.version >= cryptonote::txversion::v2_ringct)
     }
 
     // for bulletproofs, check they're only multi-output after v8
-    if (rct::is_rct_bulletproof(rv.type) && hf_version < network_version_8)
+    if (rct::is_rct_bulletproof(rv.type) && hf_version < hf::hf8)
     {
       for (const rct::Bulletproof &proof: rv.p.bulletproofs)
       {
@@ -3537,7 +3552,7 @@ if (tx.version >= cryptonote::txversion::v2_ringct)
     if (tx.type == txtype::beldex_name_system)
     {
       uint64_t height = get_current_blockchain_height();
-      if (hf_version >= network_version_18_bns)
+      if (hf_version >= hf::hf18_bns)
       {
         cryptonote::tx_extra_beldex_name_system data;
         std::string fail_reason;
@@ -3618,7 +3633,7 @@ if (tx.version >= cryptonote::txversion::v2_ringct)
       if (master_node_array.empty())
       {
         MERROR_VER("Master Node no longer exists on the network, state change can be ignored");
-        return hf_version < cryptonote::network_version_13_checkpointing; // NOTE: Used to be allowed pre HF12.
+        return hf_version < hf::hf13_checkpointing; // NOTE: Used to be allowed pre HF12.
       }
 
       master_nodes::master_node_info const &master_node_info = *master_node_array[0].info;
@@ -3693,14 +3708,14 @@ uint64_t Blockchain::get_fee_quantization_mask()
   if (mask == 0)
   {
     mask = 1;
-    for (size_t n = PER_KB_FEE_QUANTIZATION_DECIMALS; n < CRYPTONOTE_DISPLAY_DECIMAL_POINT; ++n)
+    for (size_t n = FEE_QUANTIZATION_DECIMALS; n < beldex::DISPLAY_DECIMAL_POINT; ++n)
       mask *= 10;
   }
   return mask;
 }
 
 //------------------------------------------------------------------
-byte_and_output_fees Blockchain::get_dynamic_base_fee(uint64_t block_reward, size_t median_block_weight, uint8_t version)
+byte_and_output_fees Blockchain::get_dynamic_base_fee(uint64_t block_reward, size_t median_block_weight, hf version)
 {
   const uint64_t min_block_weight = get_min_block_weight(version);
   if (median_block_weight < min_block_weight)
@@ -3708,7 +3723,7 @@ byte_and_output_fees Blockchain::get_dynamic_base_fee(uint64_t block_reward, siz
   byte_and_output_fees fees{0, 0};
   uint64_t hi, &lo = fees.first;
 
-  if (version >= HF_VERSION_PER_BYTE_FEE)
+  if (version >= feature::PER_BYTE_FEE)
   {
     // fee = block_reward * DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT / min_block_weight / median_block_weight / 5
     // (but done in 128-bit math).  Note that the wallet uses FEE_PER_BYTE as a fallback if it can't
@@ -3724,30 +3739,30 @@ byte_and_output_fees Blockchain::get_dynamic_base_fee(uint64_t block_reward, siz
     // This calculation was painful for large txes (in particular sweeps and MN stakes), which
     // wasn't intended, so in v13 we reduce the reference tx fee back to what it was before and
     // introduce a per-output fee instead.  (This is why this is an hard == instead of a >=).
-    const uint64_t reference_fee = version == HF_VERSION_REDUCE_FEE ? DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT_V17 : DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT;
+    const uint64_t reference_fee = version != feature::REDUCE_FEE ? DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT : old::DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT_V17;
     lo = mul128(block_reward, reference_fee, &hi);
     div128_32(hi, lo, min_block_weight, &hi, &lo);
     div128_32(hi, lo, median_block_weight, &hi, &lo);
     assert(hi == 0);
     lo /= 5;
 
-    if (version >= cryptonote::network_version_17_POS)
+    if (version >= hf::hf17_POS)
       fees.second = FEE_PER_OUTPUT_V17;
-    else if (version >= HF_VERSION_PER_OUTPUT_FEE)
-      fees.second = FEE_PER_OUTPUT;
+    else if (version >= feature::PER_OUTPUT_FEE)
+      fees.second = old::FEE_PER_OUTPUT;
 
     return fees;
   }
 
-  constexpr uint64_t fee_base = DYNAMIC_FEE_PER_KB_BASE_FEE_V5;
+  constexpr uint64_t fee_base = old::DYNAMIC_FEE_PER_KB_BASE_FEE_V5;
 
   uint64_t unscaled_fee_base = (fee_base * min_block_weight / median_block_weight);
   lo = mul128(unscaled_fee_base, block_reward, &hi);
-  static_assert(DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD % 1000000 == 0, "DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD must be divisible by 1000000");
-  static_assert(DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD / 1000000 <= std::numeric_limits<uint32_t>::max(), "DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD is too large");
+  static_assert(old::DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD % 1000000 == 0, "DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD must be divisible by 1000000");
+  static_assert(old::DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD / 1000000 <= std::numeric_limits<uint32_t>::max(), "DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD is too large");
 
-  // divide in two steps, since the divisor must be 32 bits, but DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD isn't
-  div128_32(hi, lo, DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD / 1000000, &hi, &lo);
+  // divide in two steps, since the divisor must be 32 bits, but old::DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD isn't
+  div128_32(hi, lo, old::DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD / 1000000, &hi, &lo);
   div128_32(hi, lo, 1000000, &hi, &lo);
   assert(hi == 0);
 
@@ -3763,7 +3778,7 @@ byte_and_output_fees Blockchain::get_dynamic_base_fee(uint64_t block_reward, siz
 //------------------------------------------------------------------
 bool Blockchain::check_fee(size_t tx_weight, size_t tx_outs, uint64_t fee, uint64_t burned, const tx_pool_options &opts) const
 {
-  const uint8_t version = get_network_version();
+  const hf version = get_network_version();
   const uint64_t blockchain_height = get_current_blockchain_height();
 
   uint64_t median = m_current_block_cumul_weight_limit / 2;
@@ -3773,9 +3788,9 @@ bool Blockchain::check_fee(size_t tx_weight, size_t tx_outs, uint64_t fee, uint6
     return false;
 
   uint64_t needed_fee;
-  if (version >= HF_VERSION_PER_BYTE_FEE)
+  if (version >= feature::PER_BYTE_FEE)
   {
-    const bool use_long_term_median_in_fee = version >= HF_VERSION_LONG_TERM_BLOCK_WEIGHT;
+    const bool use_long_term_median_in_fee = version >= feature::LONG_TERM_BLOCK_WEIGHT;
     auto fees = get_dynamic_base_fee(base_reward, use_long_term_median_in_fee ? std::min<uint64_t>(median, m_long_term_effective_median_block_weight) : median, version);
     MDEBUG("Using " << print_money(fees.first) << "/byte + " << print_money(fees.second) << "/out fee");
     needed_fee = tx_weight * fees.first + tx_outs * fees.second;
@@ -3822,15 +3837,15 @@ bool Blockchain::check_fee(size_t tx_weight, size_t tx_outs, uint64_t fee, uint6
 //------------------------------------------------------------------
 byte_and_output_fees Blockchain::get_dynamic_base_fee_estimate(uint64_t grace_blocks) const
 {
-  const uint8_t version = get_network_version();
+  const hf version = get_network_version();
   const uint64_t db_height = m_db->height();
 
-  if (grace_blocks >= CRYPTONOTE_REWARD_BLOCKS_WINDOW)
-    grace_blocks = CRYPTONOTE_REWARD_BLOCKS_WINDOW - 1;
+  if (grace_blocks >= REWARD_BLOCKS_WINDOW)
+    grace_blocks = REWARD_BLOCKS_WINDOW - 1;
 
   const uint64_t min_block_weight = get_min_block_weight(version);
   std::vector<uint64_t> weights;
-  get_last_n_blocks_weights(weights, CRYPTONOTE_REWARD_BLOCKS_WINDOW - grace_blocks);
+  get_last_n_blocks_weights(weights, REWARD_BLOCKS_WINDOW - grace_blocks);
   weights.reserve(grace_blocks);
   for (size_t i = 0; i < grace_blocks; ++i)
     weights.push_back(min_block_weight);
@@ -3847,10 +3862,10 @@ byte_and_output_fees Blockchain::get_dynamic_base_fee_estimate(uint64_t grace_bl
     base_reward = BLOCK_REWARD_OVERESTIMATE;
   }
 
-  const bool use_long_term_median_in_fee = version >= HF_VERSION_LONG_TERM_BLOCK_WEIGHT;
+  const bool use_long_term_median_in_fee = version >= feature::LONG_TERM_BLOCK_WEIGHT;
   const uint64_t use_median_value = use_long_term_median_in_fee ? std::min<uint64_t>(median, m_long_term_effective_median_block_weight) : median;
   auto fee = get_dynamic_base_fee(base_reward, use_median_value, version);
-  const bool per_byte = version < HF_VERSION_PER_BYTE_FEE;
+  const bool per_byte = version < feature::PER_BYTE_FEE;
   MDEBUG("Estimating " << grace_blocks << "-block fee at " << print_money(fee.first) << "/" << (per_byte ? "byte" : "kB") <<
       " + " << print_money(fee.second) << "/out");
   return fee;
@@ -3954,8 +3969,7 @@ bool Blockchain::check_block_timestamp(std::vector<uint64_t> timestamps, const b
 bool Blockchain::check_block_timestamp(const block& b, uint64_t& median_ts) const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
-  uint64_t cryptonote_block_future_time_limit = CRYPTONOTE_BLOCK_FUTURE_TIME_LIMIT_V2;
-  if(b.timestamp > get_adjusted_time() + cryptonote_block_future_time_limit)
+  if(b.timestamp > get_adjusted_time() + old::BLOCK_FUTURE_TIME_LIMIT_V2)
   {
     MERROR_VER("Timestamp of block with id: " << get_block_hash(b) << ", " << b.timestamp << ", bigger than adjusted time + 2 hours");
     return false;
@@ -3984,7 +3998,7 @@ bool Blockchain::check_block_timestamp(const block& b, uint64_t& median_ts) cons
 //------------------------------------------------------------------
 void Blockchain::return_tx_to_pool(std::vector<std::pair<transaction, blobdata>> &txs)
 {
-  uint8_t version = get_network_version();
+  hf version = get_network_version();
   for (auto& tx : txs)
   {
     cryptonote::tx_verification_context tvc{};
@@ -4035,7 +4049,7 @@ Blockchain::block_pow_verified Blockchain::verify_block_pow(cryptonote::block co
   if (alt_block)
   {
     randomx_longhash_context randomx_context = {};
-    if (blk.major_version >= cryptonote::network_version_13_checkpointing)
+    if (blk.major_version >= hf::hf13_checkpointing)
     {
       randomx_context.current_blockchain_height = chain_height;
       randomx_context.seed_height               = rx_seedheight(blk_height);
@@ -4112,7 +4126,7 @@ bool Blockchain::basic_block_checks(cryptonote::block const &blk, bool alt_block
   const crypto::hash blk_hash = cryptonote::get_block_hash(blk);
   const uint64_t blk_height   = cryptonote::get_block_height(blk);
   const uint64_t chain_height = get_current_blockchain_height();
-  const uint8_t hf_version    = get_network_version();
+  const hf hf_version    = get_network_version();
 
   if (alt_block)
   {
@@ -4129,11 +4143,11 @@ bool Blockchain::basic_block_checks(cryptonote::block const &blk, bool alt_block
     }
 
     // this is a cheap test
-    // HF19 TODO: remove the requirement that minor_version must be >= network version
-    if (auto v = get_network_version(blk_height); (v>0) && (blk.major_version != v || blk.minor_version < v))
+    // HF20 TODO: remove the requirement that minor_version must be >= network version
+    if (auto v = get_network_version(blk_height); (v > hf::none) && (blk.major_version != v || (blk.major_version < hf::hf20_bulletproof_plusplus && blk.minor_version < static_cast<uint8_t>(v))))
     {
-      LOG_PRINT_L1("Block with id: " << blk_hash << ", has invalid version " << +blk.major_version << "." << +blk.minor_version <<
-              "; current: " << +v << "." << +v << " for height " << blk_height);
+      LOG_PRINT_L1("Block with id: " << blk_hash << ", has invalid version " << static_cast<int>(blk.major_version) << "." << +blk.minor_version <<
+              "; current: " << static_cast<int>(v) << "." << static_cast<int>(v) << " for height " << blk_height);
       return false;
     }
   }
@@ -4171,11 +4185,14 @@ bool Blockchain::basic_block_checks(cryptonote::block const &blk, bool alt_block
       }
     }
 
-    // HF19 TODO: remove the requirement that minor_version must be >= network version
-    if (required_major_version>0 && (blk.major_version != required_major_version || blk.minor_version < required_major_version))
+    // HF20 TODO: remove the requirement that minor_version must be >= network version
+    if ((required_major_version > hf::none) && 
+        (blk.major_version != required_major_version ||
+          (blk.major_version < hf::hf20_bulletproof_plusplus &&
+            blk.minor_version < static_cast<uint8_t>(required_major_version))))
     {
-      MGINFO_RED("Block with id: " << blk_hash << ", has invalid version " << +blk.major_version << "." << +blk.minor_version <<
-              "; current: " << +required_major_version << "." << +required_major_version << " for height " << blk_height);
+      MGINFO_RED("Block with id: " << blk_hash << ", has invalid version " << static_cast<int>(blk.major_version) << "." << +blk.minor_version <<
+              "; current: " << static_cast<int>(required_major_version) << "." << static_cast<int>(required_major_version) << " for height " << blk_height);
       return false;
     }
 
@@ -4186,7 +4203,7 @@ bool Blockchain::basic_block_checks(cryptonote::block const &blk, bool alt_block
       bool master_node_checkpoint = false;
       if(!m_checkpoints.check_block(chain_height, blk_hash, nullptr, &master_node_checkpoint))
       {
-        if (!master_node_checkpoint || (master_node_checkpoint && blk.major_version >= cryptonote::network_version_14_enforce_checkpoints))
+        if (!master_node_checkpoint || (master_node_checkpoint && blk.major_version >= hf::hf14_enforce_checkpoints))
         {
           MGINFO_RED("CHECKPOINT VALIDATION FAILED");
           return false;
@@ -4406,10 +4423,10 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   difficulty_type cumulative_difficulty = current_diffic;
 
   // In the "tail" state when the minimum subsidy (implemented in get_block_reward) is in effect, the number of
-  // coins will eventually exceed MONEY_SUPPLY and overflow a uint64. To prevent overflow, cap already_generated_coins
-  // at MONEY_SUPPLY. already_generated_coins is only used to compute the block subsidy and MONEY_SUPPLY yields a
+  // coins will eventually exceed beldex::MONEY_SUPPLY and overflow a uint64. To prevent overflow, cap already_generated_coins
+  // at beldex::MONEY_SUPPLY. already_generated_coins is only used to compute the block subsidy and beldex::MONEY_SUPPLY yields a
   // subsidy of 0 under the base formula and therefore the minimum subsidy >0 in the tail state.
-  already_generated_coins = base_reward < (MONEY_SUPPLY-already_generated_coins) ? already_generated_coins + base_reward : MONEY_SUPPLY;
+  already_generated_coins = base_reward < (beldex::MONEY_SUPPLY-already_generated_coins) ? already_generated_coins + base_reward : beldex::MONEY_SUPPLY;
   if(chain_height)
     cumulative_difficulty += m_db->get_block_cumulative_difficulty(chain_height - 1);
 
@@ -4453,9 +4470,12 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
 
   auto abort_block = beldex::defer([&]() {
       pop_block_from_blockchain();
-      detached_info hook_data{m_db->height(), false /*by_pop_blocks*/};
-      for (const auto& hook : m_blockchain_detached_hooks)
-        hook(hook_data);
+      exec_detach_hooks(
+          *this,
+          m_db->height(),
+          m_blockchain_detached_hooks,
+          /*by_pop_blocks=*/false,
+          /*load_missing_blocks=*/false);
   });
 
   // TODO(beldex): Not nice, making the hook take in a vector of pair<transaction,
@@ -4512,7 +4532,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   {
     MINFO("+++++ POS BLOCK SUCCESSFULLY ADDED"
         "\n\tid: " << id <<
-        "\n\tHEIGHT: " << new_height-1 << ", v" << +bl.major_version << '.' << +bl.minor_version <<
+        "\n\tHEIGHT: " << new_height-1 << ", v" << static_cast<int>(bl.major_version) << '.' << +bl.minor_version <<
         "\n\tblock reward: " << print_money(fee_after_penalty + base_reward) << "(" << print_money(base_reward) << " + " << print_money(fee_after_penalty) << ")"
           ", coinbase_weight: " << coinbase_weight <<
           ", cumulative weight: " << cumulative_block_weight <<
@@ -4524,7 +4544,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     MINFO("+++++ MINER BLOCK SUCCESSFULLY ADDED\n"
         "\n\tid:  " << id <<
         "\n\tPoW: " << miner.blk_pow.proof_of_work <<
-        "\n\tHEIGHT: " << new_height - 1 << ", v" << +bl.major_version << '.' << +bl.minor_version << ", difficulty: " << current_diffic <<
+        "\n\tHEIGHT: " << new_height - 1 << ", v" << static_cast<int>(bl.major_version) << '.' << +bl.minor_version << ", difficulty: " << current_diffic <<
         "\n\tblock reward: " << print_money(fee_after_penalty + base_reward) << "(" << print_money(base_reward) << " + " << print_money(fee_after_penalty) << ")"
           ", coinbase_weight: " << coinbase_weight <<
           ", cumulative weight: " << cumulative_block_weight <<
@@ -4582,11 +4602,11 @@ uint64_t Blockchain::get_next_long_term_block_weight(uint64_t block_weight) cons
   const uint64_t db_height = m_db->height();
   const uint64_t nblocks = std::min<uint64_t>(m_long_term_block_weights_window, db_height);
 
-  if (!is_hard_fork_at_least(m_nettype, HF_VERSION_LONG_TERM_BLOCK_WEIGHT, get_current_blockchain_height()))
+  if (!is_hard_fork_at_least(m_nettype, feature::LONG_TERM_BLOCK_WEIGHT, get_current_blockchain_height()))
     return block_weight;
 
   uint64_t long_term_median = get_long_term_block_weight_median(db_height - nblocks, nblocks);
-  uint64_t long_term_effective_median_block_weight = std::max<uint64_t>(CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V5, long_term_median);
+  uint64_t long_term_effective_median_block_weight = std::max<uint64_t>(BLOCK_GRANTED_FULL_REWARD_ZONE_V5, long_term_median);
 
   uint64_t short_term_constraint = long_term_effective_median_block_weight + long_term_effective_median_block_weight * 2 / 5;
   uint64_t long_term_block_weight = std::min<uint64_t>(block_weight, short_term_constraint);
@@ -4602,13 +4622,13 @@ bool Blockchain::update_next_cumulative_weight_limit(uint64_t *long_term_effecti
 
   // when we reach this, the last hf version is not yet written to the db
   const uint64_t db_height = m_db->height();
-  const uint8_t hf_version = get_network_version();
+  const hf hf_version = get_network_version();
   uint64_t full_reward_zone = get_min_block_weight(hf_version);
 
-  if (hf_version < HF_VERSION_LONG_TERM_BLOCK_WEIGHT)
+  if (hf_version < feature::LONG_TERM_BLOCK_WEIGHT)
   {
     std::vector<uint64_t> weights;
-    get_last_n_blocks_weights(weights, CRYPTONOTE_REWARD_BLOCKS_WINDOW);
+    get_last_n_blocks_weights(weights, REWARD_BLOCKS_WINDOW);
     m_current_block_cumul_weight_median = tools::median(std::move(weights));
   }
   else
@@ -4618,7 +4638,7 @@ bool Blockchain::update_next_cumulative_weight_limit(uint64_t *long_term_effecti
     uint64_t long_term_median;
     if (db_height == 1)
     {
-      long_term_median = CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V5;
+      long_term_median = BLOCK_GRANTED_FULL_REWARD_ZONE_V5;
     }
     else
     {
@@ -4628,7 +4648,7 @@ bool Blockchain::update_next_cumulative_weight_limit(uint64_t *long_term_effecti
       long_term_median = get_long_term_block_weight_median(db_height - nblocks - 1, nblocks);
     }
 
-    m_long_term_effective_median_block_weight = std::max<uint64_t>(CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V5, long_term_median);
+    m_long_term_effective_median_block_weight = std::max<uint64_t>(BLOCK_GRANTED_FULL_REWARD_ZONE_V5, long_term_median);
 
     uint64_t short_term_constraint = m_long_term_effective_median_block_weight + m_long_term_effective_median_block_weight * 2 / 5;
     uint64_t long_term_block_weight = std::min<uint64_t>(block_weight, short_term_constraint);
@@ -4643,13 +4663,13 @@ bool Blockchain::update_next_cumulative_weight_limit(uint64_t *long_term_effecti
       m_long_term_block_weights_cache_rolling_median.insert(long_term_block_weight);
       long_term_median = m_long_term_block_weights_cache_rolling_median.median();
     }
-    m_long_term_effective_median_block_weight = std::max<uint64_t>(CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V5, long_term_median);
+    m_long_term_effective_median_block_weight = std::max<uint64_t>(BLOCK_GRANTED_FULL_REWARD_ZONE_V5, long_term_median);
 
     std::vector<uint64_t> weights;
-    get_last_n_blocks_weights(weights, CRYPTONOTE_REWARD_BLOCKS_WINDOW);
+    get_last_n_blocks_weights(weights, REWARD_BLOCKS_WINDOW);
 
     uint64_t short_term_median = tools::median(std::move(weights));
-    uint64_t effective_median_block_weight = std::min<uint64_t>(std::max<uint64_t>(CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V5, short_term_median), CRYPTONOTE_SHORT_TERM_BLOCK_WEIGHT_SURGE_FACTOR * m_long_term_effective_median_block_weight);
+    uint64_t effective_median_block_weight = std::min<uint64_t>(std::max<uint64_t>(BLOCK_GRANTED_FULL_REWARD_ZONE_V5, short_term_median), SHORT_TERM_BLOCK_WEIGHT_SURGE_FACTOR * m_long_term_effective_median_block_weight);
 
     m_current_block_cumul_weight_median = effective_median_block_weight;
   }
@@ -4683,9 +4703,9 @@ bool Blockchain::add_new_block(const block& bl, block_verification_context& bvc,
     return false;
   }
 
-    const int hf_version = get_network_version();
+    const hf hf_version = get_network_version();
     bool const POS_block      = cryptonote::block_has_POS_components(bl);
-    if (hf_version >= network_version_12_security_signature and !POS_block){
+    if (hf_version >= hf::hf12_security_signature and !POS_block){
         crypto::signature security_signature;
         const bool has_security_signature = cryptonote::get_security_signature_from_tx_extra(bl.miner_tx.extra,
                                                                                              security_signature);
@@ -5034,7 +5054,7 @@ bool Blockchain::calc_batched_governance_reward(uint64_t height, uint64_t &rewar
 {
   reward = 0;
   auto hard_fork_version = get_network_version(height);
-  if (hard_fork_version <= network_version_9_master_nodes)
+  if (hard_fork_version <= hf::hf9_master_nodes)
   {
     return true;
   }
@@ -5046,7 +5066,7 @@ bool Blockchain::calc_batched_governance_reward(uint64_t height, uint64_t &rewar
 
   if(height == 742425)
   {
-    reward = 8500000000 * COIN; //mint 8.5 billion bdx governance in this block
+    reward = 850000000 * beldex::COIN; //mint 8.5 billion bdx governance in this block
     return true;
   }
   // Ignore governance reward and payout instead the last
@@ -5058,9 +5078,9 @@ bool Blockchain::calc_batched_governance_reward(uint64_t height, uint64_t &rewar
   size_t num_blocks = cryptonote::get_config(nettype()).GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS;
 
   // governance reward starting at HF17
-  if (hard_fork_version >= network_version_17_POS)
+  if (hard_fork_version >= hf::hf17_POS)
   {
-   reward = num_blocks * FOUNDATION_REWARD_HF17;
+   reward = num_blocks * beldex::FOUNDATION_REWARD_HF17;
     return true;
   }
 
@@ -5080,7 +5100,7 @@ bool Blockchain::calc_batched_governance_reward(uint64_t height, uint64_t &rewar
 
   for (const auto &block : blocks)
   {
-    if (block.major_version >= network_version_10_bulletproofs)
+    if (block.major_version >= hf::hf10_bulletproofs)
       reward += derive_governance_from_block_reward(nettype(), block, hard_fork_version);
   }
 
@@ -5272,7 +5292,7 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
   } while(0); \
 
   // generate sorted tables for all amounts and absolute offsets
-  size_t tx_index = 0, block_index = 0;
+  size_t tx_index = 0;
   for (const auto &entry : blocks_entry)
   {
     if (m_cancel)
@@ -5337,7 +5357,6 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
 
       }
     }
-    ++block_index;
   }
 
   // sort and remove duplicate absolute_offsets in offset_map
@@ -5594,7 +5613,7 @@ void Blockchain::load_compiled_in_block_hashes(const GetCheckpointsCallback& get
   if (!checkpoints.empty())
   {
     MINFO("Loading precomputed blocks (" << checkpoints.size() << " bytes)");
-    if (m_nettype == MAINNET)
+    if (m_nettype == network_type::MAINNET)
     {
       // first check hash
       crypto::hash hash;

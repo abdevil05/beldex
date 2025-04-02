@@ -894,12 +894,12 @@ void BlockchainLMDB::add_block(const block& blk, size_t block_weight, uint64_t l
   bi.bi_diff = cumulative_difficulty;
   bi.bi_hash = blk_hash;
   bi.bi_cum_rct = num_rct_outs;
-  if (blk.major_version >= 4 && m_height > 0)
+  if (m_height > 0)
   {
     uint64_t last_height = m_height-1;
     MDB_val_set(h, last_height);
     if ((result = mdb_cursor_get(m_cur_block_info, (MDB_val *)&zerokval, &h, MDB_GET_BOTH)))
-        throw1(BLOCK_DNE(lmdb_error("Failed to get block info: ", result).c_str()));
+        throw1(BLOCK_DNE(lmdb_error("Failed to get parent block info: ", result).c_str()));
     const mdb_block_info *bi_prev = (const mdb_block_info*)h.mv_data;
     bi.bi_cum_rct += bi_prev->bi_cum_rct;
   }
@@ -1417,11 +1417,11 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
 
   // check for existing LMDB files in base directory
   auto old_files = filename.parent_path();
-  if (fs::exists(old_files / CRYPTONOTE_BLOCKCHAINDATA_FILENAME)
-      || fs::exists(old_files / CRYPTONOTE_BLOCKCHAINDATA_LOCK_FILENAME))
+  if (fs::exists(old_files / BLOCKCHAINDATA_FILENAME)
+      || fs::exists(old_files / BLOCKCHAINDATA_LOCK_FILENAME))
   {
     LOG_PRINT_L0("Found existing LMDB files in " << old_files.u8string());
-    LOG_PRINT_L0("Move " << CRYPTONOTE_BLOCKCHAINDATA_FILENAME << " and/or " << CRYPTONOTE_BLOCKCHAINDATA_LOCK_FILENAME << " to " << filename << ", or delete them, and then restart");
+    LOG_PRINT_L0("Move " << BLOCKCHAINDATA_FILENAME << " and/or " << BLOCKCHAINDATA_LOCK_FILENAME << " to " << filename << ", or delete them, and then restart");
     throw DB_ERROR("Database could not be opened");
   }
 
@@ -1729,14 +1729,14 @@ std::vector<fs::path> BlockchainLMDB::get_filenames() const
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   std::vector<fs::path> paths;
-  paths.push_back(m_folder / CRYPTONOTE_BLOCKCHAINDATA_FILENAME);
-  paths.push_back(m_folder / CRYPTONOTE_BLOCKCHAINDATA_LOCK_FILENAME);
+  paths.push_back(m_folder / BLOCKCHAINDATA_FILENAME);
+  paths.push_back(m_folder / BLOCKCHAINDATA_LOCK_FILENAME);
   return paths;
 }
 
 bool BlockchainLMDB::remove_data_file(const fs::path& folder) const
 {
-  auto filename = folder / CRYPTONOTE_BLOCKCHAINDATA_FILENAME;
+  auto filename = folder / BLOCKCHAINDATA_FILENAME;
   try
   {
     fs::remove(filename);
@@ -2052,10 +2052,10 @@ bool BlockchainLMDB::prune_worker(int mode, uint32_t pruning_seed)
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   const uint32_t log_stripes = tools::get_pruning_log_stripes(pruning_seed);
-  if (log_stripes && log_stripes != CRYPTONOTE_PRUNING_LOG_STRIPES)
+  if (log_stripes && log_stripes != PRUNING_LOG_STRIPES)
     throw0(DB_ERROR("Pruning seed not in range"));
   pruning_seed = tools::get_pruning_stripe(pruning_seed);
-  if (pruning_seed > (1ul << CRYPTONOTE_PRUNING_LOG_STRIPES))
+  if (pruning_seed > (1ul << PRUNING_LOG_STRIPES))
     throw0(DB_ERROR("Pruning seed not in range"));
   check_open();
 
@@ -2090,7 +2090,7 @@ bool BlockchainLMDB::prune_worker(int mode, uint32_t pruning_seed)
     }
     if (pruning_seed == 0)
       pruning_seed = tools::get_random_stripe();
-    pruning_seed = tools::make_pruning_seed(pruning_seed, CRYPTONOTE_PRUNING_LOG_STRIPES);
+    pruning_seed = tools::make_pruning_seed(pruning_seed, PRUNING_LOG_STRIPES);
     v.mv_data = &pruning_seed;
     v.mv_size = sizeof(pruning_seed);
     result = mdb_put(txn, m_properties, &k, &v, 0);
@@ -2108,9 +2108,9 @@ bool BlockchainLMDB::prune_worker(int mode, uint32_t pruning_seed)
       pruning_seed = tools::get_pruning_stripe(data);
     if (tools::get_pruning_stripe(data) != pruning_seed)
       throw0(DB_ERROR("Blockchain already pruned with different seed"));
-    if (tools::get_pruning_log_stripes(data) != CRYPTONOTE_PRUNING_LOG_STRIPES)
+    if (tools::get_pruning_log_stripes(data) != PRUNING_LOG_STRIPES)
       throw0(DB_ERROR("Blockchain already pruned with different base"));
-    pruning_seed = tools::make_pruning_seed(pruning_seed, CRYPTONOTE_PRUNING_LOG_STRIPES);
+    pruning_seed = tools::make_pruning_seed(pruning_seed, PRUNING_LOG_STRIPES);
     prune_tip_table = (mode == prune_mode_update);
   }
   else
@@ -2149,7 +2149,7 @@ bool BlockchainLMDB::prune_worker(int mode, uint32_t pruning_seed)
 
       uint64_t block_height;
       memcpy(&block_height, v.mv_data, sizeof(block_height));
-      if (block_height + CRYPTONOTE_PRUNING_TIP_BLOCKS < blockchain_height)
+      if (block_height + PRUNING_TIP_BLOCKS < blockchain_height)
       {
         ++n_total_records;
         if (!tools::has_unpruned_block(block_height, blockchain_height, pruning_seed) && !is_v1_tx(c_txs_pruned, &k))
@@ -2217,7 +2217,7 @@ bool BlockchainLMDB::prune_worker(int mode, uint32_t pruning_seed)
       txindex ti;
       memcpy(&ti, v.mv_data, sizeof(ti));
       const uint64_t block_height = ti.data.block_id;
-      if (block_height + CRYPTONOTE_PRUNING_TIP_BLOCKS >= blockchain_height)
+      if (block_height + PRUNING_TIP_BLOCKS >= blockchain_height)
       {
         MDB_val_set(kp, ti.data.tx_id);
         MDB_val_set(vp, block_height);
@@ -4389,10 +4389,10 @@ std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> BlockchainLMDB::get
       while (num_elems > 0) {
         const tx_out_index toi = get_output_tx_and_index(amount, num_elems - 1);
         const uint64_t height = get_tx_block_height(toi.first);
-        const uint8_t hf_version = cryptonote::get_network_version(nettype, height);
-        LOG_PRINT_L2("TX hf_version:"  << hf_version);
+        const auto hf_version = cryptonote::get_network_version(nettype, height);
+        LOG_PRINT_L2("TX hf_version:"  << static_cast<int>(hf_version));
 
-        if ((height + (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE)) <= blockchain_height)
+        if ((height + (hf_version >= cryptonote::hf::hf17_POS ? DEFAULT_TX_SPENDABLE_AGE_V17 : cryptonote::old::DEFAULT_TX_SPENDABLE_AGE)) <= blockchain_height)
           break;
         --num_elems;
       }
@@ -4656,7 +4656,7 @@ bool BlockchainLMDB::is_read_only() const
 
 uint64_t BlockchainLMDB::get_database_size() const
 {
-  return fs::file_size(m_folder / CRYPTONOTE_BLOCKCHAINDATA_FILENAME);
+  return fs::file_size(m_folder / BLOCKCHAINDATA_FILENAME);
 }
 
 void BlockchainLMDB::fixup(cryptonote::network_type nettype)
@@ -4699,7 +4699,7 @@ void BlockchainLMDB::fixup(cryptonote::network_type nettype)
           add_timestamp_and_difficulty(nettype, curr_chain_height, timestamps, difficulties, curr_timestamp, curr_cumulative_diff);
 
           // NOTE: Calculate next block difficulty
-          if (is_hard_fork_at_least(nettype, cryptonote::network_version_17_POS, curr_height)
+          if (is_hard_fork_at_least(nettype, hf::hf17_POS, curr_height)
               && block_header_has_POS_components(get_block_header_from_height(curr_height)))
           {
             diff = POS_FIXED_DIFFICULTY; // TARGET_BLOCK_TIME
@@ -4708,7 +4708,7 @@ void BlockchainLMDB::fixup(cryptonote::network_type nettype)
           {
             diff = next_difficulty_v2(timestamps,
                                       difficulties,
-                                      tools::to_seconds(TARGET_BLOCK_TIME_OLD), //use OLD BLOCK_TIME
+                                      tools::to_seconds(old::TARGET_BLOCK_TIME_12), //use OLD BLOCK_TIME
                                       difficulty_mode(nettype, curr_height + 1));
           }
         }
@@ -5694,7 +5694,7 @@ void BlockchainLMDB::migrate_3_4()
       throw0(DB_ERROR(lmdb_error("Failed to query m_blocks: ", result).c_str()));
     const uint64_t blockchain_height = db_stats.ms_entries;
 
-    boost::circular_buffer<uint64_t> long_term_block_weights(CRYPTONOTE_LONG_TERM_BLOCK_WEIGHT_WINDOW_SIZE);
+    boost::circular_buffer<uint64_t> long_term_block_weights(LONG_TERM_BLOCK_WEIGHT_WINDOW_SIZE);
 
     /* the block_info table name is the same but the old version and new version
      * have incompatible data. Create a new table. We want the name to be similar
@@ -5760,8 +5760,8 @@ void BlockchainLMDB::migrate_3_4()
           throw0(DB_ERROR(lmdb_error("Failed to query m_blocks: ", result).c_str()));
         if (vb.mv_size == 0)
           throw0(DB_ERROR("Invalid data from m_blocks"));
-        const uint8_t block_major_version = *((const uint8_t*)vb.mv_data);
-        if (block_major_version >= HF_VERSION_LONG_TERM_BLOCK_WEIGHT)
+        const hf block_major_version {*((const uint8_t*)vb.mv_data)};
+        if (block_major_version >= feature::LONG_TERM_BLOCK_WEIGHT)
           past_long_term_weight = true;
       }
 
@@ -5769,7 +5769,7 @@ void BlockchainLMDB::migrate_3_4()
       if (past_long_term_weight)
       {
         std::vector<uint64_t> weights(long_term_block_weights.begin(), long_term_block_weights.end());
-        uint64_t long_term_effective_block_median_weight = std::max<uint64_t>(CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V5,  tools::median(weights));
+        uint64_t long_term_effective_block_median_weight = std::max<uint64_t>(BLOCK_GRANTED_FULL_REWARD_ZONE_V5,  tools::median(weights));
         long_term_block_weight = std::min<uint64_t>(bi.bi_weight, long_term_effective_block_median_weight + long_term_effective_block_median_weight * 2 / 5);
       }
       else

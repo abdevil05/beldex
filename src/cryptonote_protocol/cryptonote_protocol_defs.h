@@ -174,7 +174,7 @@ namespace cryptonote
     uint64_t current_height;
     uint64_t cumulative_difficulty;
     crypto::hash  top_id;
-    uint8_t top_version;
+    hf top_version;
     uint32_t pruning_seed;
     std::vector<uint64_t> flash_blocks;
     std::vector<crypto::hash> flash_hash;

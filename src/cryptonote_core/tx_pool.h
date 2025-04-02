@@ -84,13 +84,13 @@ namespace cryptonote
     static tx_pool_options from_block() { tx_pool_options o; o.kept_by_block = true; o.relayed = true; return o; }
     static tx_pool_options from_peer() { tx_pool_options o; o.relayed = true; return o; }
     static tx_pool_options new_tx(bool do_not_relay = false) { tx_pool_options o; o.do_not_relay = do_not_relay; return o; }
-    static tx_pool_options new_flash(bool approved, uint8_t hf_version) {
+    static tx_pool_options new_flash(bool approved, hf hf_version) {
       tx_pool_options o;
       o.do_not_relay = !approved;
       o.approved_flash = approved;
-      o.fee_percent = FLASH_MINER_TX_FEE_PERCENT;
-      o.burn_percent = FLASH_BURN_TX_FEE_PERCENT_OLD;
-      o.burn_fixed = FLASH_BURN_FIXED;
+      o.fee_percent = beldex::FLASH_MINER_TX_FEE_PERCENT;
+      o.burn_percent = beldex::FLASH_BURN_TX_FEE_PERCENT_OLD;
+      o.burn_fixed = beldex::FLASH_BURN_FIXED;
       return o;
     }
   };
@@ -124,7 +124,7 @@ namespace cryptonote
     tx_memory_pool &operator=(const tx_memory_pool &) = delete;
 
     /**
-     * @copydoc add_tx(transaction&, tx_verification_context&, const tx_pool_options &, uint8_t)
+     * @copydoc add_tx(transaction&, tx_verification_context&, const tx_pool_options &, hf)
      *
      * @param id the transaction's hash
      * @param tx_weight the transaction's weight
@@ -132,7 +132,7 @@ namespace cryptonote
      * block tx then set this pointer to the required new height: that is, all blocks with height
      * `block_rollback_height` and above must be removed.
      */
-    bool add_tx(transaction &tx, const crypto::hash &id, const cryptonote::blobdata &blob, size_t tx_weight, tx_verification_context& tvc, const tx_pool_options &opts, uint8_t hf_version, uint64_t *flash_rollback_height = nullptr);
+    bool add_tx(transaction &tx, const crypto::hash &id, const cryptonote::blobdata &blob, size_t tx_weight, tx_verification_context& tvc, const tx_pool_options &opts, hf hf_version, uint64_t *flash_rollback_height = nullptr);
 
     /**
      * @brief add a transaction to the transaction pool
@@ -149,7 +149,7 @@ namespace cryptonote
      *
      * @return true if the transaction passes validations, otherwise false
      */
-    bool add_tx(transaction &tx, tx_verification_context& tvc, const tx_pool_options &opts, uint8_t hf_version);
+    bool add_tx(transaction &tx, tx_verification_context& tvc, const tx_pool_options &opts, hf hf_version);
 
     /**
      * @brief attempts to add a flash transaction to the transaction pool.
@@ -389,7 +389,7 @@ namespace cryptonote
      *
      * @return true
      */
-    bool fill_block_template(block &bl, size_t median_weight, uint64_t already_generated_coins, size_t &total_weight, uint64_t &raw_fee, uint64_t &expected_reward, uint8_t version, uint64_t height);
+    bool fill_block_template(block &bl, size_t median_weight, uint64_t already_generated_coins, size_t &total_weight, uint64_t &raw_fee, uint64_t &expected_reward, hf version, uint64_t height);
 
     /**
      * @brief get a list of all transactions in the pool
@@ -522,7 +522,7 @@ namespace cryptonote
      *
      * @return the number of transactions removed
      */
-    size_t validate(uint8_t version);
+    size_t validate(hf version);
 
      /**
       * @brief return the cookie
@@ -580,7 +580,7 @@ namespace cryptonote
      * @return true if it already exists
      *
      */
-    bool have_duplicated_non_standard_tx(transaction const &tx, uint8_t hard_fork_version) const;
+    bool have_duplicated_non_standard_tx(transaction const &tx, hf version) const;
 
     /**
      * @brief check if any spent key image in a transaction is in the pool

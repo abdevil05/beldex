@@ -735,7 +735,8 @@ KV_SERIALIZE_MAP_CODE_END()
 
 
 KV_SERIALIZE_MAP_CODE_BEGIN(HARD_FORK_INFO::response)
-  KV_SERIALIZE(version)
+  KV_SERIALIZE_ENUM(version)
+  KV_SERIALIZE(revision)
   KV_SERIALIZE(enabled)
   KV_SERIALIZE(earliest_height)
   KV_SERIALIZE(last_height)
@@ -1105,6 +1106,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(GET_MASTER_NODES::requested_fields_t)
     KV_SERIALIZE(staking_requirement)
     KV_SERIALIZE(portions_for_operator)
     KV_SERIALIZE(swarm_id)
+    KV_SERIALIZE(swarm)
     KV_SERIALIZE(operator_address)
     KV_SERIALIZE(public_ip)
     KV_SERIALIZE(storage_port)
@@ -1153,7 +1155,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(GET_MASTER_NODES::response::entry)
 
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(master_node_pubkey);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(registration_height);
-  KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(registration_hf_version);
+  if (all || res->fields.registration_hf_version) KV_SERIALIZE_ENUM(registration_hf_version);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(requested_unlock_height);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(last_reward_block_height);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(last_reward_transaction_index);
@@ -1171,6 +1173,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(GET_MASTER_NODES::response::entry)
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(staking_requirement);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(portions_for_operator);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(swarm_id);
+  KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(swarm);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(operator_address);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(public_ip);
   KV_SERIALIZE_ENTRY_FIELD_IF_REQUESTED(storage_port);

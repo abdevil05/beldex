@@ -54,7 +54,7 @@ public:
   bool get_earliest_height(uint8_t version, uint64_t &earliest_height) const;
   bool get_dynamic_base_fee_estimate(uint64_t grace_blocks, cryptonote::byte_and_output_fees &fees) const;
   bool get_fee_quantization_mask(uint64_t &fee_quantization_mask) const;
-  std::optional<uint8_t> get_hardfork_version() const;
+  std::optional<cryptonote::hf> get_hardfork_version() const;
 
   std::pair<bool, std::vector<cryptonote::rpc::GET_MASTER_NODES::response::entry>>             get_master_nodes(std::vector<std::string> pubkeys) const;
   std::pair<bool, std::vector<cryptonote::rpc::GET_MASTER_NODES::response::entry>>             get_all_master_nodes() const;

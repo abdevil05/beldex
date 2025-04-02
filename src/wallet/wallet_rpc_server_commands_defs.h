@@ -1354,7 +1354,7 @@ BELDEX_RPC_DOC_INTROSPECT
       bool coinbase = false;
       bool filter_by_height = false;
       uint64_t min_height = 0;
-      uint64_t max_height = CRYPTONOTE_MAX_BLOCK_NUMBER;
+      uint64_t max_height = cryptonote::MAX_BLOCK_NUMBER;
       std::set<uint32_t> subaddr_indices;
       uint32_t account_index;
       bool all_accounts;

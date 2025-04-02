@@ -79,6 +79,9 @@
 #include "ringct/rctSigs.h"
 #include "ringdb.h"
 #include "device/device_cold.hpp"
+#ifdef DEVICE_TREZOR_READY
+#  include "device_trezor/device_trezor.hpp"
+#endif
 #include "device_trezor/device_trezor.hpp"
 
 #include "cryptonote_core/master_node_list.h"
@@ -115,7 +118,7 @@ namespace {
   constexpr float RECENT_OUTPUT_RATIO = 0.5f; // 50% of outputs are from the recent zone
   constexpr float RECENT_OUTPUT_DAYS = 1.8f; // last 1.8 day makes up the recent zone (taken from monerolink.pdf, Miller et al)
   constexpr time_t RECENT_OUTPUT_ZONE = RECENT_OUTPUT_DAYS * 86400;
-
+  constexpr uint64_t RECENT_OUTPUT_BLOCKS = RECENT_OUTPUT_DAYS * BLOCKS_PER_DAY;
 
   constexpr uint64_t FEE_ESTIMATE_GRACE_BLOCKS = 10; // estimate fee valid for that many blocks
 
@@ -134,11 +137,11 @@ namespace {
   constexpr double GAMMA_SCALE = 1/1.61;
 
   constexpr uint32_t DEFAULT_MIN_OUTPUT_COUNT = 5;
-  constexpr uint64_t DEFAULT_MIN_OUTPUT_VALUE = 2*COIN;
+  constexpr uint64_t DEFAULT_MIN_OUTPUT_VALUE = 2 * beldex::COIN;
 
   constexpr auto DEFAULT_INACTIVITY_LOCK_TIMEOUT = 10min;
 
-  constexpr uint8_t IGNORE_LONG_PAYMENT_ID_FROM_BLOCK_VERSION = 12;
+  constexpr hf IGNORE_LONG_PAYMENT_ID_FROM_BLOCK_VERSION = hf::hf12_security_signature;
 
   constexpr std::string_view SIG_MAGIC = "SigV1"sv;
   constexpr std::string_view MULTISIG_MAGIC = "MultisigV1"sv;
@@ -323,7 +326,7 @@ std::unique_ptr<tools::wallet2> make_basic(const boost::program_options::variabl
   const bool testnet = command_line::get_arg(vm, opts.testnet);
   const bool devnet = command_line::get_arg(vm, opts.devnet);
   const bool fakenet = command_line::get_arg(vm, opts.regtest);
-  network_type nettype = testnet ? TESTNET : devnet ? DEVNET : fakenet ? FAKECHAIN : MAINNET;
+  network_type nettype = testnet ? network_type::TESTNET : devnet ? network_type::DEVNET : fakenet ? network_type::FAKECHAIN : network_type::MAINNET;
 
   THROW_WALLET_EXCEPTION_IF(testnet + devnet + fakenet > 1, tools::error::wallet_internal_error, "At most one of --testnet, --devnet, or --regtest may be specified");
 
@@ -475,7 +478,7 @@ std::pair<std::unique_ptr<tools::wallet2>, tools::password_container> generate_f
 {
   const bool testnet = command_line::get_arg(vm, opts.testnet);
   const bool devnet = command_line::get_arg(vm, opts.devnet);
-  const network_type nettype = testnet ? TESTNET : devnet ? DEVNET : MAINNET;
+  const network_type nettype = testnet ? network_type::TESTNET : devnet ? network_type::DEVNET : network_type::MAINNET;
 
   /* GET_FIELD_FROM_JSON_RETURN_ON_ERROR Is a generic macro that can return
   false. Gcc will coerce this into unique_ptr(nullptr), but clang correctly
@@ -908,12 +911,12 @@ gamma_picker::gamma_picker(const std::vector<uint64_t> &rct_offsets, double shap
     rct_offsets(rct_offsets)
 {
   gamma = std::gamma_distribution<double>(shape, scale);
-  THROW_WALLET_EXCEPTION_IF(rct_offsets.size() <= CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17, error::wallet_internal_error, "Bad offset calculation");
+  THROW_WALLET_EXCEPTION_IF(rct_offsets.size() <= DEFAULT_TX_SPENDABLE_AGE_V17, error::wallet_internal_error, "Bad offset calculation");
   const size_t blocks_in_a_year = BLOCKS_PER_DAY * 365;
   const size_t blocks_to_consider = std::min<size_t>(rct_offsets.size(), blocks_in_a_year);
   const double outputs_to_consider = rct_offsets.back() - (blocks_to_consider < rct_offsets.size() ? rct_offsets[rct_offsets.size() - blocks_to_consider - 1] : 0);
   begin = rct_offsets.data();
-  end = rct_offsets.data() + rct_offsets.size() - CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17;
+  end = rct_offsets.data() + rct_offsets.size() - (std::max<uint64_t>(1, DEFAULT_TX_SPENDABLE_AGE_V17) - 1);
   num_rct_outputs = *(end - 1);
   THROW_WALLET_EXCEPTION_IF(num_rct_outputs == 0, error::wallet_internal_error, "No rct outputs");
   average_output_time = tools::to_seconds(TARGET_BLOCK_TIME) * blocks_to_consider / outputs_to_consider; // this assumes constant target over the whole rct range
@@ -1059,10 +1062,10 @@ wallet2::wallet2(network_type nettype, uint64_t kdf_rounds, bool unattended):
   m_segregate_pre_fork_outputs(true),
   m_key_reuse_mitigation2(true),
   m_segregation_height(0),
-  m_ignore_outputs_above(MONEY_SUPPLY),
+  m_ignore_outputs_above(beldex::MONEY_SUPPLY),
   m_ignore_outputs_below(0),
   m_track_uses(false),
-  m_inactivity_lock_timeout(m_nettype == MAINNET ? DEFAULT_INACTIVITY_LOCK_TIMEOUT : 0s),
+  m_inactivity_lock_timeout(m_nettype == network_type::MAINNET ? DEFAULT_INACTIVITY_LOCK_TIMEOUT : 0s),
   m_is_initialized(false),
   m_kdf_rounds(kdf_rounds),
   is_old_file_format(false),
@@ -1829,7 +1832,7 @@ void wallet2::cache_tx_data(const cryptonote::transaction& tx, const crypto::has
 }
 //----------------------------------------------------------------------------------------------------
 void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote::transaction& tx, const std::vector<uint64_t> &o_indices,
-    uint64_t height, uint8_t block_version, uint64_t ts, bool miner_tx, bool pool, bool flash, bool double_spend_seen,
+    uint64_t height, hf block_version, uint64_t ts, bool miner_tx, bool pool, bool flash, bool double_spend_seen,
     const tx_cache_data &tx_cache_data, std::map<std::pair<uint64_t, uint64_t>, size_t> *output_tracker_cache)
 {
   if (!tx.is_transfer() || tx.version <= txversion::v1)
@@ -3299,7 +3302,7 @@ void wallet2::process_pool_state(const std::vector<get_pool_state_tx> &txs)
   const time_t now = time(NULL);
   for (const auto &e: txs)
   {
-    process_new_transaction(e.tx_hash, e.tx, std::vector<uint64_t>(), 0, 0, now, false, true, e.flash, e.double_spend_seen, {});
+    process_new_transaction(e.tx_hash, e.tx, std::vector<uint64_t>(), 0, hf::none, now, false, true, e.flash, e.double_spend_seen, {});
     m_scanned_pool_txs[0].insert(e.tx_hash);
     if (m_scanned_pool_txs[0].size() > 5000)
     {
@@ -4030,7 +4033,7 @@ std::optional<wallet2::keys_file_data> wallet2::get_keys_file_data(const epee::w
   value2.SetUint64(m_min_output_value);
   json.AddMember("min_output_value", value2, json.GetAllocator());
 
-  value2.SetInt(CRYPTONOTE_DISPLAY_DECIMAL_POINT);
+  value2.SetInt(beldex::DISPLAY_DECIMAL_POINT);
   json.AddMember("default_decimal_point", value2, json.GetAllocator());
 
   value2.SetInt(m_merge_destinations ? 1 :0);
@@ -4045,7 +4048,7 @@ std::optional<wallet2::keys_file_data> wallet2::get_keys_file_data(const epee::w
   value2.SetInt(m_confirm_export_overwrite ? 1 :0);
   json.AddMember("confirm_export_overwrite", value2, json.GetAllocator());
 
-  value2.SetUint(m_nettype);
+  value2.SetUint(static_cast<std::underlying_type_t<network_type>>(m_nettype));
   json.AddMember("nettype", value2, json.GetAllocator());
 
   value2.SetInt(m_segregate_pre_fork_outputs ? 1 : 0);
@@ -4128,7 +4131,7 @@ void wallet2::setup_keys(const epee::wipeable_string &password)
   static_assert(HASH_SIZE == sizeof(crypto::chacha_key), "Mismatched sizes of hash and chacha key");
   epee::mlocked<tools::scrubbed_arr<char, HASH_SIZE+1>> cache_key_data;
   memcpy(cache_key_data.data(), &key, HASH_SIZE);
-  cache_key_data[HASH_SIZE] = config::HASH_KEY_WALLET_CACHE;
+  cache_key_data[HASH_SIZE] = hashkey::WALLET_CACHE;
   cn_fast_hash(cache_key_data.data(), HASH_SIZE+1, (crypto::hash&)m_cache_key);
   get_ringdb_key();
 }
@@ -4227,7 +4230,7 @@ bool wallet2::load_keys_buf(const std::string& keys_buf, const epee::wipeable_st
     m_segregate_pre_fork_outputs = true;
     m_key_reuse_mitigation2 = true;
     m_segregation_height = 0;
-    m_ignore_outputs_above = MONEY_SUPPLY;
+    m_ignore_outputs_above = beldex::MONEY_SUPPLY;
     m_ignore_outputs_below = 0;
     m_track_uses = false;
     m_inactivity_lock_timeout = DEFAULT_INACTIVITY_LOCK_TIMEOUT;
@@ -4375,21 +4378,21 @@ bool wallet2::load_keys_buf(const std::string& keys_buf, const epee::wipeable_st
     THROW_WALLET_EXCEPTION_IF(static_cast<uint8_t>(m_nettype) != field_nettype, error::wallet_internal_error,
     (boost::format("%s wallet cannot be opened as %s wallet")
     % (field_nettype == 0 ? "Mainnet" : field_nettype == 1 ? "Testnet" : "Devnet")
-    % (m_nettype == MAINNET ? "mainnet" : m_nettype == TESTNET ? "testnet" : "devnet")).str());
+    % (m_nettype == network_type::MAINNET ? "mainnet" : m_nettype == network_type::TESTNET ? "testnet" : "devnet")).str());
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, segregate_pre_fork_outputs, int, Int, false, true);
     m_segregate_pre_fork_outputs = field_segregate_pre_fork_outputs;
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, key_reuse_mitigation2, int, Int, false, true);
     m_key_reuse_mitigation2 = field_key_reuse_mitigation2;
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, segregation_height, int, Uint, false, 0);
     m_segregation_height = field_segregation_height;
-    GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, ignore_outputs_above, uint64_t, Uint64, false, MONEY_SUPPLY);
+    GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, ignore_outputs_above, uint64_t, Uint64, false, beldex::MONEY_SUPPLY);
     m_ignore_outputs_above = field_ignore_outputs_above;
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, ignore_outputs_below, uint64_t, Uint64, false, 0);
     m_ignore_outputs_below = field_ignore_outputs_below;
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, track_uses, int, Int, false, false);
     m_track_uses = field_track_uses;
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, inactivity_lock_timeout, uint32_t, Uint, false,
-            m_nettype == MAINNET ? std::chrono::seconds{DEFAULT_INACTIVITY_LOCK_TIMEOUT}.count() : 0);
+            m_nettype == network_type::MAINNET ? std::chrono::seconds{DEFAULT_INACTIVITY_LOCK_TIMEOUT}.count() : 0);
     m_inactivity_lock_timeout = std::chrono::seconds{field_inactivity_lock_timeout};
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, subaddress_lookahead_major, uint32_t, Uint, false, SUBADDRESS_LOOKAHEAD_MAJOR);
     m_subaddress_lookahead_major = field_subaddress_lookahead_major;
@@ -4787,7 +4790,7 @@ void wallet2::generate(const fs::path& wallet_, const epee::wipeable_string& pas
   m_multisig_signers = multisig_signers;
   setup_keys(password);
 
-  create_keys_file(wallet_, false, password, m_nettype != MAINNET || create_address_file);
+  create_keys_file(wallet_, false, password, m_nettype != network_type::MAINNET || create_address_file);
   setup_new_blockchain();
 
   if (!wallet_.empty())
@@ -4827,7 +4830,7 @@ crypto::secret_key wallet2::generate(const fs::path& wallet_, const epee::wipeab
     m_refresh_from_block_height = estimate_blockchain_height();
   }
 
-  create_keys_file(wallet_, false, password, m_nettype != MAINNET || create_address_file);
+  create_keys_file(wallet_, false, password, m_nettype != network_type::MAINNET || create_address_file);
 
   setup_new_blockchain();
 
@@ -4903,7 +4906,7 @@ void wallet2::generate(const fs::path& wallet_, const epee::wipeable_string& pas
   m_account_public_address = account_public_address;
   setup_keys(password);
 
-  create_keys_file(wallet_, true, password, m_nettype != MAINNET || create_address_file);
+  create_keys_file(wallet_, true, password, m_nettype != network_type::MAINNET || create_address_file);
 
   setup_new_blockchain();
 
@@ -4972,7 +4975,7 @@ void wallet2::restore_from_device(const fs::path& wallet_, const epee::wipeable_
     progress_callback(tr("Retrieved wallet address from device: ") + m_account.get_public_address_str(m_nettype));
   m_device_name = device_name;
 
-  create_keys_file(wallet_, false, password, m_nettype != MAINNET || create_address_file);
+  create_keys_file(wallet_, false, password, m_nettype != network_type::MAINNET || create_address_file);
   if (m_subaddress_lookahead_major == SUBADDRESS_LOOKAHEAD_MAJOR && m_subaddress_lookahead_minor == SUBADDRESS_LOOKAHEAD_MINOR)
   {
     // the default lookahead setting (50:200) is clearly too much for hardware wallet
@@ -6082,10 +6085,10 @@ std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> wallet2::
       else
       {
         uint64_t unlock_height = td.m_unmined_flash && td.m_block_height == 0 ? blockchain_height : td.m_block_height;
-        unlock_height += std::max<uint64_t>(CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17, CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_BLOCKS);
-        if (td.m_tx.unlock_time < CRYPTONOTE_MAX_BLOCK_NUMBER && td.m_tx.unlock_time > unlock_height)
+        unlock_height += std::max<uint64_t>(DEFAULT_TX_SPENDABLE_AGE_V17, LOCKED_TX_ALLOWED_DELTA_BLOCKS);
+        if (td.m_tx.unlock_time < MAX_BLOCK_NUMBER && td.m_tx.unlock_time > unlock_height)
           unlock_height = td.m_tx.unlock_time;
-        uint64_t unlock_time = td.m_tx.unlock_time >= CRYPTONOTE_MAX_BLOCK_NUMBER ? td.m_tx.unlock_time : 0;
+        uint64_t unlock_time = td.m_tx.unlock_time >= MAX_BLOCK_NUMBER ? td.m_tx.unlock_time : 0;
         blocks_to_unlock = unlock_height > blockchain_height ? unlock_height - blockchain_height : 0;
         time_to_unlock = unlock_time > now ? unlock_time - now : 0;
         amount = 0;
@@ -6287,7 +6290,7 @@ void wallet2::get_transfers(get_transfers_args_t args, std::vector<wallet::trans
   if (args.filter_by_height)
   {
     args.max_height = std::max<uint64_t>(args.max_height, args.min_height);
-    args.max_height = std::min<uint64_t>(args.max_height, CRYPTONOTE_MAX_BLOCK_NUMBER);
+    args.max_height = std::min<uint64_t>(args.max_height, MAX_BLOCK_NUMBER);
   }
 
   int args_count = args.in + args.out + args.stake + args.pending + args.failed + args.pool + args.coinbase;
@@ -6620,7 +6623,7 @@ bool wallet2::is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height, 
   if(!is_tx_spendtime_unlocked(unlock_time, block_height))
     return false;
 
-  if(block_height + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17 > blockchain_height)
+  if(block_height + DEFAULT_TX_SPENDABLE_AGE_V17 > blockchain_height)
     return false;
 
   if (m_offline)
@@ -7128,7 +7131,7 @@ bool wallet2::sign_tx(unsigned_tx_set &exported_txs, std::vector<wallet2::pendin
   // sign the transactions
   for (size_t n = 0; n < exported_txs.txes.size(); ++n)
   {
-    auto &sd = exported_txs.txes[n];
+    auto& sd = exported_txs.txes[n];
     THROW_WALLET_EXCEPTION_IF(sd.sources.empty(), error::wallet_internal_error, "Empty sources");
     LOG_PRINT_L1(" " << (n+1) << ": " << sd.sources.size() << " inputs, ring size " << sd.sources[0].outputs.size());
     signed_txes.ptx.push_back(pending_tx());
@@ -7742,11 +7745,11 @@ uint64_t wallet2::get_fee_percent(uint32_t priority, txtype type) const
 
     uint64_t burn_pct = 0;
 
-    if (use_fork_rules(network_version_15_flash, 0))
-      burn_pct = FLASH_BURN_TX_FEE_PERCENT_OLD;
+    if (use_fork_rules(hf::hf15_flash, 0))
+      burn_pct = beldex::FLASH_BURN_TX_FEE_PERCENT_OLD;
     else
       THROW_WALLET_EXCEPTION(error::invalid_priority);
-    return FLASH_MINER_TX_FEE_PERCENT + burn_pct;
+    return beldex::FLASH_MINER_TX_FEE_PERCENT + burn_pct;
   }
 
   if (priority > percents.size())
@@ -7761,12 +7764,12 @@ byte_and_output_fees wallet2::get_dynamic_base_fee_estimate() const
   if (m_node_rpc_proxy.get_dynamic_base_fee_estimate(FEE_ESTIMATE_GRACE_BLOCKS, fees))
     return fees;
 
-  if (use_fork_rules(cryptonote::network_version_17_POS))
+  if (use_fork_rules(hf::hf17_POS))
     fees = {FEE_PER_BYTE, FEE_PER_OUTPUT_V17}; 
-  if (use_fork_rules(HF_VERSION_PER_OUTPUT_FEE))
-    fees = {FEE_PER_BYTE, FEE_PER_OUTPUT}; // v13 switches back from v12 per-byte fees, add per-output
+  if (use_fork_rules(feature::PER_OUTPUT_FEE))
+    fees = {FEE_PER_BYTE, old::FEE_PER_OUTPUT}; // v13 switches back from v12 per-byte fees, add per-output
   else
-    fees = {FEE_PER_BYTE_V12, 0};
+    fees = {old::FEE_PER_BYTE_V12, 0};
 
   LOG_PRINT_L1("Failed to query base fee, using " << print_money(fees.first) << "/byte + " << print_money(fees.second) << "/output");
   return fees;
@@ -7790,7 +7793,7 @@ uint64_t wallet2::get_fee_quantization_mask() const
   return 1;
 }
 
-beldex_construct_tx_params wallet2::construct_params(uint8_t hf_version, txtype tx_type, uint32_t priority, uint64_t extra_burn, bns::mapping_years map_years)
+beldex_construct_tx_params wallet2::construct_params(hf hf_version, txtype tx_type, uint32_t priority, uint64_t extra_burn, bns::mapping_years map_years)
 {
   beldex_construct_tx_params tx_params;
   tx_params.hf_version = hf_version;
@@ -7803,8 +7806,8 @@ beldex_construct_tx_params wallet2::construct_params(uint8_t hf_version, txtype 
   }
   else if (priority == tools::tx_priority_flash)
   {
-    tx_params.burn_fixed   = FLASH_BURN_FIXED;
-    tx_params.burn_percent = FLASH_BURN_TX_FEE_PERCENT_OLD;
+    tx_params.burn_fixed   = beldex::FLASH_BURN_FIXED;
+    tx_params.burn_percent = beldex::FLASH_BURN_TX_FEE_PERCENT_OLD;
   }
   if (extra_burn)
       tx_params.burn_fixed += extra_burn;
@@ -7850,7 +7853,9 @@ crypto::chacha_key wallet2::get_ringdb_key()
 }
 
 void wallet2::register_devices(){
-  hw::trezor::register_all();
+  #ifdef DEVICE_TREZOR_READY
+    hw::trezor::register_all();
+  #endif
 }
 
 hw::device& wallet2::lookup_device(const std::string & device_descriptor){
@@ -8083,8 +8088,8 @@ wallet2::stake_result wallet2::check_stake_allowed(const crypto::public_key& mn_
     return result;
   }
 
-  const std::optional<uint8_t> res = m_node_rpc_proxy.get_hardfork_version();
-  if (!res)
+  const auto hf_version = m_node_rpc_proxy.get_hardfork_version();
+  if (!hf_version)
   {
     result.status = stake_result_status::network_version_query_failed;
     result.msg    = ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
@@ -8102,9 +8107,8 @@ wallet2::stake_result wallet2::check_stake_allowed(const crypto::public_key& mn_
         total_existing_contributions++; // reserved contributor spot
   }
 
-  uint8_t const hf_version   = *res;
   uint64_t max_contrib_total = mnode_info.staking_requirement - mnode_info.total_reserved;
-  uint64_t min_contrib_total = master_nodes::get_min_node_contribution(hf_version, mnode_info.staking_requirement, mnode_info.total_reserved, total_existing_contributions);
+  uint64_t min_contrib_total = master_nodes::get_min_node_contribution(*hf_version, mnode_info.staking_requirement, mnode_info.total_reserved, total_existing_contributions);
 
   bool is_preexisting_contributor = false;
   for (const auto& contributor : mnode_info.contributors)
@@ -8132,7 +8136,7 @@ wallet2::stake_result wallet2::check_stake_allowed(const crypto::public_key& mn_
     return result;
   }
 
-  const bool full = mnode_info.contributors.size() >= MAX_NUMBER_OF_CONTRIBUTORS;
+  const bool full = mnode_info.contributors.size() >= beldex::MAX_NUMBER_OF_CONTRIBUTORS;
   if (full && !is_preexisting_contributor)
   {
     result.status = stake_result_status::master_node_contributors_maxed;
@@ -8142,7 +8146,7 @@ wallet2::stake_result wallet2::check_stake_allowed(const crypto::public_key& mn_
 
   if (amount < min_contrib_total)
   {
-    const uint64_t DUST = MAX_NUMBER_OF_CONTRIBUTORS;
+    const uint64_t DUST = beldex::MAX_NUMBER_OF_CONTRIBUTORS;
     if (min_contrib_total - amount <= DUST)
     {
       amount = min_contrib_total;
@@ -8237,7 +8241,7 @@ wallet2::stake_result wallet2::create_stake_tx(const crypto::public_key& master_
       return result;
     }
 
-    std::optional<uint8_t> hf_version = get_hard_fork_version();
+    auto hf_version = get_hard_fork_version();
     if (!hf_version)
     {
       result.status = stake_result_status::network_version_query_failed;
@@ -8246,7 +8250,7 @@ wallet2::stake_result wallet2::create_stake_tx(const crypto::public_key& master_
     }
 
     beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, txtype::stake, priority);
-    auto ptx_vector      = create_transactions_2(dsts, CRYPTONOTE_DEFAULT_TX_MIXIN, unlock_at_block, priority, extra, 0, subaddr_indices, tx_params);
+    auto ptx_vector      = create_transactions_2(dsts, cryptonote::TX_OUTPUT_DECOYS, unlock_at_block, priority, extra, 0, subaddr_indices, tx_params);
     if (ptx_vector.size() == 1)
     {
       result.status = stake_result_status::success;
@@ -8316,7 +8320,7 @@ wallet2::register_master_node_result wallet2::create_register_master_node_tx(con
   //
   // Parse Registration Contributor Args
   //
-  std::optional<uint8_t> hf_version = get_hard_fork_version();
+  auto hf_version = get_hard_fork_version();
   if (!hf_version)
   {
     result.status = register_master_node_result_status::network_version_query_failed;
@@ -8464,7 +8468,7 @@ wallet2::register_master_node_result wallet2::create_register_master_node_tx(con
   {
     uint64_t amount_payable_by_operator = 0;
     {
-      const uint64_t DUST                 = MAX_NUMBER_OF_CONTRIBUTORS;
+      const uint64_t DUST                 = beldex::MAX_NUMBER_OF_CONTRIBUTORS;
       uint64_t amount_left                = staking_requirement;
       for (size_t i = 0; i < contributor_args.portions.size(); i++)
       {
@@ -8491,7 +8495,7 @@ wallet2::register_master_node_result wallet2::create_register_master_node_tx(con
       dest.address                        = address;
 
       beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, txtype::stake, priority);
-      auto ptx_vector = create_transactions_2(dsts, CRYPTONOTE_DEFAULT_TX_MIXIN, 0 /* unlock_time */, priority, extra, subaddr_account, subaddr_indices, tx_params);
+      auto ptx_vector = create_transactions_2(dsts, cryptonote::TX_OUTPUT_DECOYS, 0 /* unlock_time */, priority, extra, subaddr_account, subaddr_indices, tx_params);
       if (ptx_vector.size() == 1)
       {
         result.status = register_master_node_result_status::success;
@@ -8564,9 +8568,9 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
     std::string error_msg;
     uint64_t cur_height = get_daemon_blockchain_height(error_msg);
 
-    if(version  >= cryptonote::network_version_18_bns)
+    if(version  >= hf::hf18_bns)
     {
-      if(((p_contributor->amount) < master_nodes::SMALL_CONTRIBUTOR_THRESHOLD * COIN ) && ((cur_height - node_info.registration_height) <  master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER))
+      if(((p_contributor->amount) < master_nodes::SMALL_CONTRIBUTOR_THRESHOLD * beldex::COIN ) && ((cur_height - node_info.registration_height) <  master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER))
       {
         result.msg = tr("you can't give the unlock command! you have to wait upto ") + std::to_string(node_info.registration_height + master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER - cur_height) + " Blocks or "+ std::to_string((node_info.registration_height + master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER - cur_height)/ (master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER / 30)) + " days approx";
         result.success = false;
@@ -8611,7 +8615,7 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
           result.msg.append(" other contributors will unlock at the same time.");
       }
       result.msg.append("\n\n");
-      std::optional<uint8_t> hf_version = get_hard_fork_version();
+      auto hf_version = get_hard_fork_version();
       if (!hf_version)
       {
         result.msg    = ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
@@ -8875,21 +8879,21 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_buy_mapping_tx(bns::mapping
       prepared_args.prev_txid);
   add_beldex_name_system_to_tx_extra(extra, entry);
 
-  std::optional<uint8_t> hf_version = get_hard_fork_version();
+  auto hf_version = get_hard_fork_version();
   if (!hf_version)
   {
     if (reason) *reason = ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
     return {};
   }
 
-  if (hf_version <= cryptonote::network_version_17_POS)
+  if (hf_version <= hf::hf17_POS)
   {
     if (reason) *reason = ERR_MSG_BNS_HF_VERSION;
     return {};
   }
   beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0, mapping_years);
   auto result = create_transactions_2({} /*dests*/,
-                                      CRYPTONOTE_DEFAULT_TX_MIXIN,
+                                      cryptonote::TX_OUTPUT_DECOYS,
                                       0 /*unlock_at_block*/,
                                       priority,
                                       extra,
@@ -8944,7 +8948,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_renewal_tx(
       prepared_args.prev_txid);
   add_beldex_name_system_to_tx_extra(extra, entry);
 
-  std::optional<uint8_t> hf_version = get_hard_fork_version();
+  auto hf_version = get_hard_fork_version();
   if (!hf_version)
   {
     if (reason) *reason = ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
@@ -8953,7 +8957,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_renewal_tx(
 
   beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0, map_years);
   auto result = create_transactions_2({} /*dests*/,
-                                      CRYPTONOTE_DEFAULT_TX_MIXIN,
+                                      cryptonote::TX_OUTPUT_DECOYS,
                                       0 /*unlock_at_block*/,
                                       priority,
                                       extra,
@@ -9008,7 +9012,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_update_mapping_tx(std::stri
                                                                   backup_owner ? &prepared_args.backup_owner : nullptr,
                                                                   prepared_args.prev_txid);
   add_beldex_name_system_to_tx_extra(extra, entry);
-  std::optional<uint8_t> hf_version = get_hard_fork_version();
+  auto hf_version = get_hard_fork_version();
   if (!hf_version)
   {
     if (reason) *reason = ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
@@ -9017,7 +9021,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_update_mapping_tx(std::stri
   beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0,(owner || backup_owner) ? bns::mapping_years::update_owner_record : bns::mapping_years::update_record_internal);
 
   auto result = create_transactions_2({} /*dests*/,
-                                      CRYPTONOTE_DEFAULT_TX_MIXIN,
+                                      cryptonote::TX_OUTPUT_DECOYS,
                                       0 /*unlock_at_block*/,
                                       priority,
                                       extra,
@@ -9117,7 +9121,7 @@ bool wallet2::tx_add_fake_output(std::vector<std::vector<tools::wallet2::get_out
     // transaction(s) on the mainnet due to invalid keys then we want to know
     // and address it, as it is at the moment mainnet is not affected by this
     // and so we want the added correctness this check offers.
-    if (nettype() == cryptonote::MAINNET)
+    if (nettype() == network_type::MAINNET)
     {
       MWARNING("Key " << output_public_key << " at index " << global_index << " is not in the main subgroup");
       return false;
@@ -9323,7 +9327,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       if (has_rct_distribution)
       {
         // check we're clear enough of rct start, to avoid corner cases below
-        THROW_WALLET_EXCEPTION_IF(rct_offsets.size() <= CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17,
+        THROW_WALLET_EXCEPTION_IF(rct_offsets.size() <= DEFAULT_TX_SPENDABLE_AGE_V17,
             error::get_output_distribution, "Not enough rct outputs");
         THROW_WALLET_EXCEPTION_IF(rct_offsets.back() <= max_rct_index,
             error::get_output_distribution, "Daemon reports suspicious number of rct outputs");
@@ -9422,7 +9426,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       const uint64_t amount = td.is_rct() ? 0 : td.amount();
       std::unordered_set<uint64_t> seen_indices;
       // request more for rct in base recent (locked) coinbases are picked, since they're locked for longer
-      size_t requested_outputs_count = base_requested_outputs_count + (td.is_rct() ? CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW - CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17 : 0);
+      size_t requested_outputs_count = base_requested_outputs_count + (td.is_rct() ? MINED_MONEY_UNLOCK_WINDOW - DEFAULT_TX_SPENDABLE_AGE_V17 : 0);
       size_t start = get_outputs.size();
       bool use_histogram = amount != 0 || !has_rct_distribution;
 
@@ -9491,7 +9495,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       else
       {
         // the base offset of the first rct output in the first unlocked block (or the one to be if there's none)
-        num_outs = rct_offsets[rct_offsets.size() - CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17];
+        num_outs = gamma->get_num_rct_outs();
         LOG_PRINT_L1("" << num_outs << " unlocked rct outputs");
         THROW_WALLET_EXCEPTION_IF(num_outs == 0, error::wallet_internal_error,
             "histogram reports no unlocked rct outputs, not even ours");
@@ -9769,7 +9773,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
     for(size_t idx: selected_transfers)
     {
       const transfer_details &td = m_transfers[idx];
-      size_t requested_outputs_count = base_requested_outputs_count + (td.is_rct() ? CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW - CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17 : 0);
+      size_t requested_outputs_count = base_requested_outputs_count + (td.is_rct() ? MINED_MONEY_UNLOCK_WINDOW - DEFAULT_TX_SPENDABLE_AGE_V17 : 0);
       outs.push_back(std::vector<get_outs_entry>());
       outs.back().reserve(fake_outputs_count + 1);
       const rct::key mask = td.is_rct() ? rct::commit(td.amount(), td.m_mask) : rct::zeroCommit(td.amount());
@@ -9789,7 +9793,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       }
       bool use_histogram = amount != 0 || !has_rct_distribution;
       if (!use_histogram)
-        num_outs = rct_offsets[rct_offsets.size() - CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17];
+        num_outs = gamma->get_num_rct_outs();
 
       // make sure the real outputs we asked for are really included, along
       // with the correct key and mask: this guards against an active attack
@@ -10236,7 +10240,7 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
   ptx.construction_data.hf_version = tx_params.hf_version;
   ptx.construction_data.rct_config = {
     tx.rct_signatures.p.bulletproofs.empty() ? rct::RangeProofType::Borromean : rct::RangeProofType::PaddedBulletproof,
-    use_fork_rules(HF_VERSION_CLSAG, 0) ? 3 : 2
+    use_fork_rules(feature::CLSAG, 0) ? 3 : 2
   };
   ptx.construction_data.dests = dsts;
   // record which subaddress indices are being used as inputs
@@ -10936,7 +10940,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   bool adding_fee; // true if new outputs go towards fee, rather than destinations
   uint64_t needed_fee, available_for_fee = 0;
   uint64_t upper_transaction_weight_limit = get_upper_transaction_weight_limit();
-  const bool clsag = use_fork_rules(HF_VERSION_CLSAG, 0);
+  const bool clsag = use_fork_rules(feature::CLSAG, 0);
   const rct::RCTConfig rct_config{rct::RangeProofType::PaddedBulletproof, clsag ? 3 : 2};
   const auto base_fee = get_base_fees();
   const uint64_t fee_percent = get_fee_percent(priority, tx_params.tx_type);
@@ -10950,7 +10954,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   std::swap(burn_fixed, tx_params.burn_fixed);
   std::swap(burn_percent, tx_params.burn_percent);
   bool burning = burn_fixed || burn_percent;
-  THROW_WALLET_EXCEPTION_IF(burning && tx_params.hf_version < HF_VERSION_FEE_BURNING, error::wallet_internal_error, "cannot construct transaction: cannot burn amounts under the current hard fork");
+  THROW_WALLET_EXCEPTION_IF(burning && tx_params.hf_version < feature::FEE_BURNING, error::wallet_internal_error, "cannot construct transaction: cannot burn amounts under the current hard fork");
   std::vector<uint8_t> extra_plus; // Copy and modified from input if modification needed
   const std::vector<uint8_t> &extra = burning ? extra_plus : extra_base;
   if (burning)
@@ -11615,14 +11619,14 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
   uint64_t upper_transaction_weight_limit = get_upper_transaction_weight_limit();
   std::vector<std::vector<get_outs_entry>> outs;
 
-  const bool clsag = use_fork_rules(HF_VERSION_CLSAG, 0);
+  const bool clsag = use_fork_rules(feature::CLSAG, 0);
   const rct::RCTConfig rct_config { rct::RangeProofType::PaddedBulletproof, clsag ? 3 : 2 };
   const auto base_fee = get_base_fees();
   const uint64_t fee_percent = get_fee_percent(priority, tx_type);
   const uint64_t fee_quantization_mask = get_fee_quantization_mask();
   uint64_t fixed_fee = 0;
  
-  std::optional<uint8_t> hf_version = get_hard_fork_version();
+  auto hf_version = get_hard_fork_version();
   THROW_WALLET_EXCEPTION_IF(!hf_version, error::get_hard_fork_version_error, "Failed to query current hard fork version");
 
   beldex_construct_tx_params beldex_tx_params = tools::wallet2::construct_params(*hf_version, tx_type, priority);
@@ -11633,7 +11637,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
   // real transactions.
   std::swap(burn_fixed, beldex_tx_params.burn_fixed);
   std::swap(burn_percent, beldex_tx_params.burn_percent);
-  THROW_WALLET_EXCEPTION_IF(beldex_tx_params.hf_version < HF_VERSION_FEE_BURNING, error::wallet_internal_error, "cannot construct transaction: cannot burn amounts under the current hard fork");
+  THROW_WALLET_EXCEPTION_IF(beldex_tx_params.hf_version < feature::FEE_BURNING, error::wallet_internal_error, "cannot construct transaction: cannot burn amounts under the current hard fork");
   {
     std::vector<uint8_t> extra_plus; // Copy and modified from input if modification needed
     extra_plus = extra_base;
@@ -11810,14 +11814,14 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const crypton
   uint64_t upper_transaction_weight_limit = get_upper_transaction_weight_limit();
   std::vector<std::vector<get_outs_entry>> outs;
 
-  const bool clsag = use_fork_rules(HF_VERSION_CLSAG, 0);
+  const bool clsag = use_fork_rules(feature::CLSAG, 0);
   const rct::RCTConfig rct_config { rct::RangeProofType::PaddedBulletproof, clsag ? 3 : 2 };
   const auto base_fee = get_base_fees();
   const uint64_t fee_percent = get_fee_percent(priority, tx_type);
   const uint64_t fee_quantization_mask = get_fee_quantization_mask();
   uint64_t fixed_fee = 0;
 
-  std::optional<uint8_t> hf_version = get_hard_fork_version();
+  auto hf_version = get_hard_fork_version();
   THROW_WALLET_EXCEPTION_IF(!hf_version, error::get_hard_fork_version_error, "Failed to query current hard fork version");
 
   beldex_construct_tx_params beldex_tx_params = tools::wallet2::construct_params(*hf_version, tx_type, priority);
@@ -11828,7 +11832,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const crypton
   std::swap(burn_fixed, beldex_tx_params.burn_fixed);
   std::swap(burn_percent, beldex_tx_params.burn_percent);
   bool burning = burn_fixed || burn_percent;
-  THROW_WALLET_EXCEPTION_IF(burning && beldex_tx_params.hf_version < HF_VERSION_FEE_BURNING, error::wallet_internal_error, "cannot construct transaction: cannot burn amounts under the current hard fork");
+  THROW_WALLET_EXCEPTION_IF(burning && beldex_tx_params.hf_version < feature::FEE_BURNING, error::wallet_internal_error, "cannot construct transaction: cannot burn amounts under the current hard fork");
   std::vector<uint8_t> extra_plus; // Copy and modified from input if modification needed
   const std::vector<uint8_t> &extra = burning ? extra_plus : extra_base;
   if (burning)
@@ -12045,10 +12049,10 @@ void wallet2::cold_sign_tx(const std::vector<pending_tx>& ptx_vector, signed_tx_
   hw::wallet_shim wallet_shim;
   setup_shim(&wallet_shim, this);
   aux_data.tx_recipients = dsts_info;
-  aux_data.bp_version = use_fork_rules(HF_VERSION_CLSAG, 0) ? 3 : 2;
-  std::optional<uint8_t> hf_version = get_hard_fork_version();
+  aux_data.bp_version = use_fork_rules(feature::CLSAG, 0) ? 3 : 2;
+  auto hf_version = get_hard_fork_version();
   CHECK_AND_ASSERT_THROW_MES(hf_version, "Failed to query hard fork");
-  aux_data.hard_fork = *hf_version;
+  aux_data.hard_fork = static_cast<uint8_t>(*hf_version);
   dev_cold->tx_sign(&wallet_shim, txs, exported_txs, aux_data);
   tx_device_aux = aux_data.tx_device_aux;
 
@@ -12093,7 +12097,7 @@ void wallet2::get_hard_fork_info(uint8_t version, uint64_t &earliest_height) con
     THROW_WALLET_EXCEPTION(tools::error::no_connection_to_daemon, __func__);
 }
 //----------------------------------------------------------------------------------------------------
-bool wallet2::use_fork_rules(uint8_t version, uint64_t early_blocks) const
+bool wallet2::use_fork_rules(hf version, uint64_t early_blocks) const
 {
   // TODO: How to get fork rule info from light wallet node?
     if(m_light_wallet)
@@ -12102,7 +12106,7 @@ bool wallet2::use_fork_rules(uint8_t version, uint64_t early_blocks) const
   if (!m_node_rpc_proxy.get_height(height))
     THROW_WALLET_EXCEPTION(tools::error::no_connection_to_daemon, __func__);
 
-  if (!m_node_rpc_proxy.get_earliest_height(version, earliest_height))
+  if (!m_node_rpc_proxy.get_earliest_height(static_cast<uint8_t>(version), earliest_height))
     THROW_WALLET_EXCEPTION(tools::error::no_connection_to_daemon, __func__);
 
   bool close_enough = height >= earliest_height - early_blocks; // start using the rules that many blocks beforehand
@@ -12120,7 +12124,7 @@ uint64_t wallet2::get_upper_transaction_weight_limit() const
 {
   if (m_upper_transaction_weight_limit > 0)
     return m_upper_transaction_weight_limit;
-  return CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V5 / 2 - CRYPTONOTE_COINBASE_BLOB_RESERVED_SIZE;
+  return BLOCK_GRANTED_FULL_REWARD_ZONE_V5 / 2 - COINBASE_BLOB_RESERVED_SIZE;
 }
 //----------------------------------------------------------------------------------------------------
 std::vector<size_t> wallet2::select_available_outputs(const std::function<bool(const transfer_details &td)> &f) const
@@ -14852,7 +14856,7 @@ bool wallet2::is_synced(uint64_t grace_blocks) const
 //----------------------------------------------------------------------------------------------------
 uint64_t wallet2::get_segregation_fork_height() const
 {
-  if (m_nettype == MAINNET && m_segregation_height > 0)
+  if (m_nettype == network_type::MAINNET && m_segregation_height > 0)
     return m_segregation_height;
   return SEGREGATION_FORK_HEIGHT;
 }
