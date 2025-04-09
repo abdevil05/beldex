@@ -20,6 +20,7 @@
 #include "config.h"
 #include "cryptonote_config.h"        //beldex/src/
 #include "db/storage.h"
+#include "error.h"
 //#include "rpc/client.h"
 #include "options.h"
 #include "rest_server.h"
@@ -42,6 +43,7 @@ namespace
     const command_line::arg_descriptor<unsigned> create_queue_max;
     const command_line::arg_descriptor<std::chrono::minutes::rep> rates_interval;
     const command_line::arg_descriptor<unsigned short> log_level;
+    const command_line::arg_descriptor<std::string> config_file;
 
     static std::string get_default_zmq()
     {
@@ -73,6 +75,7 @@ namespace
       , create_queue_max{"create-queue-max", "Set pending create account requests maximum", 10000}
       , rates_interval{"exchange-rate-interval", "Retrieve exchange rates in minute intervals from cryptocompare.com if greater than 0", 0}
       , log_level{"log-level", "Log level [0-4]", 1}
+      , config_file{"config-file", "Specify any option in a config file; <name>=<value> on separate lines"}
     {}
 
     void prepare(boost::program_options::options_description& description) const
@@ -93,6 +96,7 @@ namespace
       command_line::add_arg(description, create_queue_max);
       command_line::add_arg(description, rates_interval);
       command_line::add_arg(description, log_level);
+      command_line::add_arg(description, config_file);
     }
   };
  struct program
@@ -130,6 +134,17 @@ namespace
         po::store(
             po::command_line_parser(argc, argv).options(description).run(), args);
         po::notify(args);
+      if (!command_line::is_arg_defaulted(args, opts.config_file))
+      {
+        boost::filesystem::path config_path{command_line::get_arg(args, opts.config_file)};
+        if (!boost::filesystem::exists(config_path))
+          MONERO_THROW(lws::error::configuration, "Config file does not exist");
+
+        po::store(
+          po::parse_config_file<char>(config_path.string<std::string>().c_str(), description), args
+        );
+        po::notify(args);
+      }
     }
 
     if (command_line::get_arg(args, command_line::arg_help))

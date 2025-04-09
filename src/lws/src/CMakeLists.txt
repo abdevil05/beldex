@@ -34,7 +34,7 @@ target_link_libraries(beldex-lws-daemon PUBLIC
     Threads::Threads
     Boost::regex
 )
-target_link_libraries(beldex-lws-daemon PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(beldex-lws-daemon PRIVATE nlohmann_json::nlohmann_json Boost::filesystem)
 
 add_executable(beldex-lws-admin admin_main.cpp)
 target_link_libraries(beldex-lws-admin PRIVATE 
