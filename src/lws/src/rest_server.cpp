@@ -1016,7 +1016,8 @@ namespace lws
       {"/list_requests",         call_admin<rpc::list_requests_>,   100},
       {"/modify_account_status", call_admin<rpc::modify_account_>,  50 * 1024},
       {"/reject_requests",       call_admin<rpc::reject_requests_>, 50 * 1024},
-      {"/rescan",                call_admin<rpc::rescan_>,          50 * 1024}
+      {"/rescan",                call_admin<rpc::rescan_>,          50 * 1024},
+      {"/validate",              call_admin<rpc::validate_>,        50 * 1024}
     };
 
     struct by_name_

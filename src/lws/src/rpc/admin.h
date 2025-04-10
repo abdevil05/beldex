@@ -68,6 +68,14 @@ namespace rpc
   };
   void read_bytes(wire::reader&, rescan_req&);
 
+  struct validate_req
+  {
+    std::string spend_public_hex;
+    std::string view_public_hex;
+    std::string view_key_hex;
+  };
+  void read_bytes(wire::reader&, validate_req&);
+
 
   struct accept_requests_
   {
@@ -121,5 +129,12 @@ namespace rpc
     expect<void> operator()(wire::writer& dest, db::storage disk, const request& req) const;
   };
   constexpr const rescan_ rescan{};
+
+  struct validate_
+  {
+    using request = validate_req;
+    expect<void> operator()(wire::writer& dest, const db::storage&, const request& req) const;
+  };
+  constexpr const validate_ validate{};
 
 }} // lws // rpc
