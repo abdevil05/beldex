@@ -38,6 +38,7 @@
 #include <type_traits>
 #include <cpr/parameters.h>
 #include <oxenc/base64.h>
+#include <oxenc/endian.h>
 #include "common/password.h"
 #include "common/string_util.h"
 #include "cryptonote_basic/tx_extra.h"
@@ -13569,10 +13570,9 @@ bool wallet2::export_key_images_to_file(const fs::path& filename, bool requested
   std::pair<size_t, std::vector<std::pair<crypto::key_image, crypto::signature>>> ski = export_key_images(requested_only);
   const cryptonote::account_public_address &keys = get_account().get_keys().m_account_address;
   std::string data;
-  const uint32_t offset = boost::endian::native_to_little(ski.first);
-  data.reserve(sizeof(offset) + ski.second.size() * (sizeof(crypto::key_image) + sizeof(crypto::signature)) + 2 * sizeof(crypto::public_key));
-  data.resize(sizeof(offset));
-  std::memcpy(&data[0], &offset, sizeof(offset));
+  data.reserve(sizeof(uint32_t) + ski.second.size() * (sizeof(crypto::key_image) + sizeof(crypto::signature)) + 2 * sizeof(crypto::public_key));
+  data.resize(sizeof(uint32_t));
+  oxenc::write_host_as_little<uint32_t>(ski.first, data.data());
   data += tools::view_guts(keys.m_spend_public_key);
   data += tools::view_guts(keys.m_view_public_key);
   for (const auto &i: ski.second)
@@ -13670,9 +13670,7 @@ uint64_t wallet2::import_key_images_from_file(const fs::path& filename, uint64_t
   const size_t headerlen = 4 + 2 * sizeof(crypto::public_key);
   THROW_WALLET_EXCEPTION_IF(data.size() < headerlen, error::wallet_internal_error, std::string("Bad data size from file ") + filename.u8string());
 
-  uint32_t offset;
-  std::memcpy(&offset, data.data(), sizeof(offset));
-  boost::endian::little_to_native_inplace(offset);
+  uint32_t offset = oxenc::load_little_to_host<uint32_t>(data.data());
   THROW_WALLET_EXCEPTION_IF(offset > m_transfers.size(), error::wallet_internal_error, "Offset larger than known outputs");
 
   // Validate embedded spend/view public keys

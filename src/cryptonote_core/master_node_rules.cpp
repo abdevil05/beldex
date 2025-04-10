@@ -1,7 +1,7 @@
 #include "cryptonote_config.h"
 #include "common/beldex.h"
 #include "epee/int-util.h"
-#include <boost/endian/conversion.hpp>
+#include <oxenc/endian.h>
 #include <limits>
 #include <vector>
 #include <boost/lexical_cast.hpp>
@@ -48,7 +48,7 @@ crypto::hash generate_request_stake_unlock_hash(uint32_t nonce)
 {
   static_assert(sizeof(crypto::hash) == 8 * sizeof(uint32_t) && alignof(crypto::hash) >= alignof(uint32_t));
   crypto::hash result;
-  boost::endian::native_to_little_inplace(nonce);
+  oxenc::host_to_little_inplace(nonce);
   for (size_t i = 0; i < 8; i++)
     reinterpret_cast<uint32_t*>(result.data)[i] = nonce;
   return result;

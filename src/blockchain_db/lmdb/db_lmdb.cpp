@@ -30,7 +30,7 @@
 
 #include <fmt/core.h>
 #include <boost/circular_buffer.hpp>
-#include <boost/endian/conversion.hpp>
+#include <oxenc/endian.h>
 #include <memory>
 #include <cstring>
 #include <type_traits>
@@ -57,7 +57,6 @@
 
 
 using namespace crypto;
-using namespace boost::endian;
 
 enum struct lmdb_version
 {
@@ -2413,14 +2412,14 @@ static_assert(sizeof(blob_header) == 8, "blob_header layout is unexpected, possi
 static blob_header write_little_endian_blob_header(blob_type type, uint32_t size)
 {
   blob_header result = {type, size};
-  native_to_little_inplace(result.size);
+  oxenc::host_to_little_inplace(result.size);
   return result;
 }
 
-static blob_header native_endian_blob_header(const blob_header *header)
+static blob_header host_endian_blob_header(const blob_header *header)
 {
   blob_header result = {header->type, header->size};
-  little_to_native_inplace(result.size);
+  oxenc::little_to_host_inplace(result.size);
   return result;
 }
 
@@ -2439,7 +2438,7 @@ static bool read_alt_block_data_from_mdb_val(MDB_val const v, alt_block_data_t *
   src = reinterpret_cast<const char *>(alt_data + 1);
   while (src < end)
   {
-    blob_header header = native_endian_blob_header(reinterpret_cast<const blob_header *>(src));
+    blob_header header = host_endian_blob_header(reinterpret_cast<const blob_header *>(src));
     src += sizeof(header);
     if (header.type == blob_type::block)
     {
@@ -3977,8 +3976,8 @@ static bool convert_checkpoint_into_buffer(checkpoint_t const &checkpoint, check
   header.block_hash            = checkpoint.block_hash;
   header.num_signatures        = checkpoint.signatures.size();
 
-  native_to_little_inplace(header.height);
-  native_to_little_inplace(header.num_signatures);
+  oxenc::host_to_little_inplace(header.height);
+  oxenc::host_to_little_inplace(header.num_signatures);
 
   size_t const bytes_for_signatures = sizeof(*checkpoint.signatures.data()) * checkpoint.signatures.size();
   result.len                        = sizeof(header) + bytes_for_signatures;
@@ -4061,8 +4060,8 @@ static checkpoint_t convert_mdb_val_to_checkpoint(MDB_val const value)
   auto const *signatures =
       reinterpret_cast<master_nodes::quorum_signature *>(static_cast<uint8_t *>(value.mv_data) + sizeof(*header));
 
-  auto num_sigs = little_to_native(header->num_signatures);
-  result.height     = little_to_native(header->height);
+  auto num_sigs     = oxenc::little_to_host(header->num_signatures);
+  result.height     = oxenc::little_to_host(header->height);
   result.type       = (num_sigs > 0) ? checkpoint_type::master_node : checkpoint_type::hardcoded;
   result.block_hash = header->block_hash;
   result.signatures.insert(result.signatures.end(), signatures, signatures + num_sigs);
@@ -5939,12 +5938,12 @@ void BlockchainLMDB::migrate_5_6()
     // unexpected padding
 
     auto const *header = static_cast<blk_checkpoint_header const *>(val.mv_data);
-    auto num_sigs      = little_to_native(header->num_signatures);
+    auto num_sigs      = oxenc::little_to_host(header->num_signatures);
     auto const *aligned_signatures = reinterpret_cast<master_nodes::quorum_signature *>(static_cast<uint8_t *>(val.mv_data) + sizeof(*header));
     if (num_sigs == 0) continue; // NOTE: Hardcoded checkpoints
 
     checkpoint_t checkpoint = {};
-    checkpoint.height       = little_to_native(header->height);
+    checkpoint.height       = oxenc::little_to_host(header->height);
     checkpoint.type         = (num_sigs > 0) ? checkpoint_type::master_node : checkpoint_type::hardcoded;
     checkpoint.block_hash   = header->block_hash;
 
@@ -6160,15 +6159,15 @@ void BlockchainLMDB::clear_master_node_data()
 }
 
 template <typename C>
-C native_to_little_container(const C& c) {
+C host_to_little_container(const C& c) {
   C result{c};
-  for (auto& x : result) native_to_little_inplace(x);
+  for (auto& x : result) oxenc::host_to_little_inplace(x);
   return result;
 }
 template <typename C>
-C little_to_native_container(const C& c) {
+C little_to_host_container(const C& c) {
   C result{c};
-  for (auto& x : result) little_to_native_inplace(x);
+  for (auto& x : result) oxenc::little_to_host_inplace(x);
   return result;
 }
 
@@ -6176,25 +6175,25 @@ struct master_node_proof_serialized_old
 {
   master_node_proof_serialized_old() = default;
   master_node_proof_serialized_old(const master_nodes::proof_info &info)
-    : timestamp{native_to_little(info.timestamp)},
-      ip{native_to_little(info.proof->public_ip)},
-      storage_https_port{native_to_little(info.proof->storage_https_port)},
-      storage_omq_port{native_to_little(info.proof->storage_omq_port)},
-      quorumnet_port{native_to_little(info.proof->qnet_port)},
-      version{native_to_little_container(info.proof->version)},
+    : timestamp{oxenc::host_to_little(info.timestamp)},
+      ip{oxenc::host_to_little(info.proof->public_ip)},
+      storage_https_port{oxenc::host_to_little(info.proof->storage_https_port)},
+      storage_omq_port{oxenc::host_to_little(info.proof->storage_omq_port)},
+      quorumnet_port{oxenc::host_to_little(info.proof->qnet_port)},
+      version{host_to_little_container(info.proof->version)},
       pubkey_ed25519{info.proof->pubkey_ed25519}
   {}
 
   void update(master_nodes::proof_info &info) const
   {
-    info.timestamp = little_to_native(timestamp);
+    info.timestamp = oxenc::little_to_host(timestamp);
     if (info.timestamp > info.effective_timestamp)
       info.effective_timestamp = info.timestamp;
-    info.proof->public_ip = little_to_native(ip);
-    info.proof->storage_https_port = little_to_native(storage_https_port);
-    info.proof->storage_omq_port = little_to_native(storage_omq_port);
-    info.proof->qnet_port = little_to_native(quorumnet_port);
-    info.proof->version = little_to_native_container(version);
+    info.proof->public_ip = oxenc::little_to_host(ip);
+    info.proof->storage_https_port = oxenc::little_to_host(storage_https_port);
+    info.proof->storage_omq_port = oxenc::little_to_host(storage_omq_port);
+    info.proof->qnet_port = oxenc::little_to_host(quorumnet_port);
+    info.proof->version = little_to_host_container(version);
     info.proof->storage_server_version = {0, 0, 0};
     info.proof->belnet_version = {0, 0, 0};
     info.update_pubkey(pubkey_ed25519);
@@ -6221,8 +6220,8 @@ struct master_node_proof_serialized : master_node_proof_serialized_old {
   master_node_proof_serialized() = default;
   master_node_proof_serialized(const master_nodes::proof_info &info)
     : master_node_proof_serialized_old{info},
-      storage_server_version{native_to_little_container(info.proof->storage_server_version)},
-      belnet_version{native_to_little_container(info.proof->belnet_version)}
+      storage_server_version{host_to_little_container(info.proof->storage_server_version)},
+      belnet_version{host_to_little_container(info.proof->belnet_version)}
   {}
   std::array<uint16_t, 3> storage_server_version{};
   std::array<uint16_t, 3> belnet_version{};
@@ -6231,8 +6230,8 @@ struct master_node_proof_serialized : master_node_proof_serialized_old {
   void update(master_nodes::proof_info& info) const {
     if (!info.proof) info.proof = std::unique_ptr<uptime_proof::Proof>(new uptime_proof::Proof());
     master_node_proof_serialized_old::update(info);
-    info.proof->storage_server_version = little_to_native_container(storage_server_version);
-    info.proof->belnet_version = little_to_native_container(belnet_version);
+    info.proof->storage_server_version = little_to_host_container(storage_server_version);
+    info.proof->belnet_version = little_to_host_container(belnet_version);
   }
 
   operator master_nodes::proof_info() const

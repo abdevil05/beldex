@@ -33,7 +33,7 @@
 #include <algorithm>
 #include <chrono>
 #include <fmt/core.h>
-#include <boost/endian/conversion.hpp>
+#include <oxenc/endian.h>
 
 extern "C" {
 #include <sodium.h>
@@ -1648,7 +1648,7 @@ namespace master_nodes
     {
       std::array<uint32_t, (sizeof(hash) / sizeof(uint32_t)) + 1> src = {static_cast<uint32_t>(type)};
       std::memcpy(&src[1], &hash, sizeof(hash));
-      for (uint32_t &val : src) boost::endian::little_to_native_inplace(val);
+      for (uint32_t &val : src) oxenc::little_to_host_inplace(val);
       std::seed_seq sequence(src.begin(), src.end());
       result.seed(sequence);
     }
@@ -1656,7 +1656,7 @@ namespace master_nodes
     {
       uint64_t seed = 0;
       std::memcpy(&seed, hash.data, sizeof(seed));
-      boost::endian::little_to_native_inplace(seed);
+      oxenc::little_to_host_inplace(seed);
       seed += static_cast<uint64_t>(type);
       result.seed(seed);
     }

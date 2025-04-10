@@ -32,8 +32,7 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
-#include <boost/endian/arithmetic.hpp>
-#include <boost/endian/conversion.hpp>
+#include <oxenc/endian.h>
 #include <cstring>
 #include <limits>
 #include <string>
@@ -58,8 +57,8 @@ namespace socks
         {
             std::uint8_t version;
             std::uint8_t command_code;
-            boost::endian::big_uint16_t port;
-            boost::endian::big_uint32_t ip;
+            std::uint16_t port;
+            std::uint32_t ip;
         };
 
         std::size_t write_domain_header(epee::span<std::uint8_t> out, const std::uint8_t command, const std::uint16_t port, std::string_view domain)
@@ -72,7 +71,7 @@ namespace socks
                 return 0;
 
             // version 4, 1 indicates invalid ip for domain extension
-            const v4_header temp{4, command, port, std::uint32_t(1)};
+            const v4_header temp{4, command, oxenc::host_to_little(port), oxenc::host_to_little(std::uint32_t{1})};
             std::memcpy(out.data(), std::addressof(temp), sizeof(temp));
             out.remove_prefix(sizeof(temp));
 
@@ -243,7 +242,7 @@ namespace socks
         static_assert(0 < sizeof(buffer_), "buffer size too small for null termination");
 
         // version 4
-        const v4_header temp{4, v4_connect_command, address.port(), boost::endian::big_to_native(address.ip())};
+        const v4_header temp{4, v4_connect_command, oxenc::host_to_big(address.port()), oxenc::host_to_big(address.ip())};
         std::memcpy(std::addressof(buffer_), std::addressof(temp), sizeof(temp));
         buffer_[sizeof(temp)] = 0;
         buffer_size_ = sizeof(temp) + 1;

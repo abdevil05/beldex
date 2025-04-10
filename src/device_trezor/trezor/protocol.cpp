@@ -33,7 +33,6 @@
 #include <unordered_map>
 #include <set>
 #include <utility>
-#include <boost/endian/conversion.hpp>
 #include <common/apply_permutation.h>
 #include <common/json_util.h>
 #include <crypto/hmac-keccak.h>

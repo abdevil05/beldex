@@ -30,7 +30,6 @@
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include <boost/algorithm/string.hpp>
-#include <boost/endian/conversion.hpp>
 
 #include "epee/string_tools.h"
 

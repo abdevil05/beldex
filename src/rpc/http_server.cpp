@@ -3,7 +3,6 @@
 #include <chrono>
 #include <exception>
 #include <oxenc/base64.h>
-#include <boost/endian/conversion.hpp>
 #include <oxenc/variant.h>
 #include "common/command_line.h"
 #include "common/string_util.h"

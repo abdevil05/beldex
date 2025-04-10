@@ -41,7 +41,7 @@
 #include <type_traits>
 #include <string>
 #include <string_view>
-#include <boost/endian/conversion.hpp>
+#include <oxenc/endian.h>
 
 #include "base.h"
 
@@ -108,7 +108,7 @@ public:
   {
     stream_.read(reinterpret_cast<char*>(&v), sizeof(T));
     if constexpr (sizeof(T) > 1)
-      boost::endian::little_to_native_inplace(v);
+      oxenc::little_to_host_inplace(v);
   }
 
   /// Serializes binary data of a given size by reading it directly into the given buffer
@@ -211,7 +211,7 @@ public:
   void serialize_int(T v)
   {
     if constexpr (sizeof(T) > 1)
-      boost::endian::native_to_little_inplace(v);
+      oxenc::host_to_little_inplace(v);
     stream_.write(reinterpret_cast<const char*>(&v), sizeof(T));
   }
 

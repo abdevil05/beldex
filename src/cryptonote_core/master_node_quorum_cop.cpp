@@ -37,7 +37,7 @@
 #include "common/beldex.h"
 #include "common/util.h"
 #include "epee/net/local_ip.h"
-#include <boost/endian/conversion.hpp>
+#include <oxenc/endian.h>
 
 #include "common/beldex_integration_test_hooks.h"
 
@@ -858,7 +858,7 @@ namespace master_nodes
         std::memcpy(local.data(), pkdata + offset, prewrap);
         std::memcpy(local.data() + prewrap, pkdata, sizeof(uint64_t) - prewrap);
       }
-      sum += boost::endian::little_to_native(*reinterpret_cast<uint64_t *>(local.data()));
+      sum += oxenc::little_to_host(*reinterpret_cast<uint64_t *>(local.data()));
       ++offset;
     }
     return sum;

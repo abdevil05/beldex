@@ -28,7 +28,7 @@
 //
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
-#include <boost/endian/conversion.hpp>
+#include <oxenc/endian.h>
 #include <future>
 #include <optional>
 #include <chrono>
@@ -220,7 +220,7 @@ namespace nodetool
                 MERROR("Invalid ipv4:port given for --" << arg_tx_proxy.name);
                 return std::nullopt;
             }
-            set_proxy.address = ip::tcp::endpoint{ip::address_v4{boost::endian::native_to_big(ip)}, port};
+            set_proxy.address = ip::tcp::endpoint{ip::address_v4{oxenc::host_to_big(ip)}, port};
         }
 
         return proxies;

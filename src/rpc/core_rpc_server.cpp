@@ -32,7 +32,6 @@
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
 #include <boost/preprocessor/stringize.hpp>
-#include <boost/endian/conversion.hpp>
 #include <algorithm>
 #include <cstring>
 #include <iterator>

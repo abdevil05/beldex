@@ -32,7 +32,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
-#include <boost/endian/conversion.hpp>
+#include <oxenc/endian.h>
 
 #include "common/rules.h"
 #include "common/hex.h"
@@ -5642,9 +5642,7 @@ void Blockchain::load_compiled_in_block_hashes(const GetCheckpointsCallback& get
 
     if (checkpoints.size() > 4)
     {
-      uint32_t nblocks;
-      std::memcpy(&nblocks, checkpoints.data(), 4);
-      boost::endian::little_to_native_inplace(nblocks);
+      auto nblocks = oxenc::load_little_to_host<uint32_t>(checkpoints.data());
       if (nblocks > (std::numeric_limits<uint32_t>::max() - 4) / sizeof(hash))
       {
         MERROR("Block hash data is too large");
