@@ -53,6 +53,7 @@ target_link_libraries(rpc_commands
   PUBLIC
     common
     cpr::cpr
+    nlohmann_json::nlohmann_json
   PRIVATE
     cryptonote_protocol
     extra)
@@ -61,6 +62,7 @@ target_link_libraries(rpc_server_base
   PUBLIC
     common
     uWebSockets
+    nlohmann_json::nlohmann_json
   PRIVATE
     extra)
 
@@ -88,5 +90,6 @@ target_link_libraries(rpc_http_client
   PUBLIC
     common
     cpr::cpr
+    nlohmann_json::nlohmann_json
   PRIVATE
     extra)
