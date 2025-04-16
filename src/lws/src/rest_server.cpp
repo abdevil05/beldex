@@ -109,6 +109,91 @@ namespace lws
       return {std::make_pair(user->second, std::move(*reader))};
     }
 
+    struct daemon_status
+    {
+        using request = rpc::daemon_status_request;
+        using response = rpc::daemon_status_response;
+    
+        static expect<response> handle(const request&, db::storage)
+        {
+            // Build JSON request
+            nlohmann::json request_body = {
+                {"jsonrpc", "2.0"},
+                {"id", "0"},
+                {"method", "get_info"}
+            };
+    
+            // Call the daemon
+            auto response_http = cpr::Post(
+                cpr::Url{lws::daemon_add},
+                cpr::Body{request_body.dump()},
+                cpr::Header{{"Content-Type", "application/json"}}
+            );
+    
+            if (response_http.status_code != 200)
+            {
+                MERROR("get_info call failed with HTTP code: " << response_http.status_code);
+                return make_error_code(std::errc::io_error);
+            }
+    
+            // Parse JSON
+            nlohmann::json full_response;
+            try
+            {
+                full_response = nlohmann::json::parse(response_http.text);
+            }
+            catch (const std::exception& e)
+            {
+                MERROR("JSON parse failed: " << e.what());
+                return make_error_code(std::errc::invalid_argument);
+            }
+    
+            if (!full_response.contains("result"))
+            {
+                MERROR("Missing 'result' in get_info response");
+                return make_error_code(std::errc::protocol_error);
+            }
+    
+            const auto& result = full_response["result"];
+    
+            try
+            {
+                rpc::daemon_status_response resp;
+    
+                // Extract only required values
+                resp.height = result.at("height").get<uint64_t>();
+                resp.target_height = result.at("target_height").get<uint64_t>();
+                resp.outgoing_connections_count = result.at("outgoing_connections_count").get<uint32_t>();
+                resp.incoming_connections_count = result.at("incoming_connections_count").get<uint32_t>();
+    
+                // Determine network type
+                std::string net = result.at("nettype").get<std::string>();
+                if (net == "mainnet") resp.network = rpc::network_type::main;
+                else if (net == "testnet") resp.network = rpc::network_type::test;
+                else {
+                    MERROR("Unknown nettype: " << net);
+                    return make_error_code(std::errc::invalid_argument);
+                }
+    
+                // Determine daemon state
+                if (resp.outgoing_connections_count == 0 && resp.incoming_connections_count == 0)
+                    resp.state = rpc::daemon_state::no_connections;
+                else if (resp.target_height && (resp.target_height - resp.height) >= 5)
+                    resp.state = rpc::daemon_state::synchronizing;
+                else
+                    resp.state = rpc::daemon_state::ok;
+    
+                return resp;
+            }
+            catch (const std::exception& e)
+            {
+                MERROR("Error parsing fields from get_info: " << e.what());
+                return make_error_code(std::errc::invalid_argument);
+            }
+        }
+    };
+     
+    
     struct get_address_info
     {
       using request = rpc::account_credentials;
@@ -999,6 +1084,7 @@ namespace lws
 
     constexpr const endpoint endpoints[] =
         {
+      {"/daemon_status",         call<daemon_status>,          1024},
       {"/get_address_info",      call<get_address_info>, 2 * 1024},
       {"/get_address_txs",       call<get_address_txs>,  2 * 1024},
       {"/get_random_outs",       call<get_random_outs>,  2 * 1024},

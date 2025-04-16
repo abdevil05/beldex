@@ -5,7 +5,7 @@
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
-
+#include "wire.h"
 #include "db/string.h"
 #include "error.h"
 #include "misc_os_dependent.h"      // beldex/contrib/epee/include
@@ -164,6 +164,29 @@ namespace lws
     convert_address(address, self.address);
   }
 
+  namespace rpc
+  {
+    namespace
+    {
+      constexpr const char* map_daemon_state[] = {"ok", "no_connections", "synchronizing", "unavailable"};
+      constexpr const char* map_network_type[] = {"main", "test", "stage", "fake"};
+    }
+    WIRE_DEFINE_ENUM(daemon_state, map_daemon_state);
+    WIRE_DEFINE_ENUM(network_type, map_network_type);
+  }
+
+  void rpc::write_bytes(wire::json_writer& dest, const daemon_status_response& self)
+  {
+    wire::object(dest,
+      WIRE_FIELD(outgoing_connections_count),
+      WIRE_FIELD(incoming_connections_count),
+      WIRE_FIELD(height),
+      WIRE_FIELD(target_height),
+      WIRE_FIELD(network),
+      WIRE_FIELD(state)
+    );
+  }
+  
   void rpc::write_bytes(wire::json_writer& dest, const transaction_spend& self)
   {
     wire::object(dest,
