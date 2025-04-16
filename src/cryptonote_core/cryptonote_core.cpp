@@ -389,7 +389,7 @@ namespace cryptonote
 
       bool args_okay = true;
       if (m_quorumnet_port == 0) {
-        MERROR("Quorumnet port cannot be 0; please specify a valid port to listen on with: '--" << arg_quorumnet_port.name << " <port>'");
+        MFATAL("Quorumnet port cannot be 0; please specify a valid port to listen on with: '--" << arg_quorumnet_port.name << " <port>'");
         args_okay = false;
       }
 
@@ -397,7 +397,7 @@ namespace cryptonote
       if (pub_ip.size())
       {
         if (!epee::string_tools::get_ip_int32_from_string(m_mn_public_ip, pub_ip)) {
-          MERROR("Unable to parse IPv4 public address from: " << pub_ip);
+          MFATAL("Unable to parse IPv4 public address from: " << pub_ip);
           args_okay = false;
         }
 
@@ -405,19 +405,19 @@ namespace cryptonote
           if (m_master_node_list.debug_allow_local_ips) {
             MWARNING("Address given for public-ip is not public; allowing it because dev-allow-local-ips was specified. This master node WILL NOT WORK ON THE PUBLIC BELDEX NETWORK!");
           } else {
-            MERROR("Address given for public-ip is not public: " << epee::string_tools::get_ip_string_from_int32(m_mn_public_ip));
+            MFATAL("Address given for public-ip is not public: " << epee::string_tools::get_ip_string_from_int32(m_mn_public_ip));
             args_okay = false;
           }
         }
       }
       else
       {
-        MERROR("Please specify an IPv4 public address which the master node & storage server is accessible from with: '--" << arg_public_ip.name << " <ip address>'");
+        MFATAL("Please specify an IPv4 public address which the master node & storage server is accessible from with: '--" << arg_public_ip.name << " <ip address>'");
         args_okay = false;
       }
 
       if (!args_okay) {
-        MERROR("IMPORTANT: One or more required master node-related configuration settings/options were omitted or invalid; "
+        MFATAL("IMPORTANT: One or more required master node-related configuration settings/options were omitted or invalid; "
                 << "please fix them and restart beldexd.");
         return false;
       }
@@ -627,7 +627,7 @@ namespace cryptonote
     // make sure the data directory exists, and try to lock it
     if (std::error_code ec; !fs::is_directory(folder, ec) && !fs::create_directories(folder, ec) && ec)
     {
-      MERROR("Failed to create directory " + folder.u8string() + (ec ? ": " + ec.message() : ""s));
+      MFATAL("Failed to create directory " + folder.u8string() + (ec ? ": " + ec.message() : ""s));
       return false;
     }
 
@@ -654,7 +654,7 @@ namespace cryptonote
       // reset the db by removing the database file before opening it
       if (!db->remove_data_file(folder))
       {
-        MERROR("Failed to remove data file in " << folder);
+        MFATAL("Failed to remove data file in " << folder);
         return false;
       }
       fs::remove(bns_db_file_path);
@@ -889,7 +889,7 @@ namespace cryptonote
       try {
         generate_pair(privkey, pubkey);
       } catch (const std::exception& e) {
-        MERROR("failed to generate keypair " << e.what());
+        MFATAL("failed to generate keypair " << e.what());
         return false;
       }
 

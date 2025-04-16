@@ -74,12 +74,13 @@
 
 namespace cryptonote::rpc {
 
+  using nlohmann::json;
   namespace {
 
-    oxenmq::bt_value json_to_bt(nlohmann::json&& j) {
+    oxenc::bt_value json_to_bt(json&& j) {
       using namespace oxenmq;
       if (j.is_object()) {
-        bt_dict res;
+        oxenc::bt_dict res;
         for (auto& [k, v] : j.items()) {
           if (v.is_null())
             continue; // skip k-v pairs with a null v (for other nulls we fail).
@@ -88,7 +89,7 @@ namespace cryptonote::rpc {
         return res;
       }
       if (j.is_array()) {
-        bt_list res;
+        oxenc::bt_list res;
         for (auto& v : j)
           res.push_back(json_to_bt(std::move(v)));
         return res;
@@ -123,9 +124,9 @@ namespace cryptonote::rpc {
                 parse_request(rpc, oxenc::bt_dict_consumer{*body});
               }
               else
-                parse_request(rpc, nlohmann::json::parse(*body));
-            } else if (auto* json = std::get_if<nlohmann::json>(&request.body)) {
-              parse_request(rpc, std::move(*json));
+                parse_request(rpc, json::parse(*body));
+            } else if (auto* j = std::get_if<json>(&request.body)) {
+              parse_request(rpc, std::move(*j));
             } else {
               assert(std::holds_alternative<std::monostate>(request.body));
               parse_request(rpc, std::monostate{});
@@ -137,7 +138,7 @@ namespace cryptonote::rpc {
           server.invoke(rpc, std::move(request.context));
 
           if (rpc.response.is_null())
-            rpc.response = nlohmann::json::object();
+            rpc.response = json::object();
 
           if (rpc.is_bt())
             return bt_serialize(json_to_bt(std::move(rpc.response)));
@@ -430,7 +431,7 @@ namespace cryptonote::rpc {
     if (context.admin)
     {
       bool mn = m_core.master_node();
-      info.response["master_node"] = sn;
+      info.response["master_node"] = mn;
       info.response["start_time"] = m_core.get_start_time();
       if (mn) {
         info.response["last_storage_server_ping"] = m_core.m_last_storage_server_ping.load();
@@ -451,7 +452,7 @@ namespace cryptonote::rpc {
     info.response["database_size"] = context.admin ? db_size : round_up(db_size, 1'000'000'000);
     info.response["version"]       = context.admin ? BELDEX_VERSION_FULL : std::to_string(BELDEX_VERSION[0]);
     info.response["status_line"]   = context.admin ? m_core.get_status_string() :
-      "v" + std::to_string(BELDEX_VERSION[0]) + "; Height: " + std::to_string(res.height);
+      "v" + std::to_string(BELDEX_VERSION[0]) + "; Height: " + std::to_string(height);
 
     info.response["status"] = STATUS_OK;
   }
