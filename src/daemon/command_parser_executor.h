@@ -42,11 +42,6 @@ class command_parser_executor final
 private:
   rpc_command_executor m_executor;
 public:
-  /// Invokes via remote RPC
-  command_parser_executor(std::string daemon_url, const std::optional<tools::login>& login);
-
-  /// Invokes via local daemon
-  command_parser_executor(cryptonote::rpc::core_rpc_server& rpc_server);
 
   bool print_checkpoints(const std::vector<std::string>& args);
 
@@ -105,8 +100,6 @@ public:
   bool mining_status(const std::vector<std::string>& args);
 
   bool stop_daemon(const std::vector<std::string>& args);
-
-  bool print_status(const std::vector<std::string>& args);
 
   bool set_limit(const std::vector<std::string>& args);
 

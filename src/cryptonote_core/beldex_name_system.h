@@ -149,6 +149,9 @@ constexpr uint16_t db_mapping_type(bns::mapping_type type) {
   return static_cast<uint16_t>(type);
 }
 constexpr std::string_view db_mapping_value(bns::mapping_type type) {
+  if(is_belnet_type(type))
+    type = mapping_type::belnet;
+
   switch(type)
   {
     case mapping_type::bchat: return "encrypted_bchat_value"sv;

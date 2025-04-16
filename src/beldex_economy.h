@@ -102,6 +102,8 @@ enum struct mapping_years : uint16_t
   update_record_internal,
 };
 
+constexpr bool is_belnet_type(mapping_type t) { return t >= mapping_type::belnet && t <= mapping_type::belnet_10years; }
+
 constexpr bool is_renewal_type(mapping_years y) { return y >= mapping_years::bns_1year && y <= mapping_years::bns_10years; }
 
 // How many days we add per "year" of BNS belnet registration.  We slightly extend this to the 368
