@@ -331,8 +331,8 @@ namespace cryptonote { namespace rpc {
     if (use_bootstrap_daemon_if_necessary<GET_HEIGHT>(req, res))
       return res;
 
-    crypto::hash hash;
-    m_core.get_blockchain_top(res.height, hash);
+    auto [height, hash] = m_core.get_blockchain_top();
+    res.height = height;
     ++res.height; // block height to chain height
     res.hash = tools::type_to_hex(hash);
     res.status = STATUS_OK;
@@ -357,8 +357,8 @@ namespace cryptonote { namespace rpc {
     {
       if (context.admin)
       {
-        crypto::hash top_hash;
-        m_core.get_blockchain_top(res.height_without_bootstrap.emplace(), top_hash);
+        auto [height, top_hash] = m_core.get_blockchain_top();
+        res.height_without_bootstrap = height;
         ++*res.height_without_bootstrap; // turn top block height into blockchain height
         res.was_bootstrap_ever_used = true;
 
@@ -371,8 +371,8 @@ namespace cryptonote { namespace rpc {
       return res;
     }
 
-    crypto::hash top_hash;
-    m_core.get_blockchain_top(res.height, top_hash);
+    auto [top_height, top_hash] = m_core.get_blockchain_top();
+    res.height = top_height;
     auto prev_ts = m_core.get_blockchain_storage().get_db().get_block_timestamp(res.height);
     ++res.height; // turn top block height into blockchain height
     res.top_block_hash = tools::type_to_hex(top_hash);
@@ -517,12 +517,10 @@ namespace cryptonote { namespace rpc {
       if (req.no_miner_tx)
         res.output_indices.back().indices.push_back(GET_BLOCKS_FAST::tx_output_indices());
       res.blocks.back().txs.reserve(bd.second.size());
-      for (std::vector<std::pair<crypto::hash, cryptonote::blobdata>>::iterator i = bd.second.begin(); i != bd.second.end(); ++i)
+      for (auto& [txhash, txdata] : bd.second)
       {
-        res.blocks.back().txs.push_back({std::move(i->second), crypto::null_hash});
-        i->second.clear();
-        i->second.shrink_to_fit();
-        size += res.blocks.back().txs.back().size();
+          auto& entry = res.blocks.back().txs.emplace_back(std::move(txdata), crypto::null_hash);
+          size += entry.size();
       }
 
       const size_t n_txes_to_lookup = bd.second.size() + (req.no_miner_tx ? 0 : 1);
@@ -1938,9 +1936,7 @@ namespace cryptonote { namespace rpc {
       return res;
 
     CHECK_CORE_READY();
-    uint64_t last_block_height;
-    crypto::hash last_block_hash;
-    m_core.get_blockchain_top(last_block_height, last_block_hash);
+    auto [last_block_height, last_block_hash] = m_core.get_blockchain_top();
     block last_block;
     bool have_last_block = m_core.get_block_by_height(last_block_height, last_block);
     if (!have_last_block)
@@ -2547,8 +2543,8 @@ namespace cryptonote { namespace rpc {
 
     PERF_TIMER(on_sync_info);
 
-    crypto::hash top_hash;
-    m_core.get_blockchain_top(res.height, top_hash);
+    auto [height, top_hash] = m_core.get_blockchain_top();
+    res.height = height;
     ++res.height; // turn top block height into blockchain height
     res.target_height = m_core.get_target_blockchain_height();
     res.next_needed_pruning_seed = m_p2p.get_payload_object().get_next_needed_pruning_stripe().second;

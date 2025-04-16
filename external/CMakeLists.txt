@@ -36,7 +36,7 @@
 if(NOT STATIC AND NOT BUILD_STATIC_DEPS)
   find_package(PkgConfig REQUIRED)
   pkg_check_modules(OXENC liboxenc>=1.0.10 IMPORTED_TARGET)
-  pkg_check_modules(OXENMQ liboxenmq>=1.2.3 IMPORTED_TARGET)
+  pkg_check_modules(OXENMQ liboxenmq>=1.2.7 IMPORTED_TARGET)
 endif()
 
 if(NOT OXENC_FOUND)
