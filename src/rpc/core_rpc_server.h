@@ -201,6 +201,8 @@ namespace cryptonote::rpc {
     void invoke(GET_HEIGHT& req, rpc_context context);
     void invoke(GET_INFO& info, rpc_context context);
     void invoke(BNS_RESOLVE& resolve, rpc_context context);
+    void invoke(GET_MASTER_NODE_STATUS& sns, rpc_context context);
+    void invoke(GET_MASTER_NODES& sns, rpc_context context);
 
     // Deprecated Monero NIH binary endpoints:
     GET_ALT_BLOCKS_HASHES_BIN::response         invoke(GET_ALT_BLOCKS_HASHES_BIN::request&& req, rpc_context context);
@@ -269,8 +271,6 @@ namespace cryptonote::rpc {
     GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES::response   invoke(GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES::request&& req, rpc_context context);
     GET_MASTER_KEYS::response                          invoke(GET_MASTER_KEYS::request&& req, rpc_context context);
     GET_MASTER_PRIVKEYS::response                      invoke(GET_MASTER_PRIVKEYS::request&& req, rpc_context context);
-    GET_MASTER_NODE_STATUS::response                   invoke(GET_MASTER_NODE_STATUS::request&& req, rpc_context context);
-    GET_MASTER_NODES::response                         invoke(GET_MASTER_NODES::request&& req, rpc_context context);
     GET_STAKING_REQUIREMENT::response                   invoke(GET_STAKING_REQUIREMENT::request&& req, rpc_context context);
     STORAGE_SERVER_PING::response                       invoke(STORAGE_SERVER_PING::request&& req, rpc_context context);
     BELNET_PING::response                              invoke(BELNET_PING::request&& req, rpc_context context);
@@ -326,7 +326,12 @@ namespace cryptonote::rpc {
 private:
     bool check_core_ready();
 
-    void fill_mn_response_entry(GET_MASTER_NODES::response::entry& entry, const master_nodes::master_node_pubkey_info &mn_info, uint64_t current_height);
+    void fill_mn_response_entry(
+      nlohmann::json& entry,
+      bool is_bt,
+      const std::unordered_set<std::string>& requested,
+      const master_nodes::master_node_pubkey_info& mn_info,
+      uint64_t top_height);
 
     //utils
     uint64_t get_block_reward(const block& blk);

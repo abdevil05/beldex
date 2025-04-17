@@ -10,5 +10,7 @@ namespace cryptonote::rpc {
 
   inline void parse_request(NO_ARGS&, rpc_input) {}
 
-  void parse_request(BNS_RESOLVE& bns, rpc_input);
+  void parse_request(BNS_RESOLVE& bns, rpc_input in);
+  void parse_request(GET_MASTER_NODES& mns, rpc_input in);
+
 }
