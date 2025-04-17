@@ -219,8 +219,8 @@ namespace cryptonote
   uint64_t get_block_height(const block& b);
   std::vector<uint64_t> relative_output_offsets_to_absolute(const std::vector<uint64_t>& off);
   std::vector<uint64_t> absolute_output_offsets_to_relative(const std::vector<uint64_t>& off);
-  std::string get_unit(unsigned int decimal_point = -1);
-  std::string print_money(uint64_t amount, unsigned int decimal_point = -1);
+  inline constexpr std::string_view get_unit() { return "BDX"sv; }
+  std::string print_money(uint64_t amount, bool trim_insignificant = false);
 
   std::string print_tx_verification_context  (tx_verification_context const &tvc, transaction const *tx = nullptr);
   std::string print_vote_verification_context(vote_verification_context const &vvc, master_nodes::quorum_vote_t const *vote = nullptr);
