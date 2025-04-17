@@ -3188,57 +3188,29 @@ namespace master_nodes
   void master_node_list::record_checkpoint_participation(crypto::public_key const &pubkey, uint64_t height, bool participated)
   {
     std::lock_guard lock(m_mn_mutex);
-    if (!m_state.master_nodes_infos.count(pubkey))
-      return;
-
-    participation_entry entry  = {};
-    entry.height               = height;
-    entry.voted                = participated;
-
-    auto &info = proofs[pubkey];
-    info.checkpoint_participation.add(entry);
+    if (m_state.master_nodes_infos.count(pubkey))
+      proofs[pubkey].checkpoint_participation.add({height, participated});
   }
 
   void master_node_list::record_POS_participation(crypto::public_key const &pubkey, uint64_t height, uint8_t round, bool participated)
   {
     std::lock_guard lock(m_mn_mutex);
-    if (!m_state.master_nodes_infos.count(pubkey))
-      return;
-
-    participation_entry entry  = {};
-    entry.is_POS             = true;
-    entry.height               = height;
-    entry.voted                = participated;
-    entry.POS.round          = round;
-
-    auto &info = proofs[pubkey];
-    info.POS_participation.add(entry);
+    if (m_state.master_nodes_infos.count(pubkey))
+      proofs[pubkey].POS_participation.add({height, round, participated});
   }
 
   void master_node_list::record_timestamp_participation(crypto::public_key const &pubkey, bool participated)
   {
     std::lock_guard lock(m_mn_mutex);
-    if (!m_state.master_nodes_infos.count(pubkey))
-      return;
-
-    timestamp_participation_entry entry  = {};
-    entry.participated                = participated;
-
-    auto &info = proofs[pubkey];
-    info.timestamp_participation.add(entry);
+    if (m_state.master_nodes_infos.count(pubkey))
+      proofs[pubkey].timestamp_participation.add({participated});
   }
 
   void master_node_list::record_timesync_status(crypto::public_key const &pubkey, bool synced)
   {
     std::lock_guard lock(m_mn_mutex);
-    if (!m_state.master_nodes_infos.count(pubkey))
-      return;
-
-    timesync_entry entry  = {};
-    entry.in_sync                = synced;
-
-    auto &info = proofs[pubkey];
-    info.timesync_status.add(entry);
+    if (m_state.master_nodes_infos.count(pubkey))
+      proofs[pubkey].timesync_status.add({synced});
   }
 
   std::optional<bool> proof_info::reachable_stats::reachable(const std::chrono::steady_clock::time_point& now) const {
