@@ -626,7 +626,7 @@ namespace rpc {
   /// \p num_blocks Mine until the blockchain has this many new blocks, then stop (no limit if 0, the default).
   /// \p slow_mining Do slow mining (i.e. don't allocate RandomX cache); primarily inteded for testing.
   ///
-  /// Output values available from a public RPC endpoint:
+  /// Output values available from a restricted/admin RPC endpoint:
   ///
   /// \p status General RPC status string. `"OK"` means everything looks good.
   struct START_MINING : LEGACY
@@ -636,14 +636,17 @@ namespace rpc {
     struct response : STATUS {};
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Stop mining on the daemon.
+  //-----------------------------------------------
+  /// Stop mining on the daemon.
+  ///
+  /// Inputs: none
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// \p status General RPC status string. `"OK"` means everything looks good.
   struct STOP_MINING : LEGACY
   {
     static constexpr auto names() { return NAMES("stop_mining"); }
-
-    struct request : EMPTY {};
-    struct response : STATUS {};
   };
 
   BELDEX_RPC_DOC_INTROSPECT
@@ -767,31 +770,33 @@ namespace rpc {
   };
 
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Save the blockchain. The blockchain does not need saving and is always saved when modified,
-  // however it does a sync to flush the filesystem cache onto the disk for safety purposes against Operating System or Hardware crashes.
+  //-----------------------------------------------
+  /// Save the blockchain. The blockchain does not need saving and is always saved when modified,
+  /// however it does a sync to flush the filesystem cache onto the disk for safety purposes,
+  /// against Operating System or Hardware crashes.
+  ///
+  /// Inputs: none
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// \p status General RPC status string. `"OK"` means everything looks good.
   struct SAVE_BC : LEGACY
   {
     static constexpr auto names() { return NAMES("save_bc"); }
-
-    struct request : EMPTY {};
-    struct response : STATUS {};
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Look up how many blocks are in the longest chain known to the node.
+  //-----------------------------------------------
+  /// Look up how many blocks are in the longest chain known to the node.
+  ///
+  /// Inputs: none
+  ///
+  /// Output values available from a public RPC endpoint:
+  ///
+  /// \p status General RPC status string. `"OK"` means everything looks good.
+  /// \p count Number of blocks in logest chain seen by the node.
   struct GETBLOCKCOUNT : PUBLIC
   {
     static constexpr auto names() { return NAMES("get_block_count", "getblockcount"); }
-
-    struct request : EMPTY {};
-    struct response
-    {
-      uint64_t count;     // Number of blocks in longest chain seen by the node.
-      std::string status; // General RPC error code. "OK" means everything looks good.
-
-      KV_MAP_SERIALIZABLE
-    };
   };
 
   BELDEX_RPC_DOC_INTROSPECT
@@ -1415,14 +1420,17 @@ namespace rpc {
     struct response : STATUS {};
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Send a command to the daemon to safely disconnect and shut down.
+  //-----------------------------------------------
+  /// Stop the daemon.
+  ///
+  /// Inputs: none
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// \p status General RPC status string. `"OK"` means everything looks good.
   struct STOP_DAEMON : LEGACY
   {
     static constexpr auto names() { return NAMES("stop_daemon"); }
-
-    struct request : EMPTY {};
-    struct response : STATUS {};
   };
 
   BELDEX_RPC_DOC_INTROSPECT
@@ -2715,6 +2723,12 @@ namespace rpc {
     GET_HEIGHT,
     GET_INFO,
     BNS_RESOLVE,
+    GET_OUTPUTS,
+    START_MINING,
+    STOP_MINING,
+    SAVE_BC,
+    STOP_DAEMON,
+    GETBLOCKCOUNT,
     // Deprecated Monero NIH binary endpoints:
     GET_ALT_BLOCKS_HASHES_BIN,
     GET_BLOCKS_BIN,
@@ -2729,14 +2743,9 @@ namespace rpc {
   using FIXME_old_rpc_types = tools::type_list<
     GET_TRANSACTIONS,
     IS_KEY_IMAGE_SPENT,
-    GET_OUTPUTS,
     SEND_RAW_TX,
-    START_MINING,
-    STOP_MINING,
     MINING_STATUS,
     GET_NET_STATS,
-    SAVE_BC,
-    GETBLOCKCOUNT,
     GETBLOCKHASH,
     GETBLOCKTEMPLATE,
     SUBMITBLOCK,
@@ -2757,7 +2766,6 @@ namespace rpc {
     GET_CONNECTIONS,
     GET_BLOCK_HEADERS_RANGE,
     SET_BOOTSTRAP_DAEMON,
-    STOP_DAEMON,
     GET_LIMIT,
     SET_LIMIT,
     OUT_PEERS,
