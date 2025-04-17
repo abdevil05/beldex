@@ -345,14 +345,14 @@ KV_SERIALIZE_MAP_CODE_END()
 // KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_NET_STATS::response)
-  KV_SERIALIZE(status)
-  KV_SERIALIZE(start_time)
-  KV_SERIALIZE(total_packets_in)
-  KV_SERIALIZE(total_bytes_in)
-  KV_SERIALIZE(total_packets_out)
-  KV_SERIALIZE(total_bytes_out)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_NET_STATS::response)
+//   KV_SERIALIZE(status)
+//   KV_SERIALIZE(start_time)
+//   KV_SERIALIZE(total_packets_in)
+//   KV_SERIALIZE(total_bytes_in)
+//   KV_SERIALIZE(total_packets_out)
+//   KV_SERIALIZE(total_bytes_out)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
 KV_SERIALIZE_MAP_CODE_BEGIN(GETBLOCKCOUNT::response)
