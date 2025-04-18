@@ -1100,17 +1100,18 @@ namespace cryptonote
     cn_fast_hash(blob.data(), blob.size(), res);
   }
   //---------------------------------------------------------------
-  std::string print_money(uint64_t amount, bool trim_insignificant)
-  {
-    std::string s = tools::int_to_string(amount);
-    if (s.size() <= beldex::DISPLAY_DECIMAL_POINT)
-      s.insert(0, beldex::DISPLAY_DECIMAL_POINT - s.size() + 1, '0');
-    s.insert(s.size() - beldex::DISPLAY_DECIMAL_POINT, ".");
-    if (trim_insignificant) {
-      while (s.back() == '0')
-        s.pop_back();
-      if (s.back() == '.')
-        s.pop_back();
+  std::string print_money(uint64_t amount, bool strip_zeros) {
+    constexpr unsigned int decimal_point = beldex::DISPLAY_DECIMAL_POINT;
+    std::string s = std::to_string(amount);
+    if (s.size() < decimal_point + 1) {
+        s.insert(0, decimal_point + 1 - s.size(), '0');
+    }
+    s.insert(s.size() - decimal_point, ".");
+    if (strip_zeros) {
+        while (s.back() == '0')
+            s.pop_back();
+        if (s.back() == '.')
+            s.pop_back();
     }
     return s;
   }

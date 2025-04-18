@@ -87,8 +87,8 @@ namespace master_nodes
     uint64_t timestamp = 0;
     decltype(std::declval<proof_info>().public_ips) ips{};
 
-    master_nodes::participation_history<master_nodes::participation_entry> checkpoint_participation{};
-    master_nodes::participation_history<master_nodes::participation_entry> POS_participation{};
+    master_nodes::participation_history<master_nodes::checkpoint_participation_entry> checkpoint_participation{};
+    master_nodes::participation_history<master_nodes::POS_participation_entry> POS_participation{};
     master_nodes::participation_history<master_nodes::timestamp_participation_entry> timestamp_participation{};
     master_nodes::participation_history<master_nodes::timesync_entry> timesync_status{};
 
@@ -98,12 +98,11 @@ namespace master_nodes
 
     m_core.get_master_node_list().access_proof(pubkey, [&](const proof_info &proof) {
       ss_reachable             = !proof.ss_reachable.unreachable_for(unreachable_threshold);
-      belnet_reachable        = !proof.belnet_reachable.unreachable_for(unreachable_threshold);
+      belnet_reachable         = !proof.belnet_reachable.unreachable_for(unreachable_threshold);
       timestamp                = std::max(proof.timestamp, proof.effective_timestamp);
       ips                      = proof.public_ips;
       checkpoint_participation = proof.checkpoint_participation;
-      POS_participation      = proof.POS_participation;
-
+      POS_participation        = proof.POS_participation;
       timestamp_participation  = proof.timestamp_participation;
       timesync_status          = proof.timesync_status;
 
@@ -186,22 +185,21 @@ namespace master_nodes
 
 
         if (!info.is_decommissioned()) {
-            if (check_checkpoint_obligation &&
-                !checkpoint_participation.check_participation(CHECKPOINT_MAX_MISSABLE_VOTES)) {
+            if (check_checkpoint_obligation && checkpoint_participation.failures() > CHECKPOINT_MAX_MISSABLE_VOTES) {
                 LOG_PRINT_L1("Master Node: " << pubkey << ", failed checkpoint obligation check");
                 result.checkpoint_participation = false;
             }
 
-            if (!POS_participation.check_participation(POS_MAX_MISSABLE_VOTES)) {
+            if (POS_participation.failures() > POS_MAX_MISSABLE_VOTES) {
                 LOG_PRINT_L1("Master Node: " << pubkey << ", failed pulse obligation check");
                 result.POS_participation = false;
             }
 
-            if (!timestamp_participation.check_participation(TIMESTAMP_MAX_MISSABLE_VOTES)) {
+            if (timestamp_participation.failures() > TIMESTAMP_MAX_MISSABLE_VOTES) {
                 LOG_PRINT_L1("Master Node: " << pubkey << ", failed timestamp obligation check");
                 result.timestamp_participation = false;
             }
-            if (!timesync_status.check_participation(TIMESYNC_MAX_UNSYNCED_VOTES)) {
+            if (timesync_status.failures() > TIMESYNC_MAX_UNSYNCED_VOTES) {
                 LOG_PRINT_L1("Master Node: " << pubkey << ", failed timesync obligation check");
                 result.timesync_status = false;
             }

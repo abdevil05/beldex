@@ -1688,9 +1688,7 @@ namespace cryptonote
               m_mn_times.add(entry);
 
               // Counts the number of times we have been out of sync
-              uint8_t num_mn_out_of_sync = std::count_if(m_mn_times.begin(), m_mn_times.end(),
-                [](const master_nodes::timesync_entry entry) { return !entry.in_sync; });
-              if (num_mn_out_of_sync > (m_mn_times.array.size() * master_nodes::MAXIMUM_EXTERNAL_OUT_OF_SYNC/100)) {
+              if (m_mn_times.failures() > (m_mn_times.size() * master_nodes::MAXIMUM_EXTERNAL_OUT_OF_SYNC/100)) {
                 MWARNING("master node time might be out of sync");
                 // If we are out of sync record the other master node as in sync
                 m_master_node_list.record_timesync_status(pubkey, true);

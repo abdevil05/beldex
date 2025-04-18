@@ -228,7 +228,7 @@ public:
 
   bool prepare_registration(bool force_registration=false);
 
-  bool print_mn(const std::vector<std::string> &args);
+  bool print_mn(const std::vector<std::string> &args, bool self = false);
 
   bool prune_blockchain();
 
