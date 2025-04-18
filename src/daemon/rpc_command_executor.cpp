@@ -731,8 +731,8 @@ bool rpc_command_executor::print_connections() {
         info["current_download"].get<uint64_t>() / 1000.,
         info["avg_upload"].get<uint64_t>() / 1000.,
         info["current_upload"].get<uint64_t>() / 1000.,
-        (info.value("localhost", false) ? "[LOCALHOST]" : ""),
-        (info.value("local_ip", false) ? "[LAN]" : ""));
+        info.value("localhost", false) ? "[LOCALHOST]" : "",
+        info.value("local_ip", false) ? "[LAN]" : "");
   }
 
   return true;
