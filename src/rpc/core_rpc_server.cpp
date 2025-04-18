@@ -461,14 +461,20 @@ namespace cryptonote::rpc {
   {
     PERF_TIMER(on_get_net_stats);
     // No bootstrap daemon check: Only ever get stats about local server
-    get_net_stats.response["start_time"] = (uint64_t)m_core.get_start_time();
+    get_net_stats.response["start_time"] = m_core.get_start_time();
     {
       std::lock_guard lock{epee::net_utils::network_throttle_manager::m_lock_get_global_throttle_in};
-      epee::net_utils::network_throttle_manager::get_global_throttle_in().get_stats(get_net_stats.response["total_packets_in"], get_net_stats.response["total_bytes_in"]);
+      uint64_t total_packets_in, total_bytes_in;
+      epee::net_utils::network_throttle_manager::get_global_throttle_in().get_stats(total_packets_in, total_bytes_in);
+      get_net_stats.response["total_packets_in"] = total_packets_in;
+      get_net_stats.response["total_bytes_in"] = total_bytes_in;    
     }
     {
       std::lock_guard lock{epee::net_utils::network_throttle_manager::m_lock_get_global_throttle_out};
-      epee::net_utils::network_throttle_manager::get_global_throttle_out().get_stats(get_net_stats.response["total_packets_out"], get_net_stats.response["total_bytes_out"]);
+      uint64_t total_packets_out, total_bytes_out;
+      epee::net_utils::network_throttle_manager::get_global_throttle_out().get_stats(total_packets_out, total_bytes_out);
+      get_net_stats.response["total_packets_out"] = total_packets_out;
+      get_net_stats.response["total_bytes_out"] = total_bytes_out;
     }
     get_net_stats.response["status"] = STATUS_OK;
   }
@@ -648,7 +654,7 @@ namespace cryptonote::rpc {
 
     if (!context.admin && get_outputs.request["outputs"].size() > GET_OUTPUTS::MAX_COUNT) {
       get_outputs.response["status"] = "Too many outs requested";
-      return res;
+      return;
     }
 
     GET_OUTPUTS_BIN::request req_bin{};
@@ -661,13 +667,12 @@ namespace cryptonote::rpc {
       return;
     }
 
-    get_output.response["outs"] = std::vector<get_output.outkey>{};
+    get_outputs.response["outs"] = std::vector<get_outputs.outkey>{};
 
     // convert to text
     for (const auto &i: res_bin.outs)
     {
-      get_output.response["outs"].emplace_back();
-      auto& outkey = get_output.response["outs"].back();
+      auto& outkey = get_outputs.response["outs"].emplace_back();
       outkey.key = tools::type_to_hex(i.key);
       outkey.mask = tools::type_to_hex(i.mask);
       outkey.unlocked = i.unlocked;
@@ -676,7 +681,7 @@ namespace cryptonote::rpc {
     }
 
     get_outputs.response["status"] = STATUS_OK;
-    return res;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN::response core_rpc_server::invoke(GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN::request&& req, rpc_context context)
@@ -1220,7 +1225,13 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(START_MINING& start_mining, rpc_context context)
   {
     PERF_TIMER(on_start_mining);
-    CHECK_CORE_READY();
+
+    if(!check_core_ready()){ 
+      start_mining.response["status"] = STATUS_BUSY;
+      LOG_PRINT_L0(start_mining.response["status"]);
+      return; 
+    }
+
     cryptonote::address_parse_info info;
     if(!get_account_address_from_str(info, m_core.get_nettype(), start_mining.request['miner_address']))
     {
@@ -1510,11 +1521,9 @@ namespace cryptonote::rpc {
 
     std::vector<crypto::hash> tx_hashes;
     m_core.get_pool().get_transaction_hashes(tx_hashes, context.admin);
-    get_transaction_pool_hashes.response["tx_hashes"].reserve(tx_hashes.size());
-    for (const crypto::hash &tx_hash: tx_hashes)
-      get_transaction_pool_hashes.response["tx_hashes"].push_back(tools::type_to_hex(tx_hash));
+    get_transaction_pool_hashes.response_hex["tx_hashes"] = tx_hashes;
     get_transaction_pool_hashes.response["status"] = STATUS_OK;
-    LOG_PRINT_L0(get_transaction_pool_hashes.response["status"]);
+    LOG_PRINT_L0(get_transaction_pool_hashes.response["status"].get<std::string>());
     return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -2085,7 +2094,8 @@ namespace cryptonote::rpc {
   {
     PERF_TIMER(on_get_connections);
 
-    get_connections.response["connections"] = m_p2p.get_payload_object().get_connections();
+    auto connections = m_p2p.get_payload_object().get_connections();
+    get_connections.response["connections"] = connections;
     get_connections.response["status"] = STATUS_OK;
     LOG_PRINT_L0(get_connections.response["status"]);
     return;
@@ -2564,9 +2574,9 @@ namespace cryptonote::rpc {
 
     std::vector<rpc::tx_backlog_entry> backlog;
     m_core.get_pool().get_transaction_backlog(backlog);
-    get_transaction_pool_backlog.response["backlog"] = backlog;
-    get_transaction_backlog.response["status"] = STATUS_OK;
-    LOG_PRINT_L0(get_transaction_backlog.response["status"]);
+    get_transaction_pool_backlog.response["backlog"] = json::parse(backlog.begin(), backlog.end());
+    get_transaction_pool_backlog.response["status"] = STATUS_OK;
+    LOG_PRINT_L0(get_transaction_pool_backlog.response["status"]);
     return;
   }
 
