@@ -22,4 +22,5 @@ namespace cryptonote::rpc {
   void parse_request(STOP_DAEMON& stop_daemon, rpc_input in);
   void parse_request(SAVE_BC& save_bc, rpc_input in);
   void parse_request(GET_OUTPUTS& get_outputs, rpc_input in);
+  void parse_request(GET_TRANSACTION_POOL_STATS& pstats, rpc_input in);
 }

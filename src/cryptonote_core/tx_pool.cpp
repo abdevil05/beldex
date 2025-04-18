@@ -1212,7 +1212,7 @@ namespace cryptonote
   {
     auto locks = tools::unique_locks(m_transactions_lock, m_blockchain);
 
-    tx_stats stats;
+    tx_stats stats{};
     const uint64_t now = time(NULL);
     std::map<uint64_t, std::pair<uint32_t, uint64_t>> agebytes;
     stats.txs_total = m_blockchain.get_txpool_tx_count(include_unrelayed_txes);
@@ -1234,9 +1234,10 @@ namespace cryptonote
         stats.num_10m++;
       if (meta.last_failed_height)
         stats.num_failing++;
-      uint64_t age = now - meta.receive_time + (now == meta.receive_time);
-      agebytes[age].first++;
-      agebytes[age].second += meta.weight;
+      uint64_t age = now < meta.receive_time ? 0 : now - meta.receive_time;
+      auto& a = agebytes[age];
+      a.first++;
+      a.second += meta.weight;
       if (meta.double_spend_seen)
         ++stats.num_double_spends;
       return true;
@@ -1244,6 +1245,7 @@ namespace cryptonote
     stats.bytes_med = tools::median(std::move(weights));
     if (stats.txs_total > 1)
     {
+      stats.histo.resize(10);
       /* looking for 98th percentile */
       size_t end = stats.txs_total * 0.02;
       uint64_t delta, factor;
@@ -1273,9 +1275,8 @@ namespace cryptonote
          */
         stats.histo_98pc = 0;
         it = agebytes.end();
-        factor = stats.txs_total > 9 ? 10 : stats.txs_total;
+        factor = 10;
         delta = now - stats.oldest;
-        stats.histo.resize(factor);
       }
       if (!delta)
         delta = 1;
