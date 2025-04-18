@@ -213,6 +213,7 @@ namespace cryptonote::rpc {
     void invoke(GET_TRANSACTION_POOL_BACKLOG& get_transaction_pool_backlog, rpc_context context);
     void invoke(GET_TRANSACTION_POOL_STATS& get_transaction_pool_stats, rpc_context context);
     void invoke(GET_CONNECTIONS& get_connections, rpc_context context);
+    void invoke(SYNC_INFO& sync, rpc_context context);
     void invoke(GET_MASTER_NODE_STATUS& sns, rpc_context context);
     void invoke(GET_MASTER_NODES& sns, rpc_context context);
 
@@ -263,7 +264,6 @@ namespace cryptonote::rpc {
     GET_BASE_FEE_ESTIMATE::response                     invoke(GET_BASE_FEE_ESTIMATE::request&& req, rpc_context context);
     GET_ALTERNATE_CHAINS::response                      invoke(GET_ALTERNATE_CHAINS::request&& req, rpc_context context);
     RELAY_TX::response                                  invoke(RELAY_TX::request&& req, rpc_context context);
-    SYNC_INFO::response                                 invoke(SYNC_INFO::request&& req, rpc_context context);
     PRUNE_BLOCKCHAIN::response                          invoke(PRUNE_BLOCKCHAIN::request&& req, rpc_context context);
     GET_QUORUM_STATE::response                          invoke(GET_QUORUM_STATE::request&& req, rpc_context context);
     GET_MASTER_NODE_REGISTRATION_CMD_RAW::response     invoke(GET_MASTER_NODE_REGISTRATION_CMD_RAW::request&& req, rpc_context context);
