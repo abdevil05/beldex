@@ -701,39 +701,38 @@ bool rpc_command_executor::mining_status() {
 }
 
 bool rpc_command_executor::print_connections() {
-  GET_CONNECTIONS::response res{};
-
-  if (!invoke<GET_CONNECTIONS>({}, res, "Failed to retrieve connection info"))
+  auto maybe_conns = try_running([this] { return invoke<GET_CONNECTIONS>(); }, "Failed to retrieve connection info");
+  if (!maybe_conns)
     return false;
+  auto& conns = *maybe_conns;
 
-    constexpr auto hdr_fmt = "{:<30}{:<8}{:<20}{:<30}{:<25}{:<20}{:<12s}{:<14s}{:<10s}{:<13s}"sv;
-    constexpr auto row_fmt = "{:<30}{:<8}{:<20}{:<30}{:<25}{:<20}{:<12.1f}{:<14.1f}{:<10.1f}{:<13.1f}{}{}"sv;
-    tools::msg_writer() << fmt::format(hdr_fmt,
-        "Remote Host", "Type", "Peer id", "Recv/Sent (inactive,sec)", "State", "Livetime(sec)",
-        "Down (kB/sec)", "Down(now)", "Up (kB/s)", "Up(now)");
-  
+  constexpr auto hdr_fmt = "{:<30}{:<8}{:<20}{:<30}{:<25}{:<20}{:<12s}{:<14s}{:<10s}{:<13s}"sv;
+  constexpr auto row_fmt = "{:<30}{:<8}{:<20}{:<30}{:<25}{:<20}{:<12.1f}{:<14.1f}{:<10.1f}{:<13.1f}{}{}"sv;
+  tools::msg_writer() << fmt::format(hdr_fmt,
+      "Remote Host", "Type", "Peer id", "Recv/Sent (inactive,sec)", "State", "Livetime(sec)",
+      "Down (kB/sec)", "Down(now)", "Up (kB/s)", "Up(now)");
 
-  for (auto & info : res.connections)
+  for (auto& info : conns)
   {
-    std::string address = info.incoming ? "INC " : "OUT ";
-    address += info.ip;
+    std::string address = info["incoming"].get<bool>() ? "INC " : "OUT ";
+    address += info["ip"].get<std::string_view>();
     address += ':';
-    address += info.port;
+    address += tools::int_to_string(info["port"].get<uint16_t>());
     tools::msg_writer() << fmt::format(row_fmt,
         address,
-        info.address_type,
-        info.peer_id,
-        fmt::format("{}({}/{})", info.recv_count,
-          tools::friendly_duration(info.recv_idle_time),
-          tools::friendly_duration(info.send_idle_time)),
-        info.state,
-        tools::friendly_duration(info.live_time),
-        info.avg_upload / 1000.,
-        info.current_download / 1000.,
-        info.avg_upload / 1000.,
-        info.current_upload / 1000.,
-        info.localhost ? "[LOCALHOST]" : "",
-        info.local_ip ? "[LAN]" : "");
+        info["address_type"].get<epee::net_utils::address_type>(),
+        info["peer_id"].get<std::string_view>(),
+        fmt::format("{}({}/{})", info["recv_count"].get<uint64_t>(),
+          tools::friendly_duration(1ms * info["recv_idle_ms"].get<int64_t>()),
+          tools::friendly_duration(1ms * info["send_idle_ms"].get<int64_t>())),
+        info["state"].get<std::string_view>(),
+        tools::friendly_duration(1ms * info["live_ms"].get<int64_t>()),
+        info["avg_download"].get<uint64_t>() / 1000.,
+        info["current_download"].get<uint64_t>() / 1000.,
+        info["avg_upload"].get<uint64_t>() / 1000.,
+        info["current_upload"].get<uint64_t>() / 1000.,
+        (info.value("localhost", false) ? "[LOCALHOST]" : ""),
+        (info.value("local_ip", false) ? "[LAN]" : ""));
   }
 
   return true;
