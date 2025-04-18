@@ -69,4 +69,5 @@ target_link_libraries(epee
   PRIVATE
     filesystem
     Boost::thread
+    date::date
     extra)

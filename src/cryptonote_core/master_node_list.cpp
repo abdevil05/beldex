@@ -34,6 +34,7 @@
 #include <chrono>
 #include <fmt/core.h>
 #include <oxenc/endian.h>
+#include <date/date.h>
 
 extern "C" {
 #include <sodium.h>
@@ -52,7 +53,6 @@ extern "C" {
 #include "common/random.h"
 #include "common/lock.h"
 #include "common/hex.h"
-#include "epee/misc_os_dependent.h"
 #include "blockchain.h"
 #include "master_node_quorum_cop.h"
 
@@ -3759,14 +3759,8 @@ namespace master_nodes
     if (make_friendly)
     {
       stream << "\n\n";
-      time_t tt = exp_timestamp;
-
-      struct tm tm;
-      epee::misc_utils::get_gmt_time(tt, tm);
-
-      char buffer[128];
-      strftime(buffer, sizeof(buffer), "%Y-%m-%d %I:%M:%S %p UTC", &tm);
-      stream << tr("This registration expires at ") << buffer << tr(".\n");
+      auto exp = std::chrono::system_clock::from_time_t(exp_timestamp);
+      stream << tr("This registration expires at ") << date::format("%Y-%m-%d %I:%M:%S %p UTC", exp) << tr(".\n");
       stream << tr("This should be in about 2 weeks, if it isn't, check this computer's clock.\n");
       stream << tr("Please submit your registration into the blockchain before this time or it will be invalid.");
     }
