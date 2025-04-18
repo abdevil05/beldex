@@ -43,7 +43,7 @@
 #include "cryptonote_core/master_node_rules.h"
 #include "cryptonote_basic/hardfork.h"
 #include "checkpoints/checkpoints.h"
-#include <boost/format.hpp>
+#include <exception>
 #include <fmt/core.h>
 #include <oxenc/base32z.h>
 
@@ -127,19 +127,6 @@ namespace {
     
     if (command_line::is_cancel(input)) return input_line_result::cancel;
     return input_line_result::yes;
-  }
-
-  const char *get_address_type_name(epee::net_utils::address_type address_type)
-  {
-    switch (address_type)
-    {
-      default:
-      case epee::net_utils::address_type::invalid: return "invalid";
-      case epee::net_utils::address_type::ipv4: return "IPv4";
-      case epee::net_utils::address_type::ipv6: return "IPv6";
-      case epee::net_utils::address_type::i2p: return "I2P";
-      case epee::net_utils::address_type::tor: return "Tor";
-    }
   }
 
   void print_peer(std::string const & prefix, GET_PEER_LIST::peer const & peer, bool pruned_only, bool publicrpc_only)
@@ -491,9 +478,9 @@ static std::string get_mining_speed(uint64_t hr)
   return fmt::format("{:d} H/s",hr);
 }
 
-static std::ostream& print_fork_extra_info(std::ostream& o, uint64_t t, uint64_t now, uint64_t block_time)
+static std::ostream& print_fork_extra_info(std::ostream& o, uint64_t t, uint64_t now, std::chrono::seconds block_time)
 {
-  uint64_t blocks_per_day = 86400 / block_time;
+  double blocks_per_day = 24h / block_time;
 
   if (t == now)
     return o << " (forking now)";
@@ -517,10 +504,6 @@ static float get_sync_percentage(uint64_t height, uint64_t target_height)
   if (height < target_height && pc > 99.9f)
     return 99.9f; // to avoid 100% when not fully synced
   return pc;
-}
-static float get_sync_percentage(const GET_INFO::response &ires)
-{
-  return get_sync_percentage(ires.height, ires.target_height);
 }
 
 bool rpc_command_executor::show_status() {
@@ -723,42 +706,34 @@ bool rpc_command_executor::print_connections() {
   if (!invoke<GET_CONNECTIONS>({}, res, "Failed to retrieve connection info"))
     return false;
 
-  tools::msg_writer() << std::setw(30) << std::left << "Remote Host"
-      << std::setw(8) << "Type"
-      << std::setw(20) << "Peer id"
-      << std::setw(20) << "Support Flags"
-      << std::setw(30) << "Recv/Sent (inactive,sec)"
-      << std::setw(25) << "State"
-      << std::setw(20) << "Livetime(sec)"
-      << std::setw(12) << "Down (kB/s)"
-      << std::setw(14) << "Down(now)"
-      << std::setw(10) << "Up (kB/s)"
-      << std::setw(13) << "Up(now)"
-      << std::endl;
+    constexpr auto hdr_fmt = "{:<30}{:<8}{:<20}{:<30}{:<25}{:<20}{:<12s}{:<14s}{:<10s}{:<13s}"sv;
+    constexpr auto row_fmt = "{:<30}{:<8}{:<20}{:<30}{:<25}{:<20}{:<12.1f}{:<14.1f}{:<10.1f}{:<13.1f}{}{}"sv;
+    tools::msg_writer() << fmt::format(hdr_fmt,
+        "Remote Host", "Type", "Peer id", "Recv/Sent (inactive,sec)", "State", "Livetime(sec)",
+        "Down (kB/sec)", "Down(now)", "Up (kB/s)", "Up(now)");
+  
 
   for (auto & info : res.connections)
   {
     std::string address = info.incoming ? "INC " : "OUT ";
-    address += info.ip + ":" + info.port;
-    //std::string in_out = info.incoming ? "INC " : "OUT ";
-    tools::msg_writer()
-     //<< std::setw(30) << std::left << in_out
-     << std::setw(30) << std::left << address
-     << std::setw(8) << (get_address_type_name((epee::net_utils::address_type)info.address_type))
-     << std::setw(20) << info.peer_id
-     << std::setw(20) << info.support_flags
-     << std::setw(30) << std::to_string(info.recv_count) + "("  + std::to_string(tools::to_seconds(info.recv_idle_time)) + ")/" + std::to_string(info.send_count) + "(" + std::to_string(tools::to_seconds(info.send_idle_time)) + ")"
-     << std::setw(25) << info.state
-     << std::setw(20) << std::to_string(tools::to_seconds(info.live_time))
-     << std::setw(12) << info.avg_download
-     << std::setw(14) << info.current_download
-     << std::setw(10) << info.avg_upload
-     << std::setw(13) << info.current_upload
-
-     << std::left << (info.localhost ? "[LOCALHOST]" : "")
-     << std::left << (info.local_ip ? "[LAN]" : "");
-    //tools::msg_writer() << boost::format("%-25s peer_id: %-25s %s") % address % info.peer_id % in_out;
-
+    address += info.ip;
+    address += ':';
+    address += info.port;
+    tools::msg_writer() << fmt::format(row_fmt,
+        address,
+        info.address_type,
+        info.peer_id,
+        fmt::format("{}({}/{})", info.recv_count,
+          tools::friendly_duration(info.recv_idle_time),
+          tools::friendly_duration(info.send_idle_time)),
+        info.state,
+        tools::friendly_duration(info.live_time),
+        info.avg_upload / 1000.,
+        info.current_download / 1000.,
+        info.avg_upload / 1000.,
+        info.current_upload / 1000.,
+        info.localhost ? "[LOCALHOST]" : "",
+        info.local_ip ? "[LAN]" : "");
   }
 
   return true;
