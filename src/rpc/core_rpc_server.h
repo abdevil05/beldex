@@ -204,6 +204,7 @@ namespace cryptonote::rpc {
     void invoke(BNS_RESOLVE& resolve, rpc_context context);
     void invoke(GET_NET_STATS& get_net_stats, rpc_context context);
     void invoke(GET_OUTPUTS& get_outputs, rpc_context context);
+    void invoke(HARD_FORK_INFO& hfinfo, rpc_context context);
     void invoke(START_MINING& start_mining, rpc_context context);
     void invoke(STOP_MINING& stop_mining, rpc_context context);
     void invoke(SAVE_BC& save_bc, rpc_context context);
@@ -253,7 +254,6 @@ namespace cryptonote::rpc {
     GET_BLOCK_HEADER_BY_HEIGHT::response                invoke(GET_BLOCK_HEADER_BY_HEIGHT::request&& req, rpc_context context);
     GET_BLOCK_HEADERS_RANGE::response                   invoke(GET_BLOCK_HEADERS_RANGE::request&& req, rpc_context context);
     GET_BLOCK::response                                 invoke(GET_BLOCK::request&& req, rpc_context context);
-    HARD_FORK_INFO::response                            invoke(HARD_FORK_INFO::request&& req, rpc_context context);
     SETBANS::response                                   invoke(SETBANS::request&& req, rpc_context context);
     GETBANS::response                                   invoke(GETBANS::request&& req, rpc_context context);
     BANNED::response                                    invoke(BANNED::request&& req, rpc_context context);

@@ -1540,32 +1540,30 @@ namespace cryptonote::rpc {
     };
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Look up information regarding hard fork voting and readiness.
+  /// Output values available from a public RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p untrusted States if the result is obtained using the bootstrap mode, and is therefore
+  ///   untrusted ('true'), or when the daemon is fully synced ('false').
+  /// - \p version The major block version for the fork.
+  /// - \p enabled Indicates whether the hard fork is enforced on the blockchain (that is, whether
+  ///   the blockchain height is at or above the requested hardfork).
+  /// - \p earliest_height Block height at which the hard fork will become enabled.
+  /// - \p last_height The last block height at which this hard fork will be active; will be omitted
+  ///   if this beldexd is not aware of any following hard fork.
   struct HARD_FORK_INFO : PUBLIC
   {
     static constexpr auto names() { return NAMES("hard_fork_info"); }
 
-    struct request
-    {
-      uint8_t version; // The major block version for the fork (only one of `version` and `height` may be given).
-      uint64_t height; // Request hard fork info about this height (only one of `version` and `height` may be given).
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response
-    {
-      hf version;               // The major block version for the fork.
-      uint8_t revision;         // The network revision of this daemon (e.g. 1 for HF 19.1).
-      bool enabled;             // Indicates whether hard fork is enforced (that is, at or above the requested hardfork)
-      std::optional<uint64_t> earliest_height; // Block height at which hard fork will be enabled.
-      std::optional<uint64_t> last_height; // The last block height at which this hard fork will be active; will be omitted if this beldexd is not aware of any future hard fork.
-      std::string status;       // General RPC error code. "OK" means everything looks good.
-      bool untrusted;           // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
-
-      KV_MAP_SERIALIZABLE
-    };
+    struct request_parameters {
+      /// If specified, this is the hard fork (i.e. major block) version for the fork.  Only one of
+      /// `version` and `height` may be given; returns the current hard fork info if neither is
+      /// given.
+      uint8_t version = 0;
+      /// Request hard fork info by querying a particular height.  Only one of `version` and
+      /// `height` may be given.
+      uint64_t height = 0;
+    } request;
   };
 
   BELDEX_RPC_DOC_INTROSPECT
@@ -2099,8 +2097,8 @@ namespace cryptonote::rpc {
   /// Get information on some, all, or a random subset of Master Nodes.
   struct master_node_contribution	  ///
   {	  /// Output variables available are as follows (you can request which parameters are returned; see
-    std::string key_image;         // The contribution's key image that is locked on the network.	  /// the request parameters description).  Note that OXEN values are returned in atomic OXEN units,
-    std::string key_image_pub_key; // The contribution's key image, public key component	  /// which are nano-OXEN (i.e. 1.000000000 OXEN will be returned as 1000000000).
+    std::string key_image;         // The contribution's key image that is locked on the network.	  /// the request parameters description).  Note that BELDEX values are returned in atomic BELDEX units,
+    std::string key_image_pub_key; // The contribution's key image, public key component	  /// which are nano-BELDEX (i.e. 1.000000000 BELDEX will be returned as 1000000000).
     uint64_t    amount;            // The amount that is locked in this contribution.	  ///
 
   /// - \p height the height of the current top block.  (Note that this is one less than the
@@ -2194,9 +2192,9 @@ namespace cryptonote::rpc {
   ///     server (as received in the last uptime proof).  Omitted if we have never received a proof.
   ///   - \p contributors Array of contributors, contributing to this Master Node.  Each element is
   ///     a dict containing:
-  ///     - \p amount The total amount of OXEN staked by this contributor into
+  ///     - \p amount The total amount of BELDEX staked by this contributor into
   ///       this Master Node.
-  ///     - \p reserved The amount of OXEN reserved by this contributor for this Master Node; this
+  ///     - \p reserved The amount of BELDEX reserved by this contributor for this Master Node; this
   ///       field will be included only if the contributor has unfilled, reserved space in the
   ///       master node.
   ///     - \p address The wallet address of this contributor to which rewards are sent and from
@@ -2206,13 +2204,13 @@ namespace cryptonote::rpc {
   ///       Each element contains:
   ///       - \p key_image The contribution's key image which is locked on the network.
   ///       - \p key_image_pub_key The contribution's key image, public key component.
-  ///       - \p amount The amount of OXEN that is locked in this contribution.
+  ///       - \p amount The amount of BELDEX that is locked in this contribution.
   ///
-  ///   - \p total_contributed The total amount of OXEN contributed to this Master Node.
-  ///   - \p total_reserved The total amount of OXEN contributed or reserved for this Master Node.
+  ///   - \p total_contributed The total amount of BELDEX contributed to this Master Node.
+  ///   - \p total_reserved The total amount of BELDEX contributed or reserved for this Master Node.
   ///     Only included in the response if there are still unfilled reservations (i.e. if it is
   ///     greater than total_contributed).
-  ///   - \p staking_requirement The total OXEN staking requirement in that is/was required to be
+  ///   - \p staking_requirement The total BELDEX staking requirement in that is/was required to be
   ///     contributed for this Master Node.
   ///   - \p portions_for_operator The operator fee to take from the master node reward, as a
   ///     fraction of 18446744073709551612 (2^64 - 4) (that is, this number corresponds to 100%).
@@ -2802,6 +2800,7 @@ namespace cryptonote::rpc {
     GET_INFO,
     BNS_RESOLVE,
     GET_OUTPUTS,
+    HARD_FORK_INFO,
     START_MINING,
     STOP_MINING,
     SAVE_BC,
@@ -2849,7 +2848,6 @@ namespace cryptonote::rpc {
     SET_LIMIT,
     OUT_PEERS,
     IN_PEERS,
-    HARD_FORK_INFO,
     GETBANS,
     SETBANS,
     BANNED,
