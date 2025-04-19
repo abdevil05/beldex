@@ -2123,7 +2123,6 @@ namespace cryptonote::rpc {
         {"current_download", ci.current_download},
         {"avg_upload", ci.avg_upload},
         {"current_upload", ci.current_upload},
-        {"support_flags", ci.support_flags},
         {"connection_id", ci.connection_id},
         {"height", ci.height},
     };

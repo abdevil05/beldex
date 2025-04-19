@@ -83,8 +83,6 @@ namespace cryptonote
 	uint64_t avg_upload;
 	uint64_t current_upload;
 
-	uint32_t support_flags;
-
 	std::string connection_id;
 
     uint64_t height;

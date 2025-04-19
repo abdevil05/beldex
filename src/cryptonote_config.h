@@ -161,9 +161,6 @@ namespace p2p {
   inline constexpr auto IP_BLOCK_TIME                            = 24h;
   inline constexpr size_t IP_FAILS_BEFORE_BLOCK                  = 10;
   inline constexpr auto IDLE_CONNECTION_KILL_INTERVAL            = 5min;
-  inline constexpr uint32_t SUPPORT_FLAG_FLUFFY_BLOCKS           = 0x01;
-  inline constexpr uint32_t SUPPORT_FLAGS                        = SUPPORT_FLAG_FLUFFY_BLOCKS;
-
 }  // namespace p2p
 
 // filename constants:

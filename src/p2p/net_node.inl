@@ -119,7 +119,6 @@ namespace nodetool
     if (storage)
       m_peerlist_storage = std::move(*storage);
 
-    m_network_zones[epee::net_utils::zone::public_].m_config.m_support_flags = cryptonote::p2p::SUPPORT_FLAGS;
     m_first_connection_maker_call = true;
 
     CATCH_ENTRY_L0("node_server::init_config", false);
@@ -127,23 +126,23 @@ namespace nodetool
   }
   //-----------------------------------------------------------------------------------
   template<class t_payload_net_handler>
-  void node_server<t_payload_net_handler>::for_each_connection(std::function<bool(typename t_payload_net_handler::connection_context&, peerid_type, uint32_t)> f)
+  void node_server<t_payload_net_handler>::for_each_connection(std::function<bool(typename t_payload_net_handler::connection_context&, peerid_type)> f)
   {
     for(auto& zone : m_network_zones)
     {
       zone.second.m_net_server.get_config_object().foreach_connection([&](p2p_connection_context& cntx){
-        return f(cntx, cntx.peer_id, cntx.support_flags);
+        return f(cntx, cntx.peer_id);
       });
     }
   }
   //-----------------------------------------------------------------------------------
   template<class t_payload_net_handler>
-  bool node_server<t_payload_net_handler>::for_connection(const boost::uuids::uuid &connection_id, std::function<bool(typename t_payload_net_handler::connection_context&, peerid_type, uint32_t)> f)
+  bool node_server<t_payload_net_handler>::for_connection(const boost::uuids::uuid &connection_id, std::function<bool(typename t_payload_net_handler::connection_context&, peerid_type)> f)
   {
     for(auto& zone : m_network_zones)
     {
       const bool result = zone.second.m_net_server.get_config_object().for_connection(connection_id, [&](p2p_connection_context& cntx){
-        return f(cntx, cntx.peer_id, cntx.support_flags);
+        return f(cntx, cntx.peer_id);
       });
       if (result)
         return true;
@@ -945,15 +944,6 @@ namespace nodetool
       if (!timeout)
         zone.m_net_server.get_config_object().close(context_.m_connection_id);
     }
-    else if (!just_take_peerlist)
-    {
-      LOG_PRINT_L0("do_handshake_with_peer try_get_support_flags");
-      try_get_support_flags(context_, [](p2p_connection_context& flags_context, const uint32_t& support_flags)
-      {
-        flags_context.support_flags = support_flags;
-      });
-    }
-
     return hsh_result;
   }
   //-----------------------------------------------------------------------------------
@@ -1824,7 +1814,7 @@ namespace nodetool
   int node_server<t_payload_net_handler>::handle_get_support_flags(int command, COMMAND_REQUEST_SUPPORT_FLAGS::request& arg, COMMAND_REQUEST_SUPPORT_FLAGS::response& rsp, p2p_connection_context& context)
   {
     LOG_PRINT_CC_L0(context, "handle_get_support_flags");
-    rsp.support_flags = m_network_zones.at(context.m_remote_address.get_zone()).m_config.m_support_flags;
+    rsp.support_flags = 0;
     return 1;
   }
   //-----------------------------------------------------------------------------------
@@ -2051,39 +2041,6 @@ namespace nodetool
   }
   //-----------------------------------------------------------------------------------
   template<class t_payload_net_handler>
-  bool node_server<t_payload_net_handler>::try_get_support_flags(const p2p_connection_context& context, std::function<void(p2p_connection_context&, const uint32_t&)> f)
-  {
-    LOG_PRINT_CC_L0(context,"try_get_support_flags");
-    if(context.m_remote_address.get_zone() != epee::net_utils::zone::public_)
-      return false;
-
-    
-    using request_t = typename COMMAND_REQUEST_SUPPORT_FLAGS::request;
-    using response_t = typename COMMAND_REQUEST_SUPPORT_FLAGS::response;
-    request_t support_flags_request{};
-    bool r = epee::net_utils::async_invoke_remote_command2<response_t>
-    (
-      context.m_connection_id,
-      COMMAND_REQUEST_SUPPORT_FLAGS::ID,
-      support_flags_request,
-      m_network_zones.at(epee::net_utils::zone::public_).m_net_server.get_config_object(),
-      [=](int code, const response_t& rsp, p2p_connection_context& context_)
-      {
-        if(code < 0)
-        {
-          LOG_PRINT_CC_L0(context_, "COMMAND_REQUEST_SUPPORT_FLAGS invoke failed. (" << code <<  ", " << epee::levin::get_err_descr(code) << ")");
-          return;
-        }
-        LOG_PRINT_CC_L0(context_,"try_get_support_flags response");
-        f(context_, rsp.support_flags);
-      },
-      std::chrono::milliseconds{cryptonote::p2p::DEFAULT_HANDSHAKE_INVOKE_TIMEOUT}
-    );
-
-    return r;
-  }
-  //-----------------------------------------------------------------------------------
-  template<class t_payload_net_handler>
   int node_server<t_payload_net_handler>::handle_timed_sync(int command, typename COMMAND_TIMED_SYNC::request& arg, typename COMMAND_TIMED_SYNC::response& rsp, p2p_connection_context& context)
   {
     if(!m_payload_handler.process_payload_sync_data(std::move(arg.payload_data), context, false))
@@ -2221,12 +2178,6 @@ namespace nodetool
         LOG_DEBUG_CC(context, "COMMAND_HANDSHAKE PING SUCCESS " << context.m_remote_address.host_str() << ":" << port_l);
       });
     }
-    LOG_PRINT_CCONTEXT_L0("COMMAND_HANDSHAKE try_get_support_flags");
-    try_get_support_flags(context, [](p2p_connection_context& flags_context, const uint32_t& support_flags)
-    {
-      LOG_PRINT_L0("COMMAND_HANDSHAKE support_flags");
-      flags_context.support_flags = support_flags;
-    });
 
     //fill response
     LOG_PRINT_CCONTEXT_L0("COMMAND_HANDSHAKE get_peerlist_head");
