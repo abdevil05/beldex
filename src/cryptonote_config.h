@@ -181,7 +181,6 @@ inline constexpr auto POOLDATA_FILENAME             = "poolstate.bin"sv;
 inline constexpr auto BLOCKCHAINDATA_FILENAME       = "data.mdb"sv;
 inline constexpr auto BLOCKCHAINDATA_LOCK_FILENAME  = "lock.mdb"sv;
 inline constexpr auto P2P_NET_DATA_FILENAME         = "p2pstate.bin"sv;
-inline constexpr auto MINER_CONFIG_FILE_NAME        = "miner_conf.json"sv;
 
 inline constexpr uint64_t PRUNING_STRIPE_SIZE      = 4096;  // the smaller, the smoother the increase
 inline constexpr uint64_t PRUNING_LOG_STRIPES      = 3;     // the higher, the more space saved

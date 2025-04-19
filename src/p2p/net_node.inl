@@ -698,7 +698,7 @@ namespace nodetool
     for (auto& zone : m_network_zones)
     {
       zone.second.m_net_server.get_config_object().set_handler(this);
-      zone.second.m_net_server.get_config_object().m_invoke_timeout = std::chrono::milliseconds{cryptonote::p2p::DEFAULT_INVOKE_TIMEOUT}.count();
+      zone.second.m_net_server.get_config_object().m_invoke_timeout = std::chrono::milliseconds{cryptonote::p2p::DEFAULT_INVOKE_TIMEOUT};
 
       if (!zone.second.m_bind_ip.empty())
       {
@@ -932,7 +932,7 @@ namespace nodetool
         LOG_DEBUG_CC(context, " COMMAND_HANDSHAKE(AND CLOSE) INVOKED OK");
       }
       context_ = context;
-    }, std::chrono::milliseconds{cryptonote::p2p::DEFAULT_HANDSHAKE_INVOKE_TIMEOUT}.count());
+    }, std::chrono::milliseconds{cryptonote::p2p::DEFAULT_HANDSHAKE_INVOKE_TIMEOUT});
 
     if(r)
     {
@@ -2077,7 +2077,7 @@ namespace nodetool
         LOG_PRINT_CC_L0(context_,"try_get_support_flags response");
         f(context_, rsp.support_flags);
       },
-      std::chrono::milliseconds{cryptonote::p2p::DEFAULT_HANDSHAKE_INVOKE_TIMEOUT}.count()
+      std::chrono::milliseconds{cryptonote::p2p::DEFAULT_HANDSHAKE_INVOKE_TIMEOUT}
     );
 
     return r;

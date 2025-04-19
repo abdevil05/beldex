@@ -46,7 +46,6 @@
 #include "common/median.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "crypto/crypto.h"
-#include "epee/profile_tools.h"
 #include "ringct/rctOps.h"
 
 #include "checkpoints/checkpoints.h"

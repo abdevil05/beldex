@@ -48,7 +48,6 @@
 #include "cryptonote_basic/verification_context.h"
 #include "cryptonote_core/cryptonote_core.h"
 #include "cryptonote_core/tx_pool.h"
-#include "epee/profile_tools.h"
 #include "epee/net/network_throttle-detail.hpp"
 #include "common/pruning.h"
 #include "common/random.h"
