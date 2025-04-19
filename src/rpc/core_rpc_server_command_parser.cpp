@@ -245,6 +245,11 @@ namespace cryptonote::rpc {
   }
 
   void parse_request(START_MINING& start_mining, rpc_input in) {
+    get_values(in,
+      "miner_address", required{start_mining.request.miner_address},
+      "num_blocks", start_mining.request.num_blocks,
+      "slow_mining", start_mining.request.slow_mining,
+      "threads_count", start_mining.request.threads_count);
   }
   void parse_request(STOP_MINING& stop_mining, rpc_input in) {
   }
