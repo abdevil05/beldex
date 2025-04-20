@@ -214,7 +214,7 @@ namespace cryptonote::rpc {
   /// - /p status -- Generic RPC error code. "OK" is the success value.
   /// - /p untrusted -- If the result is obtained using bootstrap mode then this will be set to true, otherwise will be omitted.
   /// - /p hash -- Hash of the block at the current height
-  /// - /p immutable_height -- The latest height in the blockchain that cannot be reorganized because of a hardcoded checkpoint or 2 SN checkpoints.  Omitted if not available.
+  /// - /p immutable_height -- The latest height in the blockchain that cannot be reorganized because of a hardcoded checkpoint or 2 MN checkpoints.  Omitted if not available.
   /// - /p immutable_hash -- Hash of the highest block in the chain that cannot be reorganized.
   struct GET_HEIGHT : PUBLIC, LEGACY, NO_ARGS
   {
@@ -336,125 +336,153 @@ namespace cryptonote::rpc {
     };
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Look up one or more transactions by hash.
+  /// Look up one or more transactions by hash.
+  ///
+  /// Outputs:
+  ///
+  /// - /p status -- Generic RPC error code. "OK" is the success value.
+  /// - /p untrusted -- If the result is obtained using bootstrap mode then this will be set to
+  ///   true, otherwise will be omitted.
+  /// - \p missed_tx -- list of transaction hashes that were not found.  If all were found then this
+  ///   field is omitted.
+  /// - \p txs -- list of transaction details; each element is a dict containing:
+  ///   - \p tx_hash -- Transaction hash.
+  ///   - \p size -- Size of the transaction, in bytes. Note that if the transaction has been pruned
+  ///     this is the post-pruning size, not the original size.
+  ///   - \p in_pool -- Will be set to true if the transaction is in the transaction pool (`true`)
+  ///     and omitted if mined into a block.
+  ///   - \p flash -- True if this is an approved, flash transaction; this information is generally
+  ///     only available for approved in-pool transactions and txes in very recent blocks.
+  ///   - \p block_height -- Block height including the transaction.  Omitted for tx pool
+  ///     transactions.
+  ///   - \p block_timestamp -- Unix time at which the block has been added to the blockchain.
+  ///     Omitted for tx pool transactions.
+  ///   - \p output_indices -- List of transaction indexes.  Omitted for tx pool transactions.
+  ///   - \p relayed -- For `in_pool` transactions this field will be set to indicate whether the
+  ///     transaction has been relayed to the network.
+  ///   - \p double_spend_seen -- Will be set to true for tx pool transactions that are
+  ///     double-spends (and thus cannot be added to the blockchain).  Omitted for mined
+  ///     transactions.
+  ///   - \p received_timestamp -- Timestamp transaction was received in the pool.  Omitted for
+  ///     mined blocks.
+  ///   - \p data -- Full, unpruned transaction data.  For a json request this is hex-encoded; for a
+  ///     bt-encoded request this is raw bytes.  This field is omitted if any of `decode_as_json`,
+  ///     `split`, or `prune` is requested; or if the transaction has been pruned in the database.
+  ///   - \p pruned -- The non-prunable part of the transaction, encoded as hex (for json requests).
+  ///     Always included if `split` or `prune` are specified; without those options it will be
+  ///     included instead of `data` if the transaction has been pruned.
+  ///   - \p prunable -- The prunable part of the transaction.  Only included when `split` is
+  ///     specified, the transaction is prunable, and the tx has not been pruned from the database.
+  ///   - \p prunable_hash -- The hash of the prunable part of the transaction.  Will be provided if
+  ///     either: the tx has been pruned; or the tx is prunable and either of `prune` or `split` are
+  ///     specified.
+  /// FIXME: drop this crap:
+  ///   - \p as_json -- Transaction information parsed into json. Requires decode_as_json in request.
+  ///   - \p extra -- Parsed "extra" transaction information; omitted unless specifically requested.
+  ///     This is a dict containing one or more of the following keys.
+  ///     - \p pubkey -- The tx extra public key
+  ///     - \p burn_amount -- The amount of OXEN that this transaction burns
+  ///     - \p extra_nonce -- Optional extra nonce value (in hex); will be empty if nonce is
+  ///       recognized as a payment id
+  ///     - \p payment_id -- The payment ID, if present. This is either a 16 hex character (8-byte)
+  ///       encrypted payment id, or a 64 hex character (32-byte) deprecated, unencrypted payment ID
+  ///     - \p mm_depth -- (Merge-mining) the merge-mined depth
+  ///     - \p mm_root -- (Merge-mining) the merge mining merkle root hash
+  ///     - \p additional_pubkeys -- Additional public keys
+  ///     - \p mn_winner -- Master node block reward winner public key
+  ///     - \p mn_pubkey -- Master node public key (e.g. for registrations, stakes, unlocks)
+  ///     - \p mn_contributor -- Master node contributor wallet address (for stakes)
+  ///     - \p tx_secret_key -- The transaction secret key, included in registrations/stakes to
+  ///       decrypt transaction amounts and recipients
+  ///     - \p locked_key_images -- Key image(s) locked by the transaction (for registrations,
+  ///       stakes)
+  ///     - \p key_image_unlock -- A key image being unlocked in a stake unlock request (an unlock
+  ///       will be started for *all* key images locked in the same MN contributions).
+  ///     - \p mn_registration -- Master node registration details; this is a dict containing:
+  ///       - \p fee the operator fee expressed in millionths (i.e. 234567 == 23.4567%)
+  ///       - \p expiry the unix timestamp at which the registration signature expires
+  ///       - \p contributors: dict of (wallet => portion) pairs indicating the staking portions
+  ///         reserved for the operator and any reserved contribution spots in the registration.
+  ///         Portion is expressed in millionths (i.e. 250000 = 25% staking portion).
+  ///     - \p mn_state_change -- Information for a "state change" transaction such as a
+  ///       deregistration, decommission, recommission, or ip change reset transaction.  This is a
+  ///       dict containing:
+  ///       - \p old_dereg will be set to true if this is an "old" deregistration transaction
+  ///         (before the Loki 4 hardfork), omitted for more modern state change txes.
+  ///       - \p type string indicating the state change type: "dereg", "decomm", "recomm", or "ip"
+  ///         for a deregistration, decommission, recommission, or ip change penalty transaction.
+  ///       - \p height the voting block height for the changing master node and voting master
+  ///         nodes that produced this state change transaction.
+  ///       - \p index the position of the affected node in the random list of tested nodes for this
+  ///         `height`.
+  ///       - \p voters the positions of validators in the testing quorum for this `height` who
+  ///         tested and voted for this state change.  This typically contains the first 7 voters
+  ///         who voted for the state change (out of a possible set of 10).
+  ///       - \p reasons list of reported reasons for a decommission or deregistration as reported
+  ///         by the voting quorum.  This contains any reasons that all 7+ voters agreed on, and
+  ///         contains one or more of:
+  ///         - \p "uptime" -- the master node was missing uptime proofs
+  ///         - \p "checkpoints" -- the master node missed too many recent checkpoint votes
+  ///         - \p "pos" -- the master node missed too many recent pos votes
+  ///         - \p "storage" -- the master node's storage server was unreachable for too long
+  ///         - \p "belnet" -- the master node's belnet router was unreachable for too long
+  ///         - \p "timecheck" -- the master node's beldexd was not reachable for too many recent
+  ///           time synchronization checks.  (This generally means oxend's quorumnet port is not
+  ///           reachable).
+  ///         - \p "timesync" -- the master node's clock was too far out of sync
+  ///         The list is omitted entirely if there are no reasons at all or if there are no reasons
+  ///         that were agreed upon by all voting master nodes.
+  ///       - \p reasons_maybe list of reported reasons that some but not all master nodes provided
+  ///         for the deregistration/decommission.  Possible values are identical to the above.
+  ///         This list is omitted entirely if it would be empty (i.e. there are no reasons at all,
+  ///         or all voting master nodes agreed on all given reasons).
+  ///     - \p bns -- BNS registration or update transaction details.  This contains keys:
+  ///       - \p buy -- set to true if this is an BNS buy record; omitted otherwise.
+  ///       - \p update -- set to true if this is an BNS record update; omitted otherwise.
+  ///       - \p renew -- set to true if this is an BNS renewal; omitted otherwise.
+  ///       - \p bchat_value -- the BNS request type string.  For registrations: "bchat",
+  ///          for a record update: "update".
+  ///       - \p wallet_value -- the BNS request type string.  For registrations: "wallet",
+  ///          for a record update: "update".
+  ///       - \p belnet_value -- the BNS request type string.  For registrations: "belnet",
+  ///          for a record update: "update".
+  ///       - \p blocks -- The registration length in blocks; omitted for registrations (such as
+  ///         Session/Wallets) that do not expire.
+  ///       - \p name_hash -- The hashed name of the record being purchased/updated.  Encoded in hex
+  ///         for json requests.  Note that the actual name is not provided on the blockchain.
+  ///       - \p prev_txid -- For an update this field is set to the txid of the previous BNS update
+  ///         or registration (i.e. the most recent transaction that this record is updating).
+  ///       - \p value -- The encrypted value of the record (in hex for json requests) being
+  ///         set/updated.  \see ONS_RESOLVE for details on encryption/decryption.
+  ///       - \p owner -- the owner of this record being set in a registration or update; this can
+  ///         be a primary wallet address, wallet subaddress, or a plain public key.
+  ///       - \p backup_owner -- an optional backup owner who also has permission to edit the
+  ///         record.
+  ///   - \p stake_amount -- If `stake_info` is explicitly requested then this field will be set to
+  ///     the calculated transaction stake amount (only applicable if the transaction is a master
+  ///     node registration or stake).
   struct GET_TRANSACTIONS : PUBLIC, LEGACY
   {
     static constexpr auto names() { return NAMES("get_transactions", "gettransactions"); }
-
-    // Information from a transactions tx-extra fields.  Fields within this will only be populated
-    // when actually found in the transaction.  (Requires tx_extra=true in the request).
-    struct extra_entry
+    struct request_parameters
     {
-      struct mn_reg_info
-      {
-        struct contribution
-        {
-          std::string wallet; // Contributor wallet
-          uint32_t portion;   // Reserved portion, as the rounded nearest value out of 1'000'000 (i.e. 234567 == 23.4567%).
-          KV_MAP_SERIALIZABLE
-        };
+      /// List of transaction hashes to look up.  (Will also be accepted as json input key
+      /// "txs_hashes" for backwards compatibility).
+      std::vector<crypto::hash> tx_hashes;
+      /// If set to true, the returned transaction information will be decoded.
+      bool decode_as_json = false;
+      /// If set to true then parse and return tx-extra information
+      bool tx_extra = false;
+      /// If set to true then always split transactions into non-prunable and prunable parts in the
+      /// response.
+      bool split = false;
+      /// Like `split`, but also omits the prunable part (or details, for decode_as_json) of
+      /// transactions from the response.
+      bool prune = false;
+      /// If true then calculate staking amount for staking/registration transactions
+      bool stake_info = false;
+    } request;
 
-        std::vector<contribution> contributors; // Operator contribution plus any reserved contributions
-        uint32_t fee;                           // Operator fee, as the rounded nearest value out of 1'000'000
-        uint64_t expiry;                        // unix timestamp at which the registration expires
-        KV_MAP_SERIALIZABLE
-      };
-      struct state_change
-      {
-        std::optional<bool> old_dereg; // Will be present and set to true iff this record is an old (pre-HF12) deregistration field
-        std::string type;              // "dereg", "decom", "recom", or "ip" indicating the state change type
-        uint64_t height;               // The voting block height for the changing master node and validators
-        uint32_t index;                // The index of all tested nodes at the given height for which this state change applies
-        std::vector<uint32_t> voters;  // The position of validators in the testing quorum who validated and voted for this state change. This typically contains just 7 required voter slots (of 10 eligible voters).
-        std::optional<std::vector<std::string>> reasons; // Reasons for the decommissioning/deregistration as reported by the voting quorum.  This contains any reasons that all voters agreed on, one or more of: "uptime" (missing uptime proofs), "checkpoints" (missed checkpoint votes), "POS" (missing POS votes), "storage" (storage server pings failed), "belnet" (belnet router unreachable), "timecheck" (time sync pings failed), "timesync" (time was out of sync)
-        std::optional<std::vector<std::string>> reasons_maybe; // If present, this contains any decomm/dereg reasons that were given by some but not all quorum voters
-        KV_MAP_SERIALIZABLE
-      };
-      struct bns_details
-      {
-        uint8_t     version;                     // The version which is given when the registrations version = 1 after the hf18
-        std::optional<bool> buy;                 // Provided and true iff this is an BNS buy record
-        std::optional<bool> update;              // Provided and true iff this is an BNS record update
-        std::optional<bool> renew;               // Provided and true iff this is an BNS record renewal
-        std::optional<std::string> type;         // The BNS request type.  For registrations: "belnet", "bchat", "wallet"; for a record update: "update"
-        std::optional<uint64_t> blocks;          // The registration length in blocks (only applies to belnet registrations; bchat/wallet registrations do not expire)
-        std::string name_hash;                   // The hashed name of the record being purchased/updated, in hex (the actual name is not provided on the blockchain).
-        std::optional<std::string> prev_txid;    // For an update, this points at the txid of the previous bns update transaction.
-        std::optional<std::string> value_bchat;  // The encrypted value of the record, in hex for the bchat.  Note that this is encrypted using the actual name itself (*not* the hashed name).
-        std::optional<std::string> value_wallet; // The encrypted value of the record, in hex for the wallet.  Note that this is encrypted using the actual name itself (*not* the hashed name).
-        std::optional<std::string> value_belnet; // The encrypted value of the record, in hex for the belnet.  Note that this is encrypted using the actual name itself (*not* the hashed name).
-        std::optional<std::string> value_eth_addr;// The encrypted value of the record, in hex for the belnet.  Note that this is encrypted using the actual name itself (*not* the hashed name).
-        std::optional<std::string> owner;        // The owner of this record; this can be a main wallet, wallet subaddress, or a plain public key.
-        std::optional<std::string> backup_owner; // Backup owner wallet/pubkey of the record, if provided.
-        KV_MAP_SERIALIZABLE
-      };
-
-      std::optional<std::string> pubkey;            // The tx extra public key
-      std::optional<uint64_t> burn_amount;          // The amount of BELDEX that this transaction burns
-      std::optional<std::string> extra_nonce;       // Optional extra nonce value (in hex); will be empty if nonce is recognized as a payment id
-      std::optional<std::string> payment_id;        // The payment ID, if present. This is either a 16 hex character (8-byte) encrypted payment id, or a 64 hex character (32-byte) deprecated, unencrypted payment ID
-      std::optional<uint32_t> mm_depth;             // (Merge-mining) the merge-mined depth
-      std::optional<std::string> mm_root;           // (Merge-mining) the merge mining merkle root hash
-      std::vector<std::string> additional_pubkeys;  // Additional public keys
-      std::optional<std::string> mn_winner;         // Master node block reward winner public key
-      std::optional<std::string> mn_pubkey;         // Master node public key (e.g. for registrations, stakes, unlocks)
-      std::optional<std::string> security_sig;       // Security Signature
-      std::optional<mn_reg_info> mn_registration;   // Master node registration details
-      std::optional<std::string> mn_contributor;    // Master node contributor wallet address (for stakes)
-      std::optional<state_change> mn_state_change;  // A state change transaction (deregistration, decommission, recommission, ip change)
-      std::optional<std::string> tx_secret_key;     // The transaction secret key, included in registrations/stakes to decrypt transaction amounts and recipients
-      std::vector<std::string> locked_key_images;   // Key image(s) locked by the transaction (for registrations, stakes)
-      std::optional<std::string> key_image_unlock;  // A key image being unlocked in a stake unlock request (an unlock will be started for *all* key images locked in the same MN contributions).
-      std::optional<bns_details> bns;               // an BNS registration or update
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct entry
-    {
-      std::string tx_hash;                  // Transaction hash.
-      std::optional<std::string> as_hex;    // Full transaction information as a hex string. Always omitted if any of `decode_as_json`, `split`, or `prune` is requested; or if the transaction has been pruned in the database.
-      std::optional<std::string> pruned_as_hex;   // The non-prunable part of the transaction. Always included if `split` or `prune` and specified; without those options it will be included instead of `as_hex` if the transaction has been pruned.
-      std::optional<std::string> prunable_as_hex; // The prunable part of the transaction.  Only included when `split` is specified, the transaction is prunable, and the tx has not been pruned from the database.
-      std::optional<std::string> prunable_hash;   // The hash of the prunable part of the transaction.  Will be provided if either: the tx has been pruned; or the tx is prunable and either of `prune` or `split` are specified.
-      std::optional<std::string> as_json;   // Transaction information parsed into json. Requires decode_as_json in request.
-      uint32_t size;                        // Size of the transaction, in bytes. Note that if the transaction has been pruned this is the post-pruning size, not the original size.
-      bool in_pool;                         // States if the transaction is in pool (`true`) or included in a block (`false`).
-      bool double_spend_seen;               // States if the transaction is a double-spend (`true`) or not (`false`).
-      uint64_t block_height;                // Block height including the transaction.
-      uint64_t block_timestamp;             // Unix time at which the block has been added to the blockchain.
-      std::vector<uint64_t> output_indices; // List of transaction indexes.
-      uint64_t received_timestamp;          // Timestamp transaction was received in the pool.
-      bool relayed;
-      bool flash;                           // True if this is an approved, flash transaction (only available for in_pool transactions or txes in recent blocks)
-      std::optional<extra_entry> extra;     // Parsed tx_extra information (only if requested)
-      std::optional<uint64_t> stake_amount; // Calculated transaction stake amount, if a staking/registration transaction and `stake_info=true` is requested.
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct request
-    {
-      std::vector<std::string> txs_hashes; // List of transaction hashes to look up.
-      bool decode_as_json;                 // Optional (`false` by default). If set true, the returned transaction information will be decoded.
-      bool tx_extra;                       // Parse tx-extra information
-      bool split;                          // Always split transactions into non-prunable and prunable parts in the response.  `False` by default.
-      bool prune;                          // Like `split`, but also omits the prunable part (or details, for decode_as_json) of transactions from the response.  `False` by default.
-      bool stake_info;                     // If true, calculate staking amount for staking/registration transactions
-
-      KV_MAP_SERIALIZABLE
-    };
-
-
-    struct response
-    {
-      std::vector<std::string> missed_tx;   // (Optional - returned if not empty) Transaction hashes that could not be found.
-      std::vector<entry> txs;               // Array of tx data
-      std::string status;                   // General RPC error code. "OK" means everything looks good.
-      bool untrusted;                       // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
-
-      KV_MAP_SERIALIZABLE
-    };
   };
 
   BELDEX_RPC_DOC_INTROSPECT
@@ -1175,7 +1203,7 @@ namespace cryptonote::rpc {
   };
 
   BELDEX_RPC_DOC_INTROSPECT
-  struct tx_info
+  struct old_tx_info
   {
     std::string id_hash;                // The transaction ID hash.
     std::string tx_json;                // JSON structure of all information in the transaction
@@ -1194,7 +1222,7 @@ namespace cryptonote::rpc {
     bool double_spend_seen;             // States if this transaction has been seen as double spend.
     std::string tx_blob;                // Hexadecimal blob represnting the transaction.
     bool flash;                         // True if this is a signed flash transaction
-    std::optional<GET_TRANSACTIONS::extra_entry> extra; // Parsed tx_extra information (only if requested)
+    // std::optional<GET_TRANSACTIONS::extra_entry> extra; // Parsed tx_extra information (only if requested)
     std::optional<uint64_t> stake_amount; // Will be set to the staked amount if the transaction is a staking transaction *and* stake amounts were requested.
 
     KV_MAP_SERIALIZABLE
@@ -1227,7 +1255,7 @@ namespace cryptonote::rpc {
     struct response
     {
       std::string status;                                 // General RPC error code. "OK" means everything looks good.
-      std::vector<tx_info> transactions;                  // List of transactions in the mempool are not in a block on the main chain at the moment:
+      std::vector<old_tx_info> transactions;                  // List of transactions in the mempool are not in a block on the main chain at the moment:
       std::vector<spent_key_image_info> spent_key_images; // List of spent output key images:
       bool untrusted;                                     // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
 
@@ -2108,7 +2136,7 @@ namespace cryptonote::rpc {
   ///   node is still syncing the chain.
   BELDEX_RPC_DOC_INTROSPECT	  /// - \p block_hash the hash of the most recent block
   struct master_node_contributor	  /// - \p hardfork the current hardfork version of the daemon
-  {	  /// - \p snode_revision the current snode revision for non-hardfork, but mandatory, master node
+  {	  /// - \p mnode_revision the current mnode revision for non-hardfork, but mandatory, master node
     uint64_t amount;                                             // The total amount of locked Loki in atomic units for this contributor.	  ///   updates.
     uint64_t reserved;                                           // The amount of Loki in atomic units reserved by this contributor for this Master Node.	  /// - \p status generic RPC error code; "OK" means the request was successful.
     std::string address;                                         // The wallet address for this contributor rewards are sent to and contributions came from.	  /// - \p unchanged when using poll_block_hash, this value is set to true and results are omitted if
@@ -2123,20 +2151,20 @@ namespace cryptonote::rpc {
   // Get information on some, all, or a random subset of Master Nodes.	  ///   - \p master_node_pubkey The public key of the Master Node, in hex (json) or binary (bt).
   ///   - \p registration_height The height at which the registration for the Master Node arrived
   ///     on the blockchain.
-  ///   - \p registration_hf_version The current hard fork at which the registration for the Service
+  ///   - \p registration_hf_version The current hard fork at which the registration for the Master
   ///     Node arrived on the blockchain.
-  ///   - \p requested_unlock_height If an unlock has been requested for this SN, this field
+  ///   - \p requested_unlock_height If an unlock has been requested for this MN, this field
   ///     contains the height at which the Master Node registration expires and contributions will
   ///     be released.
   ///   - \p last_reward_block_height The height that determines when this master node will next
   ///     receive a reward.  This field is somewhat misnamed for historic reasons: it is updated
-  ///     when receiving a reward, but is also updated when a SN is activated, recommissioned, or
+  ///     when receiving a reward, but is also updated when a MN is activated, recommissioned, or
   ///     has an IP change position reset, and so does not strictly indicate when a reward was
   ///     received.
   ///   - \p last_reward_transaction_index When multiple Master Nodes register (or become
   ///     active/reactivated) at the same height (i.e. have the same last_reward_block_height), this
   ///     field contains the activating transaction position in the block which is used to break
-  ///     ties in determining which SN is next in the reward list.
+  ///     ties in determining which MN is next in the reward list.
   ///   - \p active True if fully funded and not currently decommissioned (and so `funded &&
   ///     !active` implicitly defines decommissioned).
   ///   - \p funded True if the required stakes have been submitted to activate this Master Node.
@@ -2149,7 +2177,7 @@ namespace cryptonote::rpc {
   ///   - \p decommission_count The number of times the Master Node has been decommissioned since
   ///     registration
   ///   - \p last_decommission_reason_consensus_all The reason for the last decommission as voted by
-  ///     the testing quorum SNs that decommissioned the node.  This is a numeric bitfield made up
+  ///     the testing quorum MNs that decommissioned the node.  This is a numeric bitfield made up
   ///     of the sum of given reasons (multiple reasons may be given for a decommission).  Values
   ///     are included here if *all* quorum members agreed on the reasons:
   ///     - \c 0x01 - Missing uptime proofs
@@ -2162,7 +2190,7 @@ namespace cryptonote::rpc {
   ///     - \c 0x50 - Multi_mn_accept_range_not_met
   ///     - other bit values are reserved for future use.
   ///   - \p last_decommission_reason_consensus_any The reason for the last decommission as voted by
-  ///     *any* SNs.  Reasons are set here if *any* quorum member gave a reason, even if not all
+  ///     *any* MNs.  Reasons are set here if *any* quorum member gave a reason, even if not all
   ///     quorum members agreed.  Bit values are the same as \p
   ///     last_decommission_reason_consensus_all.
   ///   - \p decomm_reasons - a gentler version of the last_decommission_reason_consensus_all/_any
@@ -2216,10 +2244,10 @@ namespace cryptonote::rpc {
   ///     fraction of 18446744073709551612 (2^64 - 4) (that is, this number corresponds to 100%).
   ///     Note that some JSON parsers may silently change this value while parsing as typical values
   ///     do not fit into a double without loss of precision.
-  ///   - \p operator_fee The operator fee expressed as thousandths of a percent (and rounded to the
-  ///     nearest integer value).  That is, 100000 corresponds to a 100% fee, 5456 corresponds to a
-  ///     5.456% fee.  Note that this number is for human consumption; the actual value that matters
-  ///     for the blockchain is the precise \p portions_for_operator value.
+  ///   - \p operator_fee The operator fee expressed in millionths (and rounded to the nearest
+  ///     integer value).  That is, 1000000 corresponds to a 100% fee, 34567 corresponds to a
+  ///     3.4567% fee.  Note that this number is for human consumption; the actual value that
+  ///     matters for the blockchain is the precise \p portions_for_operator value.
   ///   - \p swarm_id The numeric identifier of the Master Node's current swarm.  Note that
   ///     returned values can exceed the precision available in a double value, which can result in
   ///     (changed) incorrect values by some JSON parsers.  Consider using \p swarm instead if you
@@ -2232,7 +2260,7 @@ namespace cryptonote::rpc {
   ///     uptime proof yet.
   ///   - \p storage_lmq_port The port number associated with the storage server (oxenmq interface);
   ///     omitted if we have no uptime proof yet.
-  ///   - \p quorumnet_port The port for direct SN-to-SN beldexd communication (oxenmq interface).
+  ///   - \p quorumnet_port The port for direct MN-to-MN beldexd communication (oxenmq interface).
   ///     Omitted if we have no uptime proof yet.
   ///   - \p pubkey_ed25519 The master node's ed25519 public key for auxiliary services. Omitted if
   ///     we have no uptime proof yet.  Note that for newer registrations this will be the same as
@@ -2242,7 +2270,7 @@ namespace cryptonote::rpc {
   ///   - \p last_uptime_proof The last time we received an uptime proof for this master node from
   ///     the network, in unix epoch time.  0 if we have never received one.
   ///   - \p storage_server_reachable True if this storage server is currently passing tests for the
-  ///     purposes of SN node testing: true if the last test passed, or if it has been unreachable
+  ///     purposes of MN node testing: true if the last test passed, or if it has been unreachable
   ///     for less than an hour; false if it has been failing tests for more than an hour (and thus
   ///     is considered unreachable).  This field is omitted if the queried beldexd is not a master
   ///     node.
@@ -2263,14 +2291,14 @@ namespace cryptonote::rpc {
   ///   - \p belnet_last_reachable Same as \p storage_server_last_reachable, but for belnet router
   ///     testing.
   ///   - \p checkpoint_votes dict containing recent received checkpoint voting information for this
-  ///     master node.  Service node tests will fail if too many recent POS blocks are missed.
+  ///     master node.  Master node tests will fail if too many recent POS blocks are missed.
   ///     Contains keys:
   ///     - \p voted list of blocks heights at which a required vote was received from this
   ///       master node
   ///     - \p missed list of block heights at which a vote from this master node was required
   ///       but not received.
   ///   - \p POS_votes dict containing recent POS blocks in which this master node was supposed
-  ///     to have participated.  Service node testing will fail if too many recent POS blocks are
+  ///     to have participated.  Master node testing will fail if too many recent POS blocks are
   ///     missed.  Contains keys:
   ///     - \p voted list of [HEIGHT,ROUND] pairs in which an expected POS participation was
   ///       recorded for this node.  ROUND starts at 0 and increments for backup POS quorums if a
@@ -2323,7 +2351,7 @@ namespace cryptonote::rpc {
 
       /// If specified then only return results if the current top block hash is different than the
       /// hash given here.  This is intended to allow quick polling of results without needing to do
-      /// anything if the block (and thus SN registrations) have not changed since the last request.
+      /// anything if the block (and thus MN registrations) have not changed since the last request.
       crypto::hash poll_block_hash = crypto::hash::null();
     } request;
 
@@ -2341,7 +2369,7 @@ namespace cryptonote::rpc {
   ///   (such as remote testing results) will not be available (through this call or \p
   ///   "get_master_nodes") because a master node is incapable of testing itself for remote
   ///   connectivity.  If this daemon is running in master node mode but not registered then only
-  ///   SN pubkey, ip, and port fields are returned.
+  ///   MN pubkey, ip, and port fields are returned.
   /// - \p height current top block height at the time of the request (note that this is generally
   ///   one less than the "blockchain height").
   /// - \p block_hash current top block hash at the time of the request
@@ -2811,6 +2839,7 @@ namespace cryptonote::rpc {
     GET_TRANSACTION_POOL_HASHES,
     GET_TRANSACTION_POOL_BACKLOG,
     GET_TRANSACTION_POOL_STATS,
+    GET_TRANSACTIONS,
     GET_MASTER_NODES,
     GET_MASTER_NODE_STATUS,
     // Deprecated Monero NIH binary endpoints:
@@ -2825,7 +2854,6 @@ namespace cryptonote::rpc {
     GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN
   >;
   using FIXME_old_rpc_types = tools::type_list<
-    GET_TRANSACTIONS,
     IS_KEY_IMAGE_SPENT,
     SEND_RAW_TX,
     GET_NET_STATS,
