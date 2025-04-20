@@ -312,14 +312,10 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
 
   using clock                   = std::chrono::steady_clock;
   using work_time               = std::chrono::duration<float>;
-  int64_t constexpr BLOCK_COUNT = 1000;
+  constexpr int64_t BLOCK_COUNT = 1000;
   auto work_start               = clock::now();
   auto scan_start               = work_start;
   work_time bns_duration{}, mnl_duration{}, bns_iteration_duration{}, mnl_iteration_duration{};
-
-  std::vector<cryptonote::block> blocks;
-  std::vector<cryptonote::transaction> txs;
-  std::vector<crypto::hash> missed_txs;
 
   for (int64_t block_count = total_blocks,
                index       = 0;
@@ -343,7 +339,7 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
       bns_iteration_duration = mnl_iteration_duration = {};
     }
 
-    blocks.clear();
+    std::vector<cryptonote::block> blocks;
     uint64_t height = start_height + (index * BLOCK_COUNT);
     if (!get_blocks_only(height, static_cast<uint64_t>(BLOCK_COUNT), blocks))
     {
@@ -355,9 +351,8 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
     {
       uint64_t block_height = get_block_height(blk);
 
-      txs.clear();
-      missed_txs.clear();
-      if (!get_transactions(blk.tx_hashes, txs, missed_txs))
+      std::vector<cryptonote::transaction> txs;
+      if (!get_transactions(blk.tx_hashes, txs))
       {
         MERROR("Unable to get transactions for block for updating BNS DB: " << cryptonote::get_block_hash(blk));
         return false;
@@ -2007,8 +2002,8 @@ bool Blockchain::handle_alternative_block(const block& b, const crypto::hash& id
   // NOTE: Execute Alt Block Hooks
   {
     std::vector<transaction> txs;
-    std::vector<crypto::hash> missed;
-    if (!get_transactions(b.tx_hashes, txs, missed))
+    std::unordered_set<crypto::hash> missed;
+    if (!get_transactions(b.tx_hashes, txs, &missed))
     {
       bvc.m_verifivation_failed = true;
       return false;
@@ -2202,8 +2197,8 @@ bool Blockchain::get_blocks_only(uint64_t start_offset, size_t count, std::vecto
   {
     for(const auto& blk : blocks)
     {
-      std::vector<crypto::hash> missed_ids;
-      get_transactions_blobs(blk.tx_hashes, *txs, missed_ids);
+      std::unordered_set<crypto::hash> missed_ids;
+      get_transactions_blobs(blk.tx_hashes, *txs, &missed_ids);
       CHECK_AND_ASSERT_MES(!missed_ids.size(), false, "has missed transactions in own block in main blockchain");
     }
   }
@@ -2225,8 +2220,8 @@ bool Blockchain::get_blocks(uint64_t start_offset, size_t count, std::vector<std
 
   for(const auto& blk : blocks)
   {
-    std::vector<crypto::hash> missed_ids;
-    get_transactions_blobs(blk.second.tx_hashes, txs, missed_ids);
+    std::unordered_set<crypto::hash> missed_ids;
+    get_transactions_blobs(blk.second.tx_hashes, txs, &missed_ids);
     CHECK_AND_ASSERT_MES(!missed_ids.size(), false, "has missed transactions in own block in main blockchain");
   }
 
@@ -2272,7 +2267,11 @@ bool Blockchain::handle_get_blocks(NOTIFY_REQUEST_GET_BLOCKS::request& arg, NOTI
   db_rtxn_guard rtxn_guard (m_db);
   rsp.current_blockchain_height = get_current_blockchain_height();
   std::vector<std::pair<cryptonote::blobdata,block>> blocks;
-  get_blocks(arg.blocks, blocks, rsp.missed_ids);
+  {
+    std::unordered_set<crypto::hash> missed_ids;
+    get_blocks(arg.blocks, blocks, &missed_ids);
+    rsp.missed_ids.insert(rsp.missed_ids.end(), missed_ids.begin(), missed_ids.end());
+  }
 
   uint64_t const top_height = (m_db->height() - 1);
   uint64_t const earliest_height_to_sync_checkpoints_granularly =
@@ -2310,8 +2309,8 @@ bool Blockchain::handle_get_blocks(NOTIFY_REQUEST_GET_BLOCKS::request& arg, NOTI
 
     // FIXME: s/rsp.missed_ids/missed_tx_id/ ?  Seems like rsp.missed_ids
     //        is for missed blocks, not missed transactions as well.
-    std::vector<crypto::hash> missed_tx_ids;
-    get_transactions_blobs(block.tx_hashes, block_entry.txs, missed_tx_ids);
+    std::unordered_set<crypto::hash> missed_tx_ids;
+    get_transactions_blobs(block.tx_hashes, block_entry.txs, &missed_tx_ids);
 
     for (auto &h : block.tx_hashes)
     {
@@ -2353,10 +2352,10 @@ bool Blockchain::handle_get_txs(NOTIFY_REQUEST_GET_TXS::request& arg, NOTIFY_NEW
   std::lock(blockchain_lock, flash_lock);
 
   db_rtxn_guard rtxn_guard (m_db);
-  std::vector<crypto::hash> missed;
+  std::unordered_set<crypto::hash> missed;
 
   // First check the blockchain for any txs:
-  get_transactions_blobs(arg.txs, rsp.txs, missed);
+  get_transactions_blobs(arg.txs, rsp.txs, &missed);
 
   // Look for any missed txes in the mempool:
   m_tx_pool.find_transactions(missed, rsp.txs);
@@ -2605,7 +2604,7 @@ uint64_t Blockchain::block_difficulty(uint64_t i) const
 //------------------------------------------------------------------
 //TODO: return type should be void, throw on exception
 //       alternatively, return true only if no blocks missed
-bool Blockchain::get_blocks(const std::vector<crypto::hash>& block_ids, std::vector<std::pair<cryptonote::blobdata,block>>& blocks, std::vector<crypto::hash>& missed_bs) const
+bool Blockchain::get_blocks(const std::vector<crypto::hash>& block_ids, std::vector<std::pair<cryptonote::blobdata,block>>& blocks, std::unordered_set<crypto::hash>* missed_bs) const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   std::unique_lock lock{*this};
@@ -2623,11 +2622,11 @@ bool Blockchain::get_blocks(const std::vector<crypto::hash>& block_ids, std::vec
         {
           LOG_ERROR("Invalid block: " << block_hash);
           blocks.pop_back();
-          missed_bs.push_back(block_hash);
+          if (missed_bs) missed_bs->insert(block_hash);
         }
       }
       else
-        missed_bs.push_back(block_hash);
+      if (missed_bs) missed_bs->insert(block_hash);
     }
     catch (const std::exception& e)
     {
@@ -2639,7 +2638,7 @@ bool Blockchain::get_blocks(const std::vector<crypto::hash>& block_ids, std::vec
 //------------------------------------------------------------------
 //TODO: return type should be void, throw on exception
 //       alternatively, return true only if no transactions missed
-bool Blockchain::get_transactions_blobs(const std::vector<crypto::hash>& txs_ids, std::vector<cryptonote::blobdata>& txs, std::vector<crypto::hash>& missed_txs, bool pruned) const
+bool Blockchain::get_transactions_blobs(const std::vector<crypto::hash>& txs_ids, std::vector<cryptonote::blobdata>& txs, std::unordered_set<crypto::hash>* missed_txs, bool pruned) const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   std::unique_lock lock{*this};
@@ -2654,8 +2653,8 @@ bool Blockchain::get_transactions_blobs(const std::vector<crypto::hash>& txs_ids
         txs.push_back(std::move(tx));
       else if (!pruned && m_db->get_tx_blob(tx_hash, tx))
         txs.push_back(std::move(tx));
-      else
-        missed_txs.push_back(tx_hash);
+      else if (missed_txs)
+        missed_txs->insert(tx_hash);
     }
     catch (const std::exception& e)
     {
@@ -2689,7 +2688,7 @@ size_t get_transaction_version(const cryptonote::blobdata &bd)
   return version;
 }
 //------------------------------------------------------------------
-bool Blockchain::get_split_transactions_blobs(const std::vector<crypto::hash>& txs_ids, std::vector<std::tuple<crypto::hash, cryptonote::blobdata, crypto::hash, cryptonote::blobdata>>& txs, std::vector<crypto::hash>& missed_txs) const
+bool Blockchain::get_split_transactions_blobs(const std::vector<crypto::hash>& txs_ids, std::vector<std::tuple<crypto::hash, cryptonote::blobdata, crypto::hash, cryptonote::blobdata>>& txs, std::unordered_set<crypto::hash>* missed_txs) const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   std::unique_lock lock{*this};
@@ -2711,8 +2710,8 @@ bool Blockchain::get_split_transactions_blobs(const std::vector<crypto::hash>& t
         if (!m_db->get_prunable_tx_blob(tx_hash, prunable))
           prunable.clear();
       }
-      else
-        missed_txs.push_back(tx_hash);
+      else if (missed_txs)
+        missed_txs->insert(tx_hash);
     }
     catch (const std::exception& e)
     {
@@ -2722,7 +2721,7 @@ bool Blockchain::get_split_transactions_blobs(const std::vector<crypto::hash>& t
   return true;
 }
 //------------------------------------------------------------------
-bool Blockchain::get_transactions(const std::vector<crypto::hash>& txs_ids, std::vector<transaction>& txs, std::vector<crypto::hash>& missed_txs) const
+bool Blockchain::get_transactions(const std::vector<crypto::hash>& txs_ids, std::vector<transaction>& txs, std::unordered_set<crypto::hash>* missed_txs) const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   std::unique_lock lock{*this};
@@ -2743,8 +2742,8 @@ bool Blockchain::get_transactions(const std::vector<crypto::hash>& txs_ids, std:
           return false;
         }
       }
-      else
-        missed_txs.push_back(tx_hash);
+      else if (missed_txs)
+        missed_txs->insert(tx_hash);
     }
     catch (const std::exception& e)
     {
@@ -2843,9 +2842,9 @@ bool Blockchain::find_blockchain_supplement(const uint64_t req_start_block, cons
     }
     else
     {
-      std::vector<crypto::hash> mis;
-      get_transactions_blobs(b.tx_hashes, txs, mis, pruned);
-      CHECK_AND_ASSERT_MES(!mis.size(), false, "internal error, transaction from block not found");
+      std::unordered_set<crypto::hash> mis;
+      get_transactions_blobs(b.tx_hashes, txs, &mis, pruned);
+      CHECK_AND_ASSERT_MES(mis.empty(), false, "internal error, transaction from block not found");
     }
     size += blocks.back().first.first.size();
     for (const auto &t: txs)
