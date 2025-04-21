@@ -253,20 +253,20 @@ KV_SERIALIZE_MAP_CODE_END()
 // KV_SERIALIZE_MAP_CODE_END()
 
 
-// KV_SERIALIZE_MAP_CODE_BEGIN(GETBLOCKCOUNT::response)
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_BLOCK_COUNT::response)
 //   KV_SERIALIZE(count)
 //   KV_SERIALIZE(status)
 // KV_SERIALIZE_MAP_CODE_END()
 
 
-bool GETBLOCKHASH::request::load(epee::serialization::portable_storage& ps, epee::serialization::section* hparent_section)
-{
-  return epee::serialization::perform_serialize<false>(height, ps, hparent_section, "height");
-}
-bool GETBLOCKHASH::request::store(epee::serialization::portable_storage& ps, epee::serialization::section* hparent_section)
-{
-  return epee::serialization::perform_serialize<true>(height, ps, hparent_section, "height");
-}
+// bool GETBLOCKHASH::request::load(epee::serialization::portable_storage& ps, epee::serialization::section* hparent_section)
+// {
+//   return epee::serialization::perform_serialize<false>(height, ps, hparent_section, "height");
+// }
+// bool GETBLOCKHASH::request::store(epee::serialization::portable_storage& ps, epee::serialization::section* hparent_section)
+// {
+//   return epee::serialization::perform_serialize<true>(height, ps, hparent_section, "height");
+// }
 
 
 KV_SERIALIZE_MAP_CODE_BEGIN(GETBLOCKTEMPLATE::request)

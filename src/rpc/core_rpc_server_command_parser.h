@@ -17,7 +17,7 @@ namespace cryptonote::rpc {
   void parse_request(MINING_STATUS& mining_status, rpc_input in);
   void parse_request(GET_TRANSACTION_POOL_STATS& get_transaction_pool_stats, rpc_input in);
   void parse_request(GET_TRANSACTION_POOL_HASHES& get_transaction_pool_hashes, rpc_input in);
-  void parse_request(GETBLOCKCOUNT& getblockcount, rpc_input in);
+  void parse_request(GET_BLOCK_COUNT& getblockcount, rpc_input in);
   void parse_request(STOP_DAEMON& stop_daemon, rpc_input in);
   void parse_request(SAVE_BC& save_bc, rpc_input in);
   void parse_request(GET_OUTPUTS& get_outputs, rpc_input in);
@@ -27,4 +27,5 @@ namespace cryptonote::rpc {
   void parse_request(SET_LIMIT& limit, rpc_input in);
   void parse_request(IS_KEY_IMAGE_SPENT& spent, rpc_input in);
   void parse_request(SUBMIT_TRANSACTION& tx, rpc_input in);
+  void parse_request(GET_BLOCK_HASH& bh, rpc_input in);
 }

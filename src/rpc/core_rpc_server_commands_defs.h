@@ -563,7 +563,7 @@ namespace cryptonote::rpc {
   /// Output values available from a restricted/admin RPC endpoint:
   ///
   /// - \p status General RPC status string. `"OK"` means everything looks good.
-  struct STOP_MINING : LEGACY
+  struct STOP_MINING : LEGACY, NO_ARGS
   {
     static constexpr auto names() { return NAMES("stop_mining"); }
   };
@@ -584,7 +584,7 @@ namespace cryptonote::rpc {
   /// - \p block_target The expected time to solve per block, i.e. TARGET_BLOCK_TIME
   /// - \p block_reward Block reward for the current block being mined.
   /// - \p difficulty The difficulty for the current block being mined.
-  struct MINING_STATUS : LEGACY
+  struct MINING_STATUS : LEGACY, NO_ARGS
   {
     static constexpr auto names() { return NAMES("mining_status"); }
   };
@@ -694,7 +694,7 @@ namespace cryptonote::rpc {
   /// Output values available from a restricted/admin RPC endpoint:
   ///
   /// - \p status General RPC status string. `"OK"` means everything looks good.
-  struct SAVE_BC : LEGACY
+  struct SAVE_BC : LEGACY, NO_ARGS
   {
     static constexpr auto names() { return NAMES("save_bc"); }
   };
@@ -708,26 +708,29 @@ namespace cryptonote::rpc {
   ///
   /// - \p status General RPC status string. `"OK"` means everything looks good.
   /// - \p count Number of blocks in logest chain seen by the node.
-  struct GETBLOCKCOUNT : PUBLIC
+  struct GET_BLOCK_COUNT : PUBLIC, NO_ARGS
   {
     static constexpr auto names() { return NAMES("get_block_count", "getblockcount"); }
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Look up a block's hash by its height.
-  struct GETBLOCKHASH : PUBLIC
+  /// Look up one or more blocks' hashes by their height.
+  ///
+  /// Inputs:
+  /// - heights array of block heights of which to look up the block hashes.  Accepts at most 1000
+  ///   heights per request.
+  ///
+  /// Output values are pairs of heights as keys to block hashes as values:
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p height the current blockchain height of this node
+  /// - \p <height> the block hash of the block with the given height.  Note that each height key is
+  ///   the stringified integer value, e.g. "3456" rather than 3456.
+  struct GET_BLOCK_HASH : PUBLIC
   {
     static constexpr auto names() { return NAMES("get_block_hash", "on_get_block_hash", "on_getblockhash"); }
-
-    struct request {
-      std::vector<uint64_t> height; // Block height (int array of length 1).
-
-      // epee serialization; this is a bit hacky because epee serialization makes things hacky.
-      bool load(epee::serialization::portable_storage& ps, epee::serialization::section* hparent_section = nullptr);
-      bool store(epee::serialization::portable_storage& ps, epee::serialization::section* hparent_section = nullptr);
-    };
-
-    using response = std::string;          // Block hash (string).
+    static constexpr size_t MAX_HEIGHTS = 1000;
+    struct request_parameters {
+      std::vector<uint64_t> heights;
+    } request;          // Block hash (string).
   };
 
   BELDEX_RPC_DOC_INTROSPECT
@@ -1087,7 +1090,7 @@ namespace cryptonote::rpc {
   /// - \p status General RPC status string. `"OK"` means everything looks good.
   /// - \p tx_hashes List of transaction hashes,
   /// - \p untrusted States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
-  struct GET_TRANSACTION_POOL_HASHES : PUBLIC, LEGACY
+  struct GET_TRANSACTION_POOL_HASHES : PUBLIC, LEGACY, NO_ARGS
   {
     static constexpr auto names() { return NAMES("get_transaction_pool_hashes"); }
   };
@@ -1140,7 +1143,7 @@ namespace cryptonote::rpc {
   ///   - \p histo_max See `histo` for details.
   /// - \p untrusted States if the result is obtained using the bootstrap mode, and is therefore not
   ///   trusted (`true`), or when the daemon is fully synced (`false`).
-  struct GET_TRANSACTION_POOL_STATS : PUBLIC, LEGACY
+  struct GET_TRANSACTION_POOL_STATS : PUBLIC, LEGACY, NO_ARGS
   {
     static constexpr auto names() { return NAMES("get_transaction_pool_stats"); }
 
@@ -1245,7 +1248,7 @@ namespace cryptonote::rpc {
   /// Output values available from a restricted/admin RPC endpoint:
   ///
   /// - \p status General RPC status string. `"OK"` means everything looks good.
-  struct STOP_DAEMON : LEGACY
+  struct STOP_DAEMON : LEGACY, NO_ARGS
   {
     static constexpr auto names() { return NAMES("stop_daemon"); }
   };
@@ -2561,7 +2564,7 @@ namespace cryptonote::rpc {
     SAVE_BC,
     STOP_DAEMON,
     SYNC_INFO,
-    GETBLOCKCOUNT,
+    GET_BLOCK_COUNT,
     MINING_STATUS,
     GET_TRANSACTION_POOL_HASHES,
     GET_TRANSACTION_POOL_STATS,
@@ -2569,11 +2572,11 @@ namespace cryptonote::rpc {
     IS_KEY_IMAGE_SPENT,
     GET_MASTER_NODES,
     GET_MASTER_NODE_STATUS,
-    SUBMIT_TRANSACTION
+    SUBMIT_TRANSACTION,
+    GET_BLOCK_HASH
   >;
   using FIXME_old_rpc_types = tools::type_list<
     GET_NET_STATS,
-    GETBLOCKHASH,
     GETBLOCKTEMPLATE,
     SUBMITBLOCK,
     GENERATEBLOCKS,

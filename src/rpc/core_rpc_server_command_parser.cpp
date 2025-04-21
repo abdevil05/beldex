@@ -264,7 +264,7 @@ namespace cryptonote::rpc {
   }
   void parse_request(GET_TRANSACTION_POOL_HASHES& get_transaction_pool_hashes, rpc_input in) {
   }
-  void parse_request(GETBLOCKCOUNT& getblockcount, rpc_input in) {
+  void parse_request(GET_BLOCK_COUNT& getblockcount, rpc_input in) {
   }
   void parse_request(STOP_DAEMON& stop_daemon, rpc_input in) {
   }
@@ -399,5 +399,11 @@ namespace cryptonote::rpc {
 
     if (!good)
       throw std::domain_error{"Invalid 'tx' value: expected hex, base64, or bytes"};
+  }
+
+  void parse_request(GET_BLOCK_HASH& bh, rpc_input in) {
+    get_values(in, "heights", bh.request.heights);
+    if (bh.request.heights.size() > bh.MAX_HEIGHTS)
+      throw std::domain_error{"Error: too many block heights requested at once"};
   }
 }
