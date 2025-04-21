@@ -2072,17 +2072,15 @@ namespace cryptonote::rpc {
     return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_VERSION::response core_rpc_server::invoke(GET_VERSION::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_VERSION& version, rpc_context context)
   {
-    GET_VERSION::response res{};
-
     PERF_TIMER(on_get_version);
-    if (use_bootstrap_daemon_if_necessary<GET_VERSION>(req, res))
-      return res;
+    //TODO how replace bootstrap daemon
+    //if (use_bootstrap_daemon_if_necessary<GET_VERSION>(req, res))
+      //return res;
 
-    res.version = pack_version(VERSION);
-    res.status = STATUS_OK;
-    return res;
+    version.response["version"] = pack_version(VERSION);
+    version.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_MASTER_NODE_STATUS& mns, rpc_context context)
@@ -2115,18 +2113,15 @@ namespace cryptonote::rpc {
     }
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_COINBASE_TX_SUM::response core_rpc_server::invoke(GET_COINBASE_TX_SUM::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_COINBASE_TX_SUM& get_coinbase_tx_sum, rpc_context context)
   {
-    GET_COINBASE_TX_SUM::response res{};
-
     PERF_TIMER(on_get_coinbase_tx_sum);
-    if (auto sums = m_core.get_coinbase_tx_sum(req.height, req.count)) {
-        std::tie(res.emission_amount, res.fee_amount, res.burn_amount) = *sums;
-        res.status = STATUS_OK;
+    if (auto sums = m_core.get_coinbase_tx_sum(get_coinbase_tx_sum.request.height, get_coinbase_tx_sum.request.count)) {
+        std::tie(get_coinbase_tx_sum.response["emission_amount"], get_coinbase_tx_sum.response["fee_amount"], get_coinbase_tx_sum.response["burn_amount"]) = *sums;
+        get_coinbase_tx_sum.response["status"] = STATUS_OK;
     } else {
-        res.status = STATUS_BUSY; // some other request is already calculating it
+        get_coinbase_tx_sum.response["status"] = STATUS_BUSY; // some other request is already calculating it
     }
-    return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   GET_BASE_FEE_ESTIMATE::response core_rpc_server::invoke(GET_BASE_FEE_ESTIMATE::request&& req, rpc_context context)

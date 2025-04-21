@@ -1351,47 +1351,45 @@ namespace cryptonote::rpc {
     };
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Get current RPC protocol version.
-  struct GET_VERSION : PUBLIC
+  /// Get current RPC protocol version.
+  ///
+  /// Inputs: None
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p version RPC current version.
+  /// - \p untrusted States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced
+  struct GET_VERSION : PUBLIC, NO_ARGS
   {
     static constexpr auto names() { return NAMES("get_version"); }
 
     struct request : EMPTY {};
-
-    struct response
-    {
-      std::string status; // General RPC error code. "OK" means everything looks good.
-      uint32_t version;   // RPC current version.
-      bool untrusted;     // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
-
-      KV_MAP_SERIALIZABLE
-    };
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Get the coinbase amount and the fees amount for n last blocks starting at particular height.
+  /// Get the coinbase amount and the fees amount for n last blocks starting at particular height.
+  ///
+  /// Inputs:
+  ///
+  /// - \p height Block height from which getting the amounts.
+  /// - \p count Number of blocks to include in the sum.
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p emission_amount Amount of coinbase reward in atomic units.
+  /// - \p fee_amount Amount of fees in atomic units.
+  /// - \p burn_amount Amount of burnt beldex.
   struct GET_COINBASE_TX_SUM : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("get_coinbase_tx_sum"); }
 
-    struct request
+    struct request_parameters
     {
       uint64_t height; // Block height from which getting the amounts.
       uint64_t count;  // Number of blocks to include in the sum.
+    } request;
 
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response
-    {
-      std::string status;       // General RPC error code. "OK" means everything looks good.
-      uint64_t emission_amount; // Amount of coinbase reward in atomic units.
-      int64_t fee_amount;       // Amount of fees in atomic units.
-      int64_t burn_amount;      // Amount of burnt beldex.
-
-      KV_MAP_SERIALIZABLE
-    };
   };
 
   BELDEX_RPC_DOC_INTROSPECT
