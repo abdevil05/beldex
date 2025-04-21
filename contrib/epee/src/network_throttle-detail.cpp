@@ -133,7 +133,7 @@ void network_throttle::set_name(const std::string &name)
 
 void network_throttle::set_target_speed( network_speed_kbps target ) 
 {
-    m_target_speed = target * 1024;
+  m_target_speed = target * 1024;
 	MINFO("Setting LIMIT: " << target << " kbps");
 }
 
@@ -344,6 +344,7 @@ double network_throttle::get_current_speed() const {
 
 std::pair<uint64_t, uint64_t> network_throttle::get_stats() const {
     return {m_total_packets, m_total_bytes};
+}
 
 
 } // namespace
