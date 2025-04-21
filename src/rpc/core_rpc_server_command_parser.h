@@ -30,4 +30,5 @@ namespace cryptonote::rpc {
   void parse_request(GET_BLOCK_HASH& bh, rpc_input in);
   void parse_request(GET_PEER_LIST& bh, rpc_input in);
   void parse_request(BANNED& banned, rpc_input in);
+  void parse_request(FLUSH_TRANSACTION_POOL& flush_transaction_pool, rpc_input in);
 }
