@@ -204,8 +204,7 @@ namespace cryptonote::rpc {
 
   const command_line::arg_descriptor<std::string> core_rpc_server::arg_bootstrap_daemon_address = {
       "bootstrap-daemon-address"
-    , "URL of a 'bootstrap' remote daemon that the connected wallets can use while this daemon is still not fully synced.\n"
-      "Use 'auto' to enable automatic public nodes discovering and bootstrap daemon switching"
+    , "URL of a 'bootstrap' remote daemon that the connected wallets can use while this daemon is still not fully synced."
     , ""
     };
 
@@ -1367,7 +1366,6 @@ namespace cryptonote::rpc {
       {"last_seen", peer.last_seen}
     };
     if (peer.pruning_seed) p["pruning_seed"] = peer.pruning_seed;
-    if (peer.rpc_port) p["rpc_port"] = peer.rpc_port;
     return p;
   }
 
@@ -1858,9 +1856,6 @@ namespace cryptonote::rpc {
     if (ci.localhost) info["localhost"] = true;
     if (ci.local_ip) info["local_ip"] = true;
     if (uint16_t port; tools::parse_int(ci.port, port) && port > 0) info["port"] = port;
-    // Included for completeness, but undocumented as neither of these are currently actually used
-    // or support on Beldex:
-    if (ci.rpc_port > 0) info["rpc_port"] = ci.rpc_port;
     if (ci.pruning_seed) info["pruning_seed"] = ci.pruning_seed;
     return info;
   }

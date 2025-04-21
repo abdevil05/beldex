@@ -39,7 +39,7 @@
 #include "p2p/p2p_protocol_defs.h"
 #include "common/pruning.h"
 
-BOOST_CLASS_VERSION(nodetool::peerlist_entry, 2)
+BOOST_CLASS_VERSION(nodetool::peerlist_entry, 3)
 
 namespace boost
 {
@@ -231,11 +231,15 @@ namespace boost
       }
       if (ver < 2)
       {
-        if (!typename Archive::is_saving())
-          pl.rpc_port = 0;
         return;
       }
-      a & pl.rpc_port;
+      
+      if (ver < 3)
+      {
+        // Unused, but don't break
+        uint16_t rpc_port = 0;
+        a & rpc_port;
+      }
     }
 
     template <class Archive, class ver_type>
