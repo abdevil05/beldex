@@ -31,7 +31,6 @@
 
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
-#include <boost/preprocessor/stringize.hpp>
 #include <algorithm>
 #include <cstring>
 #include <iterator>
@@ -41,6 +40,7 @@
 #include <oxenc/endian.h>
 #include "epee/net/network_throttle.hpp"
 #include "common/string_util.h"
+#include "bootstrap_daemon.h"
 #include "crypto/crypto.h"
 #include "cryptonote_basic/hardfork.h"
 #include "cryptonote_basic/tx_extra.h"
@@ -50,10 +50,10 @@
 #include "beldex_economy.h"
 #include "epee/string_tools.h"
 #include "core_rpc_server.h"
+#include "core_rpc_server_binary_commands.h"
 #include "core_rpc_server_command_parser.h"
-#include "bootstrap_daemon.h"
-#include "rpc_args.h"
 #include "core_rpc_server_error_codes.h"
+#include "rpc_args.h"
 #include "common/command_line.h"
 #include "common/beldex.h"
 #include "common/sha256sum.h"
@@ -108,75 +108,89 @@ namespace cryptonote::rpc {
       throw std::domain_error{"internal error: encountered some unhandled/invalid type in json-to-bt translation"};
     }
     
-    template <typename RPC, std::enable_if_t<std::is_base_of_v<RPC_COMMAND, RPC>, int> = 0>
+    template <typename RPC>
     void register_rpc_command(std::unordered_map<std::string, std::shared_ptr<const rpc_command>>& regs)
     {
+      static_assert(std::is_base_of_v<RPC_COMMAND, RPC> && !std::is_base_of_v<BINARY, RPC>);
       auto cmd = std::make_shared<rpc_command>();
       cmd->is_public = std::is_base_of_v<PUBLIC, RPC>;
-      cmd->is_binary = std::is_base_of_v<BINARY, RPC>;
       cmd->is_legacy = std::is_base_of_v<LEGACY, RPC>;
-      if constexpr (!std::is_base_of_v<BINARY, RPC>) {
-        static_assert(!FIXME_has_nested_response_v<RPC>);
-        cmd->invoke = [](rpc_request&& request, core_rpc_server& server) -> rpc_command::result_type {
-          RPC rpc{};
-          try {
-            if (auto body = request.body_view()) {
-              if (body->front() == 'd') { // Looks like a bt dict
-                rpc.set_bt();
-                parse_request(rpc, oxenc::bt_dict_consumer{*body});
-              }
-              else
-                parse_request(rpc, json::parse(*body));
-            } else if (auto* j = std::get_if<json>(&request.body)) {
-              parse_request(rpc, std::move(*j));
-            } else {
-              assert(std::holds_alternative<std::monostate>(request.body));
-              parse_request(rpc, std::monostate{});
+
+      // Temporary: remove once RPC conversion is complete
+      static_assert(!FIXME_has_nested_response_v<RPC>);
+
+      cmd->invoke = [](rpc_request&& request, core_rpc_server& server) -> rpc_command::result_type {
+        RPC rpc;
+        try {
+          if (auto body = request.body_view()) {
+            if (body->front() == 'd') { // Looks like a bt dict
+              rpc.set_bt();
+              parse_request(rpc, oxenmq::bt_dict_consumer{*body});
             }
-          } catch (const std::exception& e) {
-            throw parse_error{"Failed to parse request parameters: "s + e.what()};
+            else
+              parse_request(rpc, json::parse(*body));
+          } else if (auto* j = std::get_if<json>(&request.body)) {
+            parse_request(rpc, std::move(*j));
+          } else {
+            assert(std::holds_alternative<std::monostate>(request.body));
+            parse_request(rpc, std::monostate{});
           }
+        } catch (const std::exception& e) {
+          throw parse_error{"Failed to parse request parameters: "s + e.what()};
+        }
 
-          server.invoke(rpc, std::move(request.context));
+        server.invoke(rpc, std::move(request.context));
 
-          if (rpc.response.is_null())
-            rpc.response = json::object();
+        if (rpc.response.is_null())
+          rpc.response = json::object();
 
-          if (rpc.is_bt())
-            return json_to_bt(std::move(rpc.response));
-          else
-            return std::move(rpc.response);
-        };
-      } else {
-        // Legacy binary request; these still use epee serialization, and should be considered
-        // deprecated (tentatively to be removed in Oxen 11).
-        cmd->invoke = [](rpc_request&& request, core_rpc_server& server) -> rpc_command::result_type {
-          typename RPC::request req{};
-          std::string_view data;
-          if (auto body = request.body_view())
-            data = *body;
-          else
-            throw std::runtime_error{"Internal error: can't load binary a RPC command with non-string body"};
-          if (!epee::serialization::load_t_from_binary(req, data))
-            throw parse_error{"Failed to parse binary data parameters"};
-
-          auto res = server.invoke(std::move(req), std::move(request.context));
-
-          std::string response;
-          epee::serialization::store_t_to_binary(res, response);
-          return response;
-        };
-      }
+        if (rpc.is_bt())
+          return json_to_bt(std::move(rpc.response));
+        else
+          return std::move(rpc.response);
+      };
 
       for (const auto& name : RPC::names())
         regs.emplace(name, cmd);
     }
 
-    template <typename... RPC>
-    std::unordered_map<std::string, std::shared_ptr<const rpc_command>> register_rpc_commands(tools::type_list<RPC...>) {
+    template <typename RPC>
+    void register_binary_rpc_command(std::unordered_map<std::string, std::shared_ptr<const rpc_command>>& regs)
+    {
+      static_assert(std::is_base_of_v<BINARY, RPC> && !std::is_base_of_v<LEGACY, RPC>);
+      auto cmd = std::make_shared<rpc_command>();
+      cmd->is_public = std::is_base_of_v<PUBLIC, RPC>;
+      cmd->is_binary = true;
+
+      // Legacy binary request; these still use epee serialization, and should be considered
+      // deprecated (tentatively to be removed in Oxen 11).
+      cmd->invoke = [](rpc_request&& request, core_rpc_server& server) -> rpc_command::result_type {
+        typename RPC::request req{};
+        std::string_view data;
+        if (auto body = request.body_view())
+          data = *body;
+        else
+          throw std::runtime_error{"Internal error: can't load binary a RPC command with non-string body"};
+        if (!epee::serialization::load_t_from_binary(req, data))
+          throw parse_error{"Failed to parse binary data parameters"};
+
+        auto res = server.invoke(std::move(req), std::move(request.context));
+
+        std::string response;
+        epee::serialization::store_t_to_binary(res, response);
+        return response;
+      };
+
+      for (const auto& name : RPC::names())
+        regs.emplace(name, cmd);
+    }
+
+    template <typename... RPC, typename... BinaryRPC>
+    std::unordered_map<std::string, std::shared_ptr<const rpc_command>> register_rpc_commands(tools::type_list<RPC...>, tools::type_list<BinaryRPC...>) {
       std::unordered_map<std::string, std::shared_ptr<const rpc_command>> regs;
 
       (register_rpc_command<RPC>(regs), ...);
+      (register_binary_rpc_command<BinaryRPC>(regs), ...);
 
       return regs;
     }
@@ -186,7 +200,7 @@ namespace cryptonote::rpc {
 
   }
 
-  const std::unordered_map<std::string, std::shared_ptr<const rpc_command>> rpc_commands = register_rpc_commands(rpc::core_rpc_types{});
+  const std::unordered_map<std::string, std::shared_ptr<const rpc_command>> rpc_commands = register_rpc_commands(rpc::core_rpc_types{}, rpc::core_rpc_binary_types{});
 
   const command_line::arg_descriptor<std::string> core_rpc_server::arg_bootstrap_daemon_address = {
       "bootstrap-daemon-address"
