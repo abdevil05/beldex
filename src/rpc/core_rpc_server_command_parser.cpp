@@ -410,4 +410,8 @@ namespace cryptonote::rpc {
   void parse_request(GET_PEER_LIST& pl, rpc_input in) {
     get_values(in, "public_only", pl.request.public_only);
   }
+
+  void parse_request(BANNED& banned, rpc_input in) {
+    get_values(in, "address", banned.request.address);
+  }
 }
