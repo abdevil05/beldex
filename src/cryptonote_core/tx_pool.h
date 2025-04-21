@@ -43,7 +43,6 @@
 #include "cryptonote_basic/verification_context.h"
 #include "blockchain_db/blockchain_db.h"
 #include "crypto/hash.h"
-#include "rpc/core_rpc_server_commands_defs.h"
 #include "tx_flash.h"
 #include "beldex_economy.h"
 
@@ -408,15 +407,6 @@ namespace cryptonote
      *
      */
     void get_transaction_hashes(std::vector<crypto::hash>& txs, bool include_unrelayed_txes = true, bool include_only_flashed = false) const;
-
-    /**
-     * @brief get (weight, fee, receive time) for all transaction in the pool
-     *
-     * @param txs return-by-reference that data
-     * @param include_unrelayed_txes include unrelayed txes in the result
-     *
-     */
-    void get_transaction_backlog(std::vector<rpc::tx_backlog_entry>& backlog, bool include_unrelayed_txes = true) const;
 
     /// Return type of get_transaction_stats()
     struct tx_stats

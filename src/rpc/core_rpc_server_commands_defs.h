@@ -1280,29 +1280,6 @@ namespace cryptonote::rpc {
   };
 
   BELDEX_RPC_DOC_INTROSPECT
-  struct tx_backlog_entry
-  {
-    uint64_t weight;       //
-    uint64_t fee;          // Fee in Beldex measured in atomic units.
-    uint64_t time_in_pool;
-  };
-
-  //-----------------------------------------------
-  /// Get all transaction pool backlog.
-  ///
-  /// Inputs: none
-  ///
-  /// Output values available from a public RPC endpoint:
-  ///
-  /// - \p status General RPC status string. `"OK"` means everything looks good.
-  /// - \p backlog Array of structures tx_backlog_entry (in binary form):
-  /// - \p untrusted States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
-  struct GET_TRANSACTION_POOL_BACKLOG : PUBLIC
-  {
-    static constexpr auto names() { return NAMES("get_txpool_backlog"); }
-  };
-
-  BELDEX_RPC_DOC_INTROSPECT
   struct txpool_histo
   {
     uint32_t txs;   // Number of transactions.
@@ -2801,7 +2778,6 @@ namespace cryptonote::rpc {
     GETBLOCKCOUNT,
     MINING_STATUS,
     GET_TRANSACTION_POOL_HASHES,
-    GET_TRANSACTION_POOL_BACKLOG,
     GET_TRANSACTION_POOL_STATS,
     GET_TRANSACTIONS,
     GET_MASTER_NODES,
