@@ -341,4 +341,6 @@ namespace cryptonote::rpc {
     if (limit.request.limit_down < -1)
       throw std::domain_error{"limit_up must be >= -1"};
   }
+
+  void parse_request(IS_KEY_IMAGE_SPENT& spent, rpc_input in);
 }
