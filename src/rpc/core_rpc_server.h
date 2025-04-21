@@ -228,6 +228,8 @@ namespace cryptonote::rpc {
     void invoke(SUBMIT_TRANSACTION& tx, rpc_context context);
     void invoke(GET_BLOCK_HASH& req, rpc_context context);
     void invoke(GET_PEER_LIST& pl, rpc_context context);
+    void invoke(SET_LOG_LEVEL& set_log_level, rpc_context context);
+    void invoke(SET_LOG_CATEGORIES& set_log_categories, rpc_context context);
     void invoke(BANNED& banned, rpc_context context);
     void invoke(FLUSH_TRANSACTION_POOL& flush_transaction_pool, rpc_context context);
 
@@ -243,8 +245,6 @@ namespace cryptonote::rpc {
     GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN::response invoke(GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN::request&& req, rpc_context context);
 
     // FIXME: unconverted JSON RPC endpoints:
-    SET_LOG_LEVEL::response                             invoke(SET_LOG_LEVEL::request&& req, rpc_context context);
-    SET_LOG_CATEGORIES::response                        invoke(SET_LOG_CATEGORIES::request&& req, rpc_context context);
     SET_BOOTSTRAP_DAEMON::response                      invoke(SET_BOOTSTRAP_DAEMON::request&& req, rpc_context context);
     OUT_PEERS::response                                 invoke(OUT_PEERS::request&& req, rpc_context context);
     IN_PEERS::response                                  invoke(IN_PEERS::request&& req, rpc_context context);
