@@ -262,8 +262,6 @@ namespace cryptonote::rpc {
   }
   void parse_request(MINING_STATUS& mining_status, rpc_input in) {
   }
-  void parse_request(GET_TRANSACTION_POOL_STATS& get_transaction_pool_stats, rpc_input in) {
-  }
   void parse_request(GET_TRANSACTION_POOL_BACKLOG& get_transaction_pool_backlog, rpc_input in) {
   }
   void parse_request(GET_TRANSACTION_POOL_HASHES& get_transaction_pool_hashes, rpc_input in) {

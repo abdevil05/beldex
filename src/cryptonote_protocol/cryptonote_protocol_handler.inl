@@ -1567,7 +1567,7 @@ namespace cryptonote
               {
                 if (parsed_txs[i].tvc.m_verifivation_failed)
                 {
-                  if (!m_p2p->for_connection(span_connection_id, [&](cryptonote_connection_context& context, nodetool::peerid_type peer_id, uint32_t f) -> bool{
+                  if (!m_p2p->for_connection(span_connection_id, [&](cryptonote_connection_context& context, nodetool::peerid_type peer_id) -> bool{
                     cryptonote::transaction tx;
                     parse_and_validate_tx_from_blob(block_entry.txs[i], tx); // must succeed if we got here
                     LOG_ERROR_CCONTEXT("transaction verification failed on NOTIFY_RESPONSE_GET_BLOCKS, tx_id = "
@@ -1612,7 +1612,7 @@ namespace cryptonote
 
               if (bvc.m_verifivation_failed || bvc.m_marked_as_orphaned)
               {
-                if (!m_p2p->for_connection(span_connection_id, [&](cryptonote_connection_context& context, nodetool::peerid_type peer_id, uint32_t f)->bool{
+                if (!m_p2p->for_connection(span_connection_id, [&](cryptonote_connection_context& context, nodetool::peerid_type peer_id)->bool{
                   char const *ERR_MSG =
                       bvc.m_verifivation_failed
                           ? "Block verification failed, dropping connection"
@@ -1822,7 +1822,7 @@ skip:
     // if we're at max out peers, and not enough are syncing
     if (n_synced + n_syncing >= m_max_out_peers && n_syncing < p2p::DEFAULT_SYNC_SEARCH_CONNECTIONS_COUNT && last_synced_peer_id != boost::uuids::nil_uuid())
     {
-      if (!m_p2p->for_connection(last_synced_peer_id, [&](cryptonote_connection_context& ctx, nodetool::peerid_type peer_id, uint32_t f)->bool{
+      if (!m_p2p->for_connection(last_synced_peer_id, [&](cryptonote_connection_context& ctx, nodetool::peerid_type peer_id)->bool{
         MINFO(ctx << "dropping synced peer, " << n_syncing << " syncing, " << n_synced << " synced");
         drop_connection(ctx, false, false);
         return true;
@@ -1901,7 +1901,7 @@ skip:
         if (standby && dt >= REQUEST_NEXT_SCHEDULED_SPAN_THRESHOLD_STANDBY && dl_speed > 0)
         {
           bool download = false;
-          if (m_p2p->for_connection(connection_id, [&](cryptonote_connection_context& ctx, nodetool::peerid_type peer_id, uint32_t f)->bool{
+          if (m_p2p->for_connection(connection_id, [&](cryptonote_connection_context& ctx, nodetool::peerid_type peer_id)->bool{
             const auto last_activity = std::min(now - ctx.m_last_recv, dt);
             const bool stalled = last_activity > LAST_ACTIVITY_STALL_THRESHOLD;
             if (stalled)
