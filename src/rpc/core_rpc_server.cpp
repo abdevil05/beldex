@@ -2701,24 +2701,14 @@ namespace cryptonote::rpc {
     return invoke(std::move(req_old), context);
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES::response core_rpc_server::invoke(GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES& get_master_node_blacklisted_key_images, rpc_context context)
   {
-    GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES::response res{};
-
     PERF_TIMER(on_get_master_node_blacklisted_key_images);
     auto &blacklist = m_core.get_master_node_blacklisted_key_images();
 
-    res.status = STATUS_OK;
-    res.blacklist.reserve(blacklist.size());
-    for (const master_nodes::key_image_blacklist_entry &entry : blacklist)
-    {
-      res.blacklist.emplace_back();
-      auto &new_entry = res.blacklist.back();
-      new_entry.key_image     = tools::type_to_hex(entry.key_image);
-      new_entry.unlock_height = entry.unlock_height;
-      new_entry.amount = entry.amount;
-    }
-    return res;
+    get_master_node_blacklisted_key_images.response["status"] = STATUS_OK;
+    get_master_node_blacklisted_key_images.response["blacklist"] = blacklist;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_MASTER_KEYS& get_master_keys, rpc_context context)

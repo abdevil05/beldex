@@ -2073,30 +2073,20 @@ namespace cryptonote::rpc {
     };
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Get information on blacklisted Master Node key images.
+  /// Get information on blacklisted Master Node key images.
+  ///
+  /// Inputs: None
+  ///
+  /// Output values available from a public RPC endpoint:
+  ///
+  /// - \p status generic RPC error code; "OK" means the request was successful.
+  /// - \p blacklist Array of blacklisted key images, i.e. unspendable transactions. Each entry contains
+  ///   - \p key_image The key image of the transaction that is blacklisted on the network.
+  ///   - \p unlock_height The height at which the key image is removed from the blacklist and becomes spendable.
+  ///   - \p amount The total amount of locked Beldex in atomic units in this blacklisted stake.
   struct GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES : PUBLIC
   {
     static constexpr auto names() { return NAMES("get_master_node_blacklisted_key_images"); }
-
-    struct request : EMPTY {};
-
-    struct entry
-    {
-      std::string key_image;  // The key image of the transaction that is blacklisted on the network.
-      uint64_t unlock_height; // The height at which the key image is removed from the blacklist and becomes spendable.
-      uint64_t amount;        // The total amount of locked Beldex in atomic units in this blacklisted stake.
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response
-    {
-      std::vector<entry> blacklist; // Array of blacklisted key images, i.e. unspendable transactions
-      std::string status;           // Generic RPC error code. "OK" is the success value.
-
-      KV_MAP_SERIALIZABLE
-    };
   };
 
   /// Query hardcoded/service node checkpoints stored for the blockchain. Omit all arguments to retrieve the latest "count" checkpoints.
