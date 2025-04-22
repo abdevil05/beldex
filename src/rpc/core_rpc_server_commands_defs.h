@@ -785,31 +785,30 @@ namespace cryptonote::rpc {
     } request;
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Block header information can be retrieved using either a block's hash or height. This method includes a block's hash as an input parameter to retrieve basic information about the block.
+  /// Block header information can be retrieved using either a block's hash or height. This method includes a block's hash as an input parameter to retrieve basic information about the block.
+  ///
+  /// Inputs:
+  /// - \p hash The block's SHA256 hash.
+  /// - \p hashes Request multiple blocks via an array of hashes
+  /// - \p fill_pow_hash Tell the daemon if it should fill out pow_hash field.
+  /// - \p get_tx_hashes If true (default false) then include the hashes of non-coinbase transactions
+  ///
+  /// Output values available from a public RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p block_header Block header information for the requested `hash` block
+  /// - \p block_headers Block header information for the requested `hashes` blocks
   struct GET_BLOCK_HEADER_BY_HASH : PUBLIC
   {
     static constexpr auto names() { return NAMES("get_block_header_by_hash", "getblockheaderbyhash"); }
 
-    struct request
+    struct request_parameters
     {
       std::string hash;   // The block's SHA256 hash.
       std::vector<std::string> hashes; // Request multiple blocks via an array of hashes
       bool fill_pow_hash; // Tell the daemon if it should fill out pow_hash field.
       bool get_tx_hashes; // If true (default false) then include the hashes of non-coinbase transactions
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response
-    {
-      std::string status;                 // General RPC error code. "OK" means everything looks good.
-      std::optional<block_header_response> block_header; // Block header information for the requested `hash` block
-      std::vector<block_header_response> block_headers;  // Block header information for the requested `hashes` blocks
-      bool untrusted;                     // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
-
-      KV_MAP_SERIALIZABLE
-    };
+    } request;
   };
 
   BELDEX_RPC_DOC_INTROSPECT

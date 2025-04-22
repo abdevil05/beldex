@@ -1316,21 +1316,20 @@ bool rpc_command_executor::alt_chain_info(const std::string &tip, size_t above, 
       for (const std::string &block_id: chain.block_hashes)
         tools::msg_writer() << "  " << block_id;
       tools::msg_writer() << "Chain parent on main chain: " << chain.main_chain_parent_block;
-      GET_BLOCK_HEADER_BY_HASH::request bhreq{};
-      GET_BLOCK_HEADER_BY_HASH::response bhres{};
-      bhreq.hashes = chain.block_hashes;
-      bhreq.hashes.push_back(chain.main_chain_parent_block);
-      bhreq.fill_pow_hash = false;
-      if (!invoke<GET_BLOCK_HEADER_BY_HASH>(std::move(bhreq), bhres, "Failed to query block header by hash"))
+      std::vector<std::string> hashes{chain.block_hashes};
+      hashes.push_back(chain.main_chain_parent_block);
+      auto maybe_headers = try_running([&] { return invoke<GET_BLOCK_HEADER_BY_HASH>(json{{"hashes", hashes}, {"fill_pow_hash", false}}); }, "Failed to query block header by hash");
+      if (!maybe_headers)
         return false;
 
-      if (bhres.block_headers.size() != chain.length + 1)
+      auto headers = *maybe_headers;
+      if (headers["block_headers"].size() != chain.length + 1)
       {
         tools::fail_msg_writer() << "Failed to get block header info for alt chain";
         return true;
       }
-      uint64_t t0 = bhres.block_headers.front().timestamp, t1 = t0;
-      for (const block_header_response &block_header: bhres.block_headers)
+      uint64_t t0 = headers["block_headers"].front()["timestamp"], t1 = t0;
+      for (const block_header_response &block_header: headers["block_headers"])
       {
         t0 = std::min<uint64_t>(t0, block_header.timestamp);
         t1 = std::max<uint64_t>(t1, block_header.timestamp);
@@ -1341,7 +1340,7 @@ bool rpc_command_executor::alt_chain_info(const std::string &tip, size_t above, 
       if (chain.length > 1)
       {
         tools::msg_writer() << "Time span: " << tools::get_human_readable_timespan(std::chrono::seconds(dt));
-        cryptonote::difficulty_type start_difficulty = bhres.block_headers.back().difficulty;
+        cryptonote::difficulty_type start_difficulty = headers["block_headers"].back()["difficulty"];
         if (start_difficulty > 0)
           tools::msg_writer() << "Approximated " << 100.f * tools::to_seconds(cryptonote::old::TARGET_BLOCK_TIME_12) * chain.length / dt << "% of network hash rate";  //old block time
         else

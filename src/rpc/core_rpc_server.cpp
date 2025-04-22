@@ -1697,15 +1697,11 @@ namespace cryptonote::rpc {
     return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_BLOCK_HEADER_BY_HASH::response core_rpc_server::invoke(GET_BLOCK_HEADER_BY_HASH::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_BLOCK_HEADER_BY_HASH& get_block_header_by_hash, rpc_context context)
   {
-    GET_BLOCK_HEADER_BY_HASH::response res{};
-
     PERF_TIMER(on_get_block_header_by_hash);
-    if (use_bootstrap_daemon_if_necessary<GET_BLOCK_HEADER_BY_HASH>(req, res))
-      return res;
 
-    auto get = [this, &req, admin=context.admin](const std::string &hash, block_header_response &block_header) {
+    auto get = [this, &get_block_header_by_hash, admin=context.admin](const std::string &hash, block_header_response &block_header) {
       crypto::hash block_hash;
       if (!tools::hex_to_type(hash, block_hash))
         throw rpc_error{ERROR_WRONG_PARAM, "Failed to parse hex representation of block hash. Hex = " + hash + '.'};
@@ -1717,18 +1713,23 @@ namespace cryptonote::rpc {
       if (blk.miner_tx.vin.size() != 1 || !std::holds_alternative<txin_gen>(blk.miner_tx.vin.front()))
         throw rpc_error{ERROR_INTERNAL, "Internal error: coinbase transaction in the block has the wrong type"};
       uint64_t block_height = var::get<txin_gen>(blk.miner_tx.vin.front()).height;
-      fill_block_header_response(blk, orphan, block_height, block_hash, block_header, req.fill_pow_hash && admin, req.get_tx_hashes);
+      fill_block_header_response(blk, orphan, block_height, block_hash, block_header, get_block_header_by_hash.request.fill_pow_hash && admin, get_block_header_by_hash.request.get_tx_hashes);
     };
 
-    if (!req.hash.empty())
-      get(req.hash, res.block_header.emplace());
+    if (!get_block_header_by_hash.request.hash.empty())
+    {
+      block_header_response block_header;
+      get(get_block_header_by_hash.request.hash, block_header);
+      get_block_header_by_hash.response["block_header"] = block_header;
+    }
 
-    res.block_headers.reserve(req.hashes.size());
-    for (const std::string &hash: req.hashes)
-      get(hash, res.block_headers.emplace_back());
+    std::vector<block_header_response> block_headers;
+    for (const std::string &hash: get_block_header_by_hash.request.hashes)
+      get(hash, block_headers.emplace_back());
 
-    res.status = STATUS_OK;
-    return res;
+    get_block_header_by_hash.response["block_headers"] = block_headers;
+    get_block_header_by_hash.response["status"] = STATUS_OK;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   GET_BLOCK_HEADERS_RANGE::response core_rpc_server::invoke(GET_BLOCK_HEADERS_RANGE::request&& req, rpc_context context)
