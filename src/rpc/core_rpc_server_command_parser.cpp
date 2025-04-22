@@ -460,6 +460,7 @@ namespace cryptonote::rpc {
     get_values(in, "https_port", storage_server_ping.request.https_port);
     get_values(in, "omq_port", storage_server_ping.request.omq_port);
     get_values(in, "pubkey_ed25519", storage_server_ping.request.pubkey_ed25519);
+  }
 
   void parse_request(PRUNE_BLOCKCHAIN& prune_blockchain, rpc_input in){
     get_values(in, "check", prune_blockchain.request.check);
@@ -474,6 +475,7 @@ namespace cryptonote::rpc {
   void parse_request(GET_MN_STATE_CHANGES& get_mn_state_changes, rpc_input in) {
     get_values(in, "start_height", get_mn_state_changes.request.start_height);
     get_values(in, "end_height", get_mn_state_changes.request.end_height);
+  }
 
   void parse_request(FLUSH_CACHE& flush_cache, rpc_input in) {
     get_values(in, "bad_txs", flush_cache.request.bad_txs);
@@ -503,6 +505,10 @@ namespace cryptonote::rpc {
     get_values(in, "height", get_staking_requirement.request.height);
   }
 
+  void parse_request(RELAY_TX& relay_tx, rpc_input in){
+    get_values(in, "txids", get_block_header_by_hash.request.txids);
+  }
+
   void parse_request(GET_BLOCK_HEADERS_RANGE& get_block_headers_range, rpc_input in) {
     get_values(in, "start_height", get_block_headers_range.request.start_height);
     get_values(in, "end_height", get_block_headers_range.request.end_height);
@@ -516,4 +522,5 @@ namespace cryptonote::rpc {
     get_values(in, "fill_pow_hash", get_block_header_by_height.request.fill_pow_hash);
     get_values(in, "get_tx_hashes", get_block_header_by_height.request.get_tx_hashes);
   }
+
 }

@@ -1420,12 +1420,12 @@ bool rpc_command_executor::print_blockchain_dynamic_stats(uint64_t nblocks)
 
 bool rpc_command_executor::relay_tx(const std::string &txid)
 {
-    RELAY_TX::response res{};
-    if (!invoke<RELAY_TX>({{txid}}, res, "Failed to relay tx"))
-      return false;
+  auto maybe_relay = try_running([&] { return invoke<RELAY_TX>(json{{"txid", txid}}); }, "Failed to relay tx");
+  if (!maybe_relay)
+    return false;
 
-    tools::success_msg_writer() << "Transaction successfully relayed";
-    return true;
+  tools::success_msg_writer() << "Transaction successfully relayed";
+  return true;
 }
 
 bool rpc_command_executor::sync_info()

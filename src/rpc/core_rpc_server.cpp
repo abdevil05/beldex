@@ -2232,20 +2232,18 @@ namespace cryptonote::rpc {
     pop_blocks.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  RELAY_TX::response core_rpc_server::invoke(RELAY_TX::request&& req, rpc_context context)
+  void core_rpc_server::invoke(RELAY_TX& relay_tx, rpc_context context)
   {
-    RELAY_TX::response res{};
-
     PERF_TIMER(on_relay_tx);
 
-    res.status = "";
-    for (const auto &txid_hex: req.txids)
+    std::string status = "";
+    for (const auto &str: relay_tx.request.txids)
     {
       crypto::hash txid;
-      if (!tools::hex_to_type(txid_hex, txid))
+      if (!tools::hex_to_type(str, txid))
       {
-        if (!res.status.empty()) res.status += ", ";
-        res.status += "invalid transaction id: " + txid_hex;
+        if (!status.empty()) status += ", ";
+        status += "invalid transaction id: " + str;
         continue;
       }
       cryptonote::blobdata txblob;
@@ -2259,15 +2257,17 @@ namespace cryptonote::rpc {
       }
       else
       {
-        if (!res.status.empty()) res.status += ", ";
-        res.status += "transaction not found in pool: " + txid_hex;
+        if (!status.empty()) status += ", ";
+        status += "transaction not found in pool: " + str;
+        continue;
       }
     }
 
-    if (res.status.empty())
-      res.status = STATUS_OK;
+    if (status.empty())
+      status = STATUS_OK;
 
-    return res;
+    relay_tx.response["status"] = status;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(SYNC_INFO& sync, rpc_context context)

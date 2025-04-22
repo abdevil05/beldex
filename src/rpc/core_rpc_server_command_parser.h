@@ -48,6 +48,7 @@ namespace cryptonote::rpc {
   void parse_request(GET_BLOCK_HEADER_BY_HASH& get_block_header_by_hash, rpc_input in);
   void parse_request(SETBANS& set_bans, rpc_input in);
   void parse_request(GET_STAKING_REQUIREMENT& get_staking_requirement, rpc_input in);
+  void parse_request(RELAY_TX& relay_tx, rpc_input in);
   void parse_request(GET_BLOCK_HEADERS_RANGE& get_block_headers_range, rpc_input in);
   void parse_request(GET_BLOCK_HEADER_BY_HEIGHT& get_block_header_by_height, rpc_input in);
 }
