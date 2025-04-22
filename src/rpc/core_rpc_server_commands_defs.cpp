@@ -939,12 +939,12 @@ KV_SERIALIZE_MAP_CODE_BEGIN(GET_MASTER_KEYS::response)
 KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_MASTER_PRIVKEYS::response)
-  KV_SERIALIZE(master_node_privkey)
-  KV_SERIALIZE(master_node_ed25519_privkey)
-  KV_SERIALIZE(master_node_x25519_privkey)
-  KV_SERIALIZE(status)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_MASTER_PRIVKEYS::response)
+//   KV_SERIALIZE(master_node_privkey)
+//   KV_SERIALIZE(master_node_ed25519_privkey)
+//   KV_SERIALIZE(master_node_x25519_privkey)
+//   KV_SERIALIZE(status)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
 // KV_SERIALIZE_MAP_CODE_BEGIN(master_node_contribution)

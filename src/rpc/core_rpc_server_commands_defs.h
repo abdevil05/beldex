@@ -1728,26 +1728,22 @@ namespace cryptonote::rpc {
     };
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Get the master private keys of the queried daemon, encoded in hex.  Do not ever share
-  // these keys: they would allow someone to impersonate your master node.  All three keys are used
-  // when running as a master node; when running as a regular node only the x25519 key is regularly
-  // used for some RPC and and node-to-MN communication requests.
+  /// Get the master private keys of the queried daemon, encoded in hex.  Do not ever share
+  /// these keys: they would allow someone to impersonate your master node.  All three keys are used
+  /// when running as a master node; when running as a regular node only the x25519 key is regularly
+  /// used for some RPC and and node-to-MN communication requests.
+  ///
+  /// Inputs: None
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p master_node_privkey The queried daemon's master node private key.  Will be empty if not running as a master node.
+  /// - \p master_node_ed25519_privkey The daemon's ed25519 private key (note that this is in sodium's format, which consists of the private and public keys concatenated together)
+  /// - \p master_node_x25519_privkey The daemon's x25519 private key.
   struct GET_MASTER_PRIVKEYS : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("get_master_privkeys", "get_master_node_privkey"); }
-
-    struct request : EMPTY {};
-
-    struct response
-    {
-      std::string master_node_privkey;         // The queried daemon's master node private key.  Will be empty if not running as a master node.
-      std::string master_node_ed25519_privkey; // The daemon's ed25519 private key (note that this is in sodium's format, which consists of the private and public keys concatenated together)
-      std::string master_node_x25519_privkey;  // The daemon's x25519 private key.
-      std::string status;                       // Generic RPC error code. "OK" is the success value.
-
-      KV_MAP_SERIALIZABLE
-    };
   };
 
   /// Get information on some, all, or a random subset of Master Nodes.
