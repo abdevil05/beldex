@@ -761,28 +761,28 @@ namespace cryptonote::rpc {
       KV_MAP_SERIALIZABLE
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Block header information for the most recent block is easily retrieved with this method. No inputs are needed.
+  void to_json(nlohmann::json& j, const block_header_response& h);
+  void from_json(const nlohmann::json& j, block_header_response& h);
+
+  /// Block header information for the most recent block is easily retrieved with this method. No inputs are needed.
+  ///
+  /// Inputs:
+  /// - \p fill_pow_hash Tell the daemon if it should fill out pow_hash field.
+  /// - \p get_tx_hashes If true (default false) then include the hashes of non-coinbase transactions
+  ///
+  /// Output values available from a public RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p block_header A structure containing block header information.
   struct GET_LAST_BLOCK_HEADER : PUBLIC
   {
     static constexpr auto names() { return NAMES("get_last_block_header", "getlastblockheader"); }
 
-    struct request
+    struct request_parameters
     {
-      bool fill_pow_hash; // Tell the daemon if it should fill out pow_hash field.
-      bool get_tx_hashes; // If true (default false) then include the hashes of non-coinbase transactions
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response
-    {
-      std::string status;                 // General RPC error code. "OK" means everything looks good.
-      block_header_response block_header; // A structure containing block header information.
-      bool untrusted;                     // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
-
-      KV_MAP_SERIALIZABLE
-    };
+      bool fill_pow_hash; 
+      bool get_tx_hashes;
+    } request;
   };
 
   BELDEX_RPC_DOC_INTROSPECT

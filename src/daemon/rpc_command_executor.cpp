@@ -2048,14 +2048,13 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
 
   // Query the latest block we've synced and check that the timestamp is sensible, issue a warning if not
   {
-    GET_LAST_BLOCK_HEADER::response res{};
-
-    if (!invoke<GET_LAST_BLOCK_HEADER>({}, res, "Get latest block failed, unable to check sync status"))
+    auto const& maybe_header = try_running([this] { return invoke<GET_LAST_BLOCK_HEADER>().at("block_header").get<block_header_response>();}, "Get latest block failed, unable to check sync status");
+    if (!maybe_header)
       return false;
 
-    auto const& header = res.block_header;
     uint64_t const now = time(nullptr);
 
+    auto const& header = *maybe_header;
     if (now >= header.timestamp)
     {
       uint64_t delta = now - header.timestamp;

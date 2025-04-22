@@ -480,6 +480,11 @@ namespace cryptonote::rpc {
     get_values(in, "bad_blocks", flush_cache.request.bad_blocks);
   }
 
+  void parse_request(GET_LAST_BLOCK_HEADER& get_last_block_header, rpc_input in) {
+    get_values(in, "fill_pow_hash", get_last_block_header.request.fill_pow_hash);
+    get_values(in, "get_tx_hashes", get_last_block_header.request.get_tx_hashes);
+  }
+
   void parse_request(SETBANS& set_bans, rpc_input in) {
     get_values(in, "host", set_bans.request.host);
     get_values(in, "ip", set_bans.request.ip);

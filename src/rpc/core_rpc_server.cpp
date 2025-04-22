@@ -1672,23 +1672,29 @@ namespace cryptonote::rpc {
     return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_LAST_BLOCK_HEADER::response core_rpc_server::invoke(GET_LAST_BLOCK_HEADER::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_LAST_BLOCK_HEADER& get_last_block_header, rpc_context context)
   {
-    GET_LAST_BLOCK_HEADER::response res{};
-
     PERF_TIMER(on_get_last_block_header);
-    if (use_bootstrap_daemon_if_necessary<GET_LAST_BLOCK_HEADER>(req, res))
-      return res;
 
-    CHECK_CORE_READY();
+    if(!check_core_ready())
+    { 
+      get_last_block_header.response["status"] = STATUS_BUSY;
+      return; 
+    }
+
     auto [last_block_height, last_block_hash] = m_core.get_blockchain_top();
     block last_block;
     bool have_last_block = m_core.get_block_by_height(last_block_height, last_block);
     if (!have_last_block)
       throw rpc_error{ERROR_INTERNAL, "Internal error: can't get last block."};
-    fill_block_header_response(last_block, false, last_block_height, last_block_hash, res.block_header, req.fill_pow_hash && context.admin, req.get_tx_hashes);
-    res.status = STATUS_OK;
-    return res;
+    
+    block_header_response header{};
+    fill_block_header_response(last_block, false, last_block_height, last_block_hash, header, get_last_block_header.request.fill_pow_hash && context.admin, get_last_block_header.request.get_tx_hashes);
+    
+    nlohmann::json header_as_json = header;
+    get_last_block_header.response["block_header"] = header_as_json;
+    get_last_block_header.response["status"] = STATUS_OK;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   GET_BLOCK_HEADER_BY_HASH::response core_rpc_server::invoke(GET_BLOCK_HEADER_BY_HASH::request&& req, rpc_context context)

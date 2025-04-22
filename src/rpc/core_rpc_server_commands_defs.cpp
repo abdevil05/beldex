@@ -10,6 +10,64 @@ void RPC_COMMAND::set_bt() {
   response_hex.format = json_binary_proxy::fmt::bt;
 }
 
+void to_json(nlohmann::json& j, const block_header_response& h)
+{
+  j = nlohmann::json
+  {
+    {"major_version", h.major_version},
+    {"minor_version", h.minor_version},
+    {"timestamp", h.timestamp},
+    {"prev_hash", h.prev_hash},
+    {"nonce", h.nonce},
+    {"orphan_status", h.orphan_status},
+    {"height", h.height},
+    {"depth", h.depth},
+    {"hash", h.hash},
+    {"difficulty", h.difficulty},
+    {"cumulative_difficulty", h.cumulative_difficulty},
+    {"reward", h.reward},
+    {"miner_reward", h.miner_reward},
+    {"block_size", h.block_size},
+    {"block_weight", h.block_weight},
+    {"num_txes", h.num_txes},
+    {"pow_hash", h.pow_hash ? *h.pow_hash : nullptr},
+    {"long_term_weight", h.long_term_weight},
+    {"miner_tx_hash", h.miner_tx_hash},
+    {"miner_tx_hash", h.miner_tx_hash},
+    {"tx_hashes", h.tx_hashes},
+    {"master_node_winner", h.master_node_winner},
+  };
+};
+
+void from_json(const nlohmann::json& j, block_header_response& h)
+{
+  j.at("major_version").get_to(h.major_version);
+  j.at("minor_version").get_to(h.minor_version);
+  j.at("timestamp").get_to(h.timestamp);
+  j.at("prev_hash").get_to(h.prev_hash);
+  j.at("nonce").get_to(h.nonce);
+  j.at("orphan_status").get_to(h.orphan_status);
+  j.at("height").get_to(h.height);
+  j.at("depth").get_to(h.depth);
+  j.at("hash").get_to(h.hash);
+  j.at("difficulty").get_to(h.difficulty);
+  j.at("cumulative_difficulty").get_to(h.cumulative_difficulty);
+  j.at("reward").get_to(h.reward);
+  j.at("miner_reward").get_to(h.miner_reward);
+  j.at("block_size").get_to(h.block_size);
+  j.at("block_weight").get_to(h.block_weight);
+  j.at("num_txes").get_to(h.num_txes);
+  if (j.at("pow_hash").is_null())
+    h.pow_hash = std::nullopt;
+  else
+    h.pow_hash = j["pow_hash"].get<std::string>();
+  j.at("long_term_weight").get_to(h.long_term_weight);
+  j.at("miner_tx_hash").get_to(h.miner_tx_hash);
+  j.at("miner_tx_hash").get_to(h.miner_tx_hash);
+  j.at("tx_hashes").get_to(h.tx_hashes);
+  j.at("master_node_winner").get_to(h.master_node_winner);
+}
+
 KV_SERIALIZE_MAP_CODE_BEGIN(STATUS)
   KV_SERIALIZE(status)
 KV_SERIALIZE_MAP_CODE_END()
@@ -269,42 +327,42 @@ KV_SERIALIZE_MAP_CODE_END()
 // }
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(block_header_response)
-  KV_SERIALIZE(major_version)
-  KV_SERIALIZE(minor_version)
-  KV_SERIALIZE(timestamp)
-  KV_SERIALIZE(prev_hash)
-  KV_SERIALIZE(nonce)
-  KV_SERIALIZE(orphan_status)
-  KV_SERIALIZE(height)
-  KV_SERIALIZE(depth)
-  KV_SERIALIZE(hash)
-  KV_SERIALIZE(difficulty)
-  KV_SERIALIZE(cumulative_difficulty)
-  KV_SERIALIZE(reward)
-  KV_SERIALIZE(miner_reward)
-  KV_SERIALIZE(block_size)
-  KV_SERIALIZE_OPT(block_weight, (uint64_t)0)
-  KV_SERIALIZE(num_txes)
-  KV_SERIALIZE(pow_hash)
-  KV_SERIALIZE_OPT(long_term_weight, (uint64_t)0)
-  KV_SERIALIZE(miner_tx_hash)
-  KV_SERIALIZE(tx_hashes)
-  KV_SERIALIZE(master_node_winner)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(block_header_response)
+//   KV_SERIALIZE(major_version)
+//   KV_SERIALIZE(minor_version)
+//   KV_SERIALIZE(timestamp)
+//   KV_SERIALIZE(prev_hash)
+//   KV_SERIALIZE(nonce)
+//   KV_SERIALIZE(orphan_status)
+//   KV_SERIALIZE(height)
+//   KV_SERIALIZE(depth)
+//   KV_SERIALIZE(hash)
+//   KV_SERIALIZE(difficulty)
+//   KV_SERIALIZE(cumulative_difficulty)
+//   KV_SERIALIZE(reward)
+//   KV_SERIALIZE(miner_reward)
+//   KV_SERIALIZE(block_size)
+//   KV_SERIALIZE_OPT(block_weight, (uint64_t)0)
+//   KV_SERIALIZE(num_txes)
+//   KV_SERIALIZE(pow_hash)
+//   KV_SERIALIZE_OPT(long_term_weight, (uint64_t)0)
+//   KV_SERIALIZE(miner_tx_hash)
+//   KV_SERIALIZE(tx_hashes)
+//   KV_SERIALIZE(master_node_winner)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_LAST_BLOCK_HEADER::request)
-  KV_SERIALIZE_OPT(fill_pow_hash, false);
-  KV_SERIALIZE_OPT(get_tx_hashes, false);
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_LAST_BLOCK_HEADER::request)
+//   KV_SERIALIZE_OPT(fill_pow_hash, false);
+//   KV_SERIALIZE_OPT(get_tx_hashes, false);
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_LAST_BLOCK_HEADER::response)
-  KV_SERIALIZE(block_header)
-  KV_SERIALIZE(status)
-  KV_SERIALIZE(untrusted)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_LAST_BLOCK_HEADER::response)
+//   KV_SERIALIZE(block_header)
+//   KV_SERIALIZE(status)
+//   KV_SERIALIZE(untrusted)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
 KV_SERIALIZE_MAP_CODE_BEGIN(GET_BLOCK_HEADER_BY_HASH::request)
