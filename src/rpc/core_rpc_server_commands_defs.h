@@ -1223,56 +1223,49 @@ namespace cryptonote::rpc {
     } request;
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Get list of banned IPs.
+  /// Get list of banned IPs.
+  ///
+  /// Inputs: None
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p bans List of banned nodes
   struct GETBANS : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("get_bans"); }
-
-    struct request : EMPTY {};
-
-    struct ban
-    {
-      std::string host; // Banned host (IP in A.B.C.D form).
-      uint32_t ip;      // Banned IP address, in Int format.
-      uint32_t seconds; // Local Unix time that IP is banned until.
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response
-    {
-      std::string status;    // General RPC error code. "OK" means everything looks good.
-      std::vector<ban> bans; // List of banned nodes:
-
-      KV_MAP_SERIALIZABLE
-    };
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Ban another node by IP.
+  struct ban
+  {
+    std::string host; // Banned host (IP in A.B.C.D form).
+    uint32_t ip;      // Banned IP address, in Int format.
+    uint32_t seconds; // Local Unix time that IP is banned until
+  };
+  inline void to_json(nlohmann::json& j, const ban& b) { j = nlohmann::json{{"host", b.host}, {"ip", b.ip}, {"seconds", b.seconds} }; };
+
+  /// Ban another node by IP.
+  ///
+  /// Inputs: 
+  /// - \p host Banned host (IP in A.B.C.D form).
+  /// - \p ip Banned IP address, in Int format.
+  /// - \p seconds Local Unix time that IP is banned until, or Number of seconds to ban node
+  /// - \p ban Set true to ban.
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
   struct SETBANS : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("set_bans"); }
 
-    struct ban
+    struct request_parameters
     {
-      std::string host; // Host to ban (IP in A.B.C.D form - will support I2P address in the future).
-      uint32_t ip;      // IP address to ban, in Int format.
+      std::string host; // Banned host (IP in A.B.C.D form).
+      uint32_t ip;      // Banned IP address, in Int format.
+      uint32_t seconds; // Local Unix time that IP is banned until, or Number of seconds to ban node
       bool ban;         // Set true to ban.
-      uint32_t seconds; // Number of seconds to ban node.
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct request
-    {
-      std::vector<ban> bans; // List of nodes to ban.
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response : STATUS {};
+    } request;
   };
 
   /// Determine whether a given IP address is banned
@@ -1289,7 +1282,8 @@ namespace cryptonote::rpc {
   {
     static constexpr auto names() { return NAMES("banned"); }
 
-    struct request_parameters {
+    struct request_parameters
+    {
       std::string address; // The IP address to check
     } request;
   };

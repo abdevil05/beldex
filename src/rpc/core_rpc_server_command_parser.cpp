@@ -479,4 +479,11 @@ namespace cryptonote::rpc {
     get_values(in, "bad_txs", flush_cache.request.bad_txs);
     get_values(in, "bad_blocks", flush_cache.request.bad_blocks);
   }
+
+  void parse_request(SETBANS& set_bans, rpc_input in) {
+    get_values(in, "host", set_bans.request.host);
+    get_values(in, "ip", set_bans.request.ip);
+    get_values(in, "seconds", set_bans.request.seconds);
+    get_values(in, "ban", set_bans.request.ban);
+  }
 }

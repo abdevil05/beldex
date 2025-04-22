@@ -1169,16 +1169,16 @@ bool rpc_command_executor::in_peers(bool set, uint32_t limit)
 
 bool rpc_command_executor::print_bans()
 {
-    GETBANS::response res{};
-
-    if (!invoke<GETBANS>({}, res, "Failed to retrieve ban list"))
+    auto maybe_bans = try_running([this] { return invoke<GETBANS>(); }, "Failed to retrieve ban list");
+    if (!maybe_bans)
       return false;
+    auto bans = *maybe_bans;
 
-    if (!res.bans.empty())
+    if (!bans.empty())
     {
-        for (auto i = res.bans.begin(); i != res.bans.end(); ++i)
+      for (auto i = bans.begin(); i != bans.end(); ++i)
         {
-            tools::msg_writer() << i->host << " banned for " << i->seconds << " seconds";
+          tools::msg_writer() << (*i)["host"] << " banned for " << (*i)["seconds"] << " seconds";
         }
     }
     else
@@ -1189,17 +1189,8 @@ bool rpc_command_executor::print_bans()
 
 bool rpc_command_executor::ban(const std::string &address, time_t seconds, bool clear_ban)
 {
-    SETBANS::request req{};
-    SETBANS::response res{};
-
-    req.bans.emplace_back();
-    auto& ban = req.bans.back();
-    ban.host = address;
-    ban.ip = 0;
-    ban.ban = !clear_ban;
-    ban.seconds = seconds;
-
-    if (!invoke<SETBANS>(std::move(req), res, clear_ban ? "Failed to clear ban" : "Failed to set ban"))
+    auto maybe_banned = try_running([this, &address, seconds, clear_ban] { return invoke<SETBANS>(json{{"host", std::move(address)}, {"ip", 0}, {"seconds", seconds}, {"ban", !clear_ban}}); }, clear_ban ? "Failed to clear ban" : "Failed to set ban");
+    if (!maybe_banned)
       return false;
 
     // TODO(doyle): Work around because integration tests break when using

@@ -1888,10 +1888,8 @@ namespace cryptonote::rpc {
     hfinfo.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GETBANS::response core_rpc_server::invoke(GETBANS::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GETBANS& get_bans, rpc_context context)
   {
-    GETBANS::response res{};
-
     PERF_TIMER(on_get_bans);
 
     auto now = time(nullptr);
@@ -1899,30 +1897,30 @@ namespace cryptonote::rpc {
     for (std::map<std::string, time_t>::const_iterator i = blocked_hosts.begin(); i != blocked_hosts.end(); ++i)
     {
       if (i->second > now) {
-        GETBANS::ban b;
+        ban b;
         b.host = i->first;
         b.ip = 0;
         uint32_t ip;
         if (epee::string_tools::get_ip_int32_from_string(ip, b.host))
           b.ip = ip;
         b.seconds = i->second - now;
-        res.bans.push_back(b);
+        get_bans.response["bans"].push_back(b);
       }
     }
     std::map<epee::net_utils::ipv4_network_subnet, time_t> blocked_subnets = m_p2p.get_blocked_subnets();
     for (std::map<epee::net_utils::ipv4_network_subnet, time_t>::const_iterator i = blocked_subnets.begin(); i != blocked_subnets.end(); ++i)
     {
       if (i->second > now) {
-        GETBANS::ban b;
+        ban b;
         b.host = i->first.host_str();
         b.ip = 0;
         b.seconds = i->second - now;
-        res.bans.push_back(b);
+        get_bans.response["bans"].push_back(b);
       }
     }
 
-    res.status = STATUS_OK;
-    return res;
+    get_bans.response["status"] = STATUS_OK;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(BANNED& banned, rpc_context context)
@@ -1949,50 +1947,46 @@ namespace cryptonote::rpc {
     banned.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  SETBANS::response core_rpc_server::invoke(SETBANS::request&& req, rpc_context context)
+  void core_rpc_server::invoke(SETBANS& set_bans, rpc_context context)
   {
-    SETBANS::response res{};
-
     PERF_TIMER(on_set_bans);
 
-    for (auto i = req.bans.begin(); i != req.bans.end(); ++i)
+    epee::net_utils::network_address na;
+
+    // try subnet first
+    if (!set_bans.request.host.empty())
     {
-      epee::net_utils::network_address na;
-
-      // try subnet first
-      if (!i->host.empty())
+      auto ns_parsed = net::get_ipv4_subnet_address(set_bans.request.host);
+      if (ns_parsed)
       {
-        auto ns_parsed = net::get_ipv4_subnet_address(i->host);
-        if (ns_parsed)
-        {
-          if (i->ban)
-            m_p2p.block_subnet(*ns_parsed, i->seconds);
-          else
-            m_p2p.unblock_subnet(*ns_parsed);
-          continue;
-        }
+        if (set_bans.request.ban)
+          m_p2p.block_subnet(*ns_parsed, set_bans.request.seconds);
+        else
+          m_p2p.unblock_subnet(*ns_parsed);
+        set_bans.response["status"] = STATUS_OK;
+        return;
       }
-
-      // then host
-      if (!i->host.empty())
-      {
-        auto na_parsed = net::get_network_address(i->host, 0);
-        if (!na_parsed)
-          throw rpc_error{ERROR_WRONG_PARAM, "Unsupported host/subnet type"};
-        na = std::move(*na_parsed);
-      }
-      else
-      {
-        na = epee::net_utils::ipv4_network_address{i->ip, 0};
-      }
-      if (i->ban)
-        m_p2p.block_host(na, i->seconds);
-      else
-        m_p2p.unblock_host(na);
     }
 
-    res.status = STATUS_OK;
-    return res;
+    // then host
+    if (!set_bans.request.host.empty())
+    {
+      auto na_parsed = net::get_network_address(set_bans.request.host, 0);
+      if (!na_parsed)
+        throw rpc_error{ERROR_WRONG_PARAM, "Unsupported host/subnet type"};
+      na = std::move(*na_parsed);
+    }
+    else
+    {
+      na = epee::net_utils::ipv4_network_address{set_bans.request.ip, 0};
+    }
+    if (set_bans.request.ban)
+      m_p2p.block_host(na, set_bans.request.seconds);
+    else
+      m_p2p.unblock_host(na);
+
+    set_bans.response["status"] = STATUS_OK;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(FLUSH_TRANSACTION_POOL& flush_transaction_pool, rpc_context context)
