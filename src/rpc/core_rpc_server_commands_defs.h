@@ -1136,7 +1136,6 @@ namespace cryptonote::rpc {
     static constexpr auto names() { return NAMES("get_limit"); }
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
   /// Set daemon p2p bandwidth limits.
   ///
   /// Output values available from a restricted/admin RPC endpoint:
@@ -1154,44 +1153,48 @@ namespace cryptonote::rpc {
     } request;
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Limit number of Outgoing peers.
+  /// Limit number of Outgoing peers.
+  ///
+  /// Inputs:
+  ///
+  /// - \p set If true, set the number of outgoing peers, otherwise the response returns the current limit of outgoing peers. (Defaults to true)
+  /// - \p out_peers Max number of outgoing peers
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p out_peers The current limit set for outgoing peers.
   struct OUT_PEERS : LEGACY
   {
     static constexpr auto names() { return NAMES("out_peers"); }
 
-    struct request
+    struct request_parameters
     {
       bool set; // If true, set the number of outgoing peers, otherwise the response returns the current limit of outgoing peers. (Defaults to true)
-	  uint32_t out_peers; // Max number of outgoing peers
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response {
-      uint32_t out_peers; // The current limit set for outgoing peers
-      std::string status; // General RPC error code. "OK" means everything looks good.
-      KV_MAP_SERIALIZABLE
-    };
+      uint32_t out_peers; // Max number of outgoing peers
+    } request;
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Limit number of Incoming peers.
+  /// Limit number of Incoming peers.
+  ///
+  /// Inputs:
+  ///
+  /// - \p set If true, set the number of incoming peers, otherwise the response returns the current limit of incoming peers. (Defaults to true)
+  /// - \p in_peers Max number of incoming peers
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p in_peers The current limit set for incoming peers.
   struct IN_PEERS : LEGACY
   {
     static constexpr auto names() { return NAMES("in_peers"); }
 
-    struct request
+    struct request_parameters
     {
       bool set; // If true, set the number of incoming peers, otherwise the response returns the current limit of incoming peers. (Defaults to true)
       uint32_t in_peers; // Max number of incoming peers
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response {
-      uint32_t in_peers; // The current limit set for outgoing peers
-      std::string status; // General RPC error code. "OK" means everything looks good.
-      KV_MAP_SERIALIZABLE
-    };
+    } request;
   };
 
   /// Output values available from a public RPC endpoint:
