@@ -1707,25 +1707,21 @@ namespace cryptonote::rpc {
     using response = GET_MASTER_NODE_REGISTRATION_CMD_RAW::response;
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Get the master public keys of the queried daemon, encoded in hex.  All three keys are used
-  // when running as a master node; when running as a regular node only the x25519 key is regularly
-  // used for some RPC and and node-to-MN communication requests.
+  /// Get the master public keys of the queried daemon, encoded in hex.  All three keys are used
+  /// when running as a master node; when running as a regular node only the x25519 key is regularly
+  /// used for some RPC and and node-to-MN communication requests.
+  ///
+  /// Inputs: None
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p master_node_pubkey The queried daemon's master node public key.  Will be empty if not running as a master node.
+  /// - \p master_node_ed25519_pubkey The daemon's ed25519 auxiliary public key.
+  /// - \p master_node_x25519_pubkey The daemon's x25519 auxiliary public key.
   struct GET_MASTER_KEYS : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("get_master_keys", "get_master_node_key"); }
-
-    struct request : EMPTY {};
-
-    struct response
-    {
-      std::string master_node_pubkey;         // The queried daemon's master node public key.  Will be empty if not running as a master node.
-      std::string master_node_ed25519_pubkey; // The daemon's ed25519 auxiliary public key.
-      std::string master_node_x25519_pubkey;  // The daemon's x25519 auxiliary public key.
-      std::string status;                      // Generic RPC error code. "OK" is the success value.
-
-      KV_MAP_SERIALIZABLE
-    };
   };
 
   /// Get the master private keys of the queried daemon, encoded in hex.  Do not ever share

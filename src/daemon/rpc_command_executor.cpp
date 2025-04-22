@@ -482,12 +482,11 @@ bool rpc_command_executor::show_status() {
   bool my_mn_registered = false, my_mn_staked = false, my_mn_active = false;
   uint16_t my_reason_all = 0, my_reason_any = 0;
   if (info["master_node"].get<bool>()) {
-    GET_MASTER_KEYS::response res{};
-
-    if (!invoke<GET_MASTER_KEYS>({}, res, "Failed to retrieve master node keys"))
+    auto maybe_master_keys = try_running([this] { return invoke<GET_MASTER_KEYS>(json{}); }, "Failed to retrieve master node keys");
+    if (!maybe_master_keys)
       return false;
 
-    my_mn_key = std::move(res.master_node_pubkey);
+    my_mn_key = (*maybe_master_keys)["master_node_pubkey"];
 
     auto maybe_mns = try_running([&] { return invoke<GET_MASTER_NODES>(json{{"master_node_pubkeys", json::array({my_mn_key})}}); }, "Failed to retrieve master node info");
 
@@ -1942,15 +1941,16 @@ bool rpc_command_executor::pop_blocks(uint64_t num_blocks)
 
 bool rpc_command_executor::print_mn_key()
 {
-  GET_MASTER_KEYS::response res{};
-
-  if (!invoke<GET_MASTER_KEYS>({}, res, "Failed to retrieve master node keys"))
+  auto maybe_master_keys = try_running([this] { return invoke<GET_MASTER_KEYS>(json{}); }, "Failed to retrieve master node keys");
+  if (!maybe_master_keys)
     return false;
 
+  auto my_mn_keys = *maybe_master_keys;
+
   tools::success_msg_writer()
-    <<   "Master Node Public Key: " << res.master_node_pubkey
-    << "\n     Ed25519 Public Key: " << res.master_node_ed25519_pubkey
-    << "\n      X25519 Public Key: " << res.master_node_x25519_pubkey;
+    <<   "Master Node Public Key: " << my_mn_keys["master_node_pubkey"]
+    << "\n     Ed25519 Public Key: " << my_mn_keys["master_node_ed25519_pubkey"]
+    << "\n      X25519 Public Key: " << my_mn_keys["master_node_x25519_pubkey"];
   return true;
 }
 
@@ -1995,10 +1995,6 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
   if (!maybe_hf)
     return false;
   auto& hfinfo = *maybe_hf;
-
-  GET_MASTER_KEYS::response kres{};
-  if (!invoke<GET_MASTER_KEYS>({}, kres, "Failed to retrieve master node keys"))
-    return false;
 
   if (!info.value("master_node", false))
   {

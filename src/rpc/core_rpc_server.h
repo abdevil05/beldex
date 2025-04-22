@@ -252,6 +252,7 @@ namespace cryptonote::rpc {
     void invoke(SETBANS& set_bans, rpc_context context);
     void invoke(GET_CHECKPOINTS& get_checkpoints, rpc_context context);
     void invoke(GET_MASTER_PRIVKEYS& get_master_privkeys, rpc_context context);
+    void invoke(GET_MASTER_KEYS& get_master_keys, rpc_context context);
 
     // Deprecated Monero NIH binary endpoints:
     GET_ALT_BLOCKS_HASHES_BIN::response         invoke(GET_ALT_BLOCKS_HASHES_BIN::request&& req, rpc_context context);
@@ -277,7 +278,6 @@ namespace cryptonote::rpc {
     GET_MASTER_NODE_REGISTRATION_CMD_RAW::response     invoke(GET_MASTER_NODE_REGISTRATION_CMD_RAW::request&& req, rpc_context context);
     GET_MASTER_NODE_REGISTRATION_CMD::response         invoke(GET_MASTER_NODE_REGISTRATION_CMD::request&& req, rpc_context context);
     GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES::response   invoke(GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES::request&& req, rpc_context context);
-    GET_MASTER_KEYS::response                          invoke(GET_MASTER_KEYS::request&& req, rpc_context context);
     GET_STAKING_REQUIREMENT::response                   invoke(GET_STAKING_REQUIREMENT::request&& req, rpc_context context);
     BNS_NAMES_TO_OWNERS::response                       invoke(BNS_NAMES_TO_OWNERS::request&& req, rpc_context context);
     BNS_LOOKUP::response                                invoke(BNS_LOOKUP::request&& req, rpc_context context);

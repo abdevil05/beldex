@@ -2721,19 +2721,16 @@ namespace cryptonote::rpc {
     return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_MASTER_KEYS::response core_rpc_server::invoke(GET_MASTER_KEYS::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_MASTER_KEYS& get_master_keys, rpc_context context)
   {
-    GET_MASTER_KEYS::response res{};
-
     PERF_TIMER(on_get_master_node_key);
-
     const auto& keys = m_core.get_master_keys();
     if (keys.pub)
-      res.master_node_pubkey = tools::type_to_hex(keys.pub);
-    res.master_node_ed25519_pubkey = tools::type_to_hex(keys.pub_ed25519);
-    res.master_node_x25519_pubkey = tools::type_to_hex(keys.pub_x25519);
-    res.status = STATUS_OK;
-    return res;
+      get_master_keys.response["master_node_pubkey"] = tools::type_to_hex(keys.pub);
+    get_master_keys.response["master_node_ed25519_pubkey"] = tools::type_to_hex(keys.pub_ed25519);
+    get_master_keys.response["master_node_x25519_pubkey"] = tools::type_to_hex(keys.pub_x25519);
+    get_master_keys.response["status"] = STATUS_OK;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_MASTER_PRIVKEYS& get_master_privkeys, rpc_context context)
