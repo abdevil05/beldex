@@ -2492,25 +2492,25 @@ namespace cryptonote::rpc {
   }
 
 
-  GET_QUORUM_STATE::response core_rpc_server::invoke(GET_QUORUM_STATE::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_QUORUM_STATE& get_quorum_state, rpc_context context)
   {
-    GET_QUORUM_STATE::response res{};
-
     PERF_TIMER(on_get_quorum_state);
 
-    if (req.quorum_type >= tools::enum_count<master_nodes::quorum_type> &&
-        req.quorum_type != GET_QUORUM_STATE::ALL_QUORUMS_SENTINEL_VALUE)
-      throw rpc_error{ERROR_WRONG_PARAM,
-        "Quorum type specifies an invalid value: " + std::to_string(req.quorum_type)};
+    uint8_t quorum_type = get_quorum_state.request.quorum_type;
 
-    auto requested_type = [&req](master_nodes::quorum_type type) {
-      return req.quorum_type == GET_QUORUM_STATE::ALL_QUORUMS_SENTINEL_VALUE ||
-        req.quorum_type == static_cast<uint8_t>(type);
+    if (quorum_type >= tools::enum_count<master_nodes::quorum_type> &&
+      quorum_type != GET_QUORUM_STATE::ALL_QUORUMS_SENTINEL_VALUE)
+      throw rpc_error{ERROR_WRONG_PARAM,
+        "Quorum type specifies an invalid value: " + std::to_string(get_quorum_state.request.quorum_type)};
+
+    auto requested_type = [quorum_type](master_nodes::quorum_type type) {
+      return quorum_type == GET_QUORUM_STATE::ALL_QUORUMS_SENTINEL_VALUE ||
+        quorum_type == static_cast<uint8_t>(type);
     };
 
     bool latest = false;
     uint64_t latest_ob = 0, latest_cp = 0, latest_bl = 0;
-    uint64_t start = req.start_height, end = req.end_height;
+    uint64_t start = get_quorum_state.request.start_height, end = get_quorum_state.request.end_height;
     uint64_t curr_height = m_core.get_blockchain_storage().get_current_blockchain_height();
     if (start == GET_QUORUM_STATE::HEIGHT_SENTINEL_VALUE &&
         end == GET_QUORUM_STATE::HEIGHT_SENTINEL_VALUE)
@@ -2552,7 +2552,7 @@ namespace cryptonote::rpc {
     bool add_curr_POS = (latest || end > curr_height) && requested_type(master_nodes::quorum_type::POS);
     end = std::min(curr_height, end);
 
-    uint64_t count       = (start > end) ? start - end : end - start;
+    uint64_t count = (start > end) ? start - end : end - start;
     if (!context.admin && count > GET_QUORUM_STATE::MAX_COUNT)
       throw rpc_error{ERROR_WRONG_PARAM,
         "Number of requested quorums greater than the allowed limit: "
@@ -2560,7 +2560,8 @@ namespace cryptonote::rpc {
           + ", requested: " + std::to_string(count)};
 
     bool at_least_one_succeeded = false;
-    res.quorums.reserve(std::min((uint64_t)16, count));
+    std::vector<GET_QUORUM_STATE::quorum_for_height> quorums;
+    quorums.reserve(std::min((uint64_t)16, count));
     auto net = nettype();
     for (size_t height = start; height != end;)
     {
@@ -2569,9 +2570,9 @@ namespace cryptonote::rpc {
         auto start_quorum_iterator = static_cast<master_nodes::quorum_type>(0);
         auto end_quorum_iterator   = master_nodes::max_quorum_type_for_hf(hf_version);
 
-        if (req.quorum_type != GET_QUORUM_STATE::ALL_QUORUMS_SENTINEL_VALUE)
+        if (quorum_type != GET_QUORUM_STATE::ALL_QUORUMS_SENTINEL_VALUE)
         {
-          start_quorum_iterator = static_cast<master_nodes::quorum_type>(req.quorum_type);
+          start_quorum_iterator = static_cast<master_nodes::quorum_type>(quorum_type);
           end_quorum_iterator   = start_quorum_iterator;
         }
 
@@ -2587,7 +2588,7 @@ namespace cryptonote::rpc {
           }
           if (std::shared_ptr<const master_nodes::quorum> quorum = m_core.get_quorum(type, height, true /*include_old*/))
           {
-            auto& entry = res.quorums.emplace_back();
+            auto& entry = quorums.emplace_back();
             entry.height                                          = height;
             entry.quorum_type                                     = static_cast<uint8_t>(quorum_int);
             entry.quorum.validators = hexify(quorum->validators);
@@ -2617,7 +2618,7 @@ namespace cryptonote::rpc {
         auto quorum = generate_POS_quorum(m_core.get_nettype(), mn_list.get_block_leader().key, hf_version, mn_list.active_master_nodes_infos(), entropy, POS_round);
         if (verify_POS_quorum_sizes(quorum))
         {
-          auto& entry = res.quorums.emplace_back();
+          auto& entry = quorums.emplace_back();
           entry.height = curr_height;
           entry.quorum_type = static_cast<uint8_t>(master_nodes::quorum_type::POS);
 
@@ -2632,8 +2633,9 @@ namespace cryptonote::rpc {
     if (!at_least_one_succeeded)
       throw rpc_error{ERROR_WRONG_PARAM, "Failed to query any quorums at all"};
 
-    res.status = STATUS_OK;
-    return res;
+    get_quorum_state.response["quorums"] = quorums;
+    get_quorum_state.response["status"] = STATUS_OK;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(FLUSH_CACHE& flush_cache, rpc_context context)

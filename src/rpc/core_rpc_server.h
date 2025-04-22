@@ -259,6 +259,7 @@ namespace cryptonote::rpc {
     void invoke(GET_BLOCK_HEADERS_RANGE& get_block_headers_range, rpc_context context);
     void invoke(GET_BLOCK_HEADER_BY_HEIGHT& get_block_header_by_height, rpc_context context);
     void invoke(GET_BLOCK& get_block, rpc_context context);
+    void invoke(GET_QUORUM_STATE& get_quorum_state, rpc_context context);
 
     // Deprecated Monero NIH binary endpoints:
     GET_ALT_BLOCKS_HASHES_BIN::response         invoke(GET_ALT_BLOCKS_HASHES_BIN::request&& req, rpc_context context);
@@ -276,7 +277,6 @@ namespace cryptonote::rpc {
     // SET_BOOTSTRAP_DAEMON::response                      invoke(SET_BOOTSTRAP_DAEMON::request&& req, rpc_context context);
     GET_OUTPUT_HISTOGRAM::response                      invoke(GET_OUTPUT_HISTOGRAM::request&& req, rpc_context context);
     GET_ALTERNATE_CHAINS::response                      invoke(GET_ALTERNATE_CHAINS::request&& req, rpc_context context);
-    GET_QUORUM_STATE::response                          invoke(GET_QUORUM_STATE::request&& req, rpc_context context);
     GET_MASTER_NODE_REGISTRATION_CMD_RAW::response     invoke(GET_MASTER_NODE_REGISTRATION_CMD_RAW::request&& req, rpc_context context);
     GET_MASTER_NODE_REGISTRATION_CMD::response         invoke(GET_MASTER_NODE_REGISTRATION_CMD::request&& req, rpc_context context);
     BNS_NAMES_TO_OWNERS::response                       invoke(BNS_NAMES_TO_OWNERS::request&& req, rpc_context context);

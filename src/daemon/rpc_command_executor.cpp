@@ -734,22 +734,23 @@ bool rpc_command_executor::print_blockchain_info(int64_t start_block_index, uint
 
 bool rpc_command_executor::print_quorum_state(uint64_t start_height, uint64_t end_height)
 {
-  GET_QUORUM_STATE::request req{};
-  GET_QUORUM_STATE::response res{};
+  auto maybe_quorums = try_running([this, start_height, end_height] {
+    return invoke<GET_QUORUM_STATE>(json{
+      {"start_height", start_height},
+      {"end_height", end_height},
+      {"quorum_type", GET_QUORUM_STATE::ALL_QUORUMS_SENTINEL_VALUE}});
+    }, "Failed to retrieve quorum state");
 
-  req.start_height = start_height;
-  req.end_height   = end_height;
-  req.quorum_type  = GET_QUORUM_STATE::ALL_QUORUMS_SENTINEL_VALUE;
-
-  if (!invoke<GET_QUORUM_STATE>(std::move(req), res, "Failed to retrieve quorum state"))
+  if (!maybe_quorums)
     return false;
+  auto& quorums = *maybe_quorums;
 
   std::string output;
   output.append("{\n\"quorums\": [");
-  for (GET_QUORUM_STATE::quorum_for_height const &quorum : res.quorums)
+  for (auto const& quorum : quorums["quorums"])
   {
     output.append("\n");
-    output.append(epee::serialization::store_t_to_json(quorum));
+    output.append(quorum);
     output.append(",\n");
   }
   output.append("]\n}");

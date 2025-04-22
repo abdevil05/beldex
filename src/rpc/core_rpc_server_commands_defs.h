@@ -1607,8 +1607,24 @@ namespace cryptonote::rpc {
   };
 
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Accesses the list of public keys of the nodes who are participating or being tested in a quorum.
+  /// Accesses the list of public keys of the nodes who are participating or being tested in a quorum.
+  ///
+  /// Inputs:
+  ///
+  /// - \p start_height (Optional): Start height, omit both start and end height to request the latest quorum. Note that "latest" means different heights for different types of quorums as not all quorums exist at every block heights.
+  /// - \p end_height (Optional): End height, omit both start and end height to request the latest quorum
+  /// - \p quorum_type (Optional): Set value to request a specific quorum, 0 = Obligation, 1 = Checkpointing, 2 = Flash, 3 = POS, 255 = all quorums, default is all quorums. For POS quorums, requesting the blockchain height (or latest) returns the primary POS quorum responsible for the next block; for heights with blocks this returns the actual quorum, which may be a backup quorum if the primary quorum did not produce in time.
+  ///
+  /// Output values available from a public RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p quorums An array of quorums associated with the requested height. Each element is structured with the following keys:
+  ///   - \p master_node_pubkey The public key of the Master Node, in hex (json) or binary (bt).
+  ///   - \p height The height the quorums are relevant for
+  ///   - \p quorum_type The quorum type
+  ///   - \p quorum Quorum of Master Nodes. Each element is structured with the following keys:
+  ///     - \p validators List of master node public keys in the quorum. For obligations quorums these are the testing nodes; for checkpoint and Flash these are the participating nodes (there are no workers); for POS Flash quorums these are the block signers. This is hex encoded, even for bt-encoded requests.
+  ///     - \p workers Public key of the quorum workers. For obligations quorums these are the nodes being tested; for POS quorums this is the block producer. Checkpoint and Flash quorums do not populate this field. This is hex encoded, even for bt-encoded requests.
   struct GET_QUORUM_STATE : PUBLIC
   {
     static constexpr auto names() { return NAMES("get_quorum_state"); }
@@ -1616,26 +1632,17 @@ namespace cryptonote::rpc {
     static constexpr size_t MAX_COUNT = 256;
     static constexpr uint64_t HEIGHT_SENTINEL_VALUE = UINT64_MAX;
     static constexpr uint8_t ALL_QUORUMS_SENTINEL_VALUE = 255;
-    struct request
+    struct request_parameters
     {
       uint64_t start_height; // (Optional): Start height, omit both start and end height to request the latest quorum. Note that "latest" means different heights for different types of quorums as not all quorums exist at every block heights.
       uint64_t end_height;   // (Optional): End height, omit both start and end height to request the latest quorum
       uint8_t  quorum_type;  // (Optional): Set value to request a specific quorum, 0 = Obligation, 1 = Checkpointing, 2 = Flash, 3 = POS, 255 = all quorums, default is all quorums. For POS quorums, requesting the blockchain height (or latest) returns the primary POS quorum responsible for the next block; for heights with blocks this returns the actual quorum, which may be a backup quorum if the primary quorum did not produce in time.
-
-      KV_MAP_SERIALIZABLE
-    };
+    } request;
 
     struct quorum_t
     {
       std::vector<std::string> validators; // List of master node public keys in the quorum. For obligations quorums these are the testing nodes; for checkpoint and flash these are the participating nodes (there are no workers); for POS flash quorums these are the block signers.
       std::vector<std::string> workers; // Public key of the quorum workers. For obligations quorums these are the nodes being tested; for POS quorums this is the block producer. Checkpoint and Flash quorums do not populate this field.
-
-      KV_MAP_SERIALIZABLE
-
-      BEGIN_SERIALIZE() // NOTE: For store_t_to_json
-        FIELD(validators)
-        FIELD(workers)
-      END_SERIALIZE()
     };
 
     struct quorum_for_height
@@ -1643,6 +1650,7 @@ namespace cryptonote::rpc {
       uint64_t height;          // The height the quorums are relevant for
       uint8_t  quorum_type;     // The quorum type
       quorum_t quorum;          // Quorum of Master Nodes
+<<<<<<< Updated upstream
 
       KV_MAP_SERIALIZABLE
 
@@ -1660,8 +1668,12 @@ namespace cryptonote::rpc {
       // bool untrusted;                         // If the result is obtained using bootstrap mode, and therefore not trusted `true`, or otherwise `false`.
 
       KV_MAP_SERIALIZABLE
+=======
+>>>>>>> Stashed changes
     };
   };
+  inline void to_json(nlohmann::json& j, const GET_QUORUM_STATE::quorum_t& q);
+  inline void to_json(nlohmann::json& j, const GET_QUORUM_STATE::quorum_for_height& q);
 
   BELDEX_RPC_DOC_INTROSPECT
   struct GET_MASTER_NODE_REGISTRATION_CMD_RAW : RPC_COMMAND
