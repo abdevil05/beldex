@@ -66,7 +66,7 @@ void from_json(const nlohmann::json& j, block_header_response& h)
   j.at("miner_tx_hash").get_to(h.miner_tx_hash);
   j.at("tx_hashes").get_to(h.tx_hashes);
   j.at("master_node_winner").get_to(h.master_node_winner);
-}
+};
 
 KV_SERIALIZE_MAP_CODE_BEGIN(STATUS)
   KV_SERIALIZE(status)
@@ -1143,34 +1143,34 @@ KV_SERIALIZE_MAP_CODE_BEGIN(GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES::response)
 KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_CHECKPOINTS::request)
-  KV_SERIALIZE_OPT(start_height, HEIGHT_SENTINEL_VALUE)
-  KV_SERIALIZE_OPT(end_height, HEIGHT_SENTINEL_VALUE)
-  KV_SERIALIZE_OPT(count, NUM_CHECKPOINTS_TO_QUERY_BY_DEFAULT)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_CHECKPOINTS::request)
+//   KV_SERIALIZE_OPT(start_height, HEIGHT_SENTINEL_VALUE)
+//   KV_SERIALIZE_OPT(end_height, HEIGHT_SENTINEL_VALUE)
+//   KV_SERIALIZE_OPT(count, NUM_CHECKPOINTS_TO_QUERY_BY_DEFAULT)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_CHECKPOINTS::quorum_signature_serialized)
-  KV_SERIALIZE(voter_index);
-  KV_SERIALIZE(signature);
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_CHECKPOINTS::quorum_signature_serialized)
+//   KV_SERIALIZE(voter_index);
+//   KV_SERIALIZE(signature);
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_CHECKPOINTS::checkpoint_serialized)
-  KV_SERIALIZE(version);
-  KV_SERIALIZE(type);
-  KV_SERIALIZE(height);
-  KV_SERIALIZE(block_hash);
-  KV_SERIALIZE(signatures);
-  KV_SERIALIZE(prev_height);
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_CHECKPOINTS::checkpoint_serialized)
+//   KV_SERIALIZE(version);
+//   KV_SERIALIZE(type);
+//   KV_SERIALIZE(height);
+//   KV_SERIALIZE(block_hash);
+//   KV_SERIALIZE(signatures);
+//   KV_SERIALIZE(prev_height);
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_CHECKPOINTS::response)
-  KV_SERIALIZE(checkpoints)
-  KV_SERIALIZE(status)
-  KV_SERIALIZE(untrusted)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_CHECKPOINTS::response)
+//   KV_SERIALIZE(checkpoints)
+//   KV_SERIALIZE(status)
+//   KV_SERIALIZE(untrusted)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
 // KV_SERIALIZE_MAP_CODE_BEGIN(GET_MN_STATE_CHANGES::request)

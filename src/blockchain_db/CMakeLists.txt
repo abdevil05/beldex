@@ -39,6 +39,7 @@ target_link_libraries(blockchain_db
     lmdb
     filesystem
     Boost::thread
+    nlohmann_json::nlohmann_json
     extra)
 
 target_compile_definitions(blockchain_db PRIVATE

@@ -3063,45 +3063,38 @@ namespace cryptonote::rpc {
     }
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_CHECKPOINTS::response core_rpc_server::invoke(GET_CHECKPOINTS::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_CHECKPOINTS& get_checkpoints, rpc_context context)
   {
-    GET_CHECKPOINTS::response res{};
-
-    if (use_bootstrap_daemon_if_necessary<GET_CHECKPOINTS>(req, res))
-      return res;
-
     if (!context.admin)
-      check_quantity_limit(req.count, GET_CHECKPOINTS::MAX_COUNT);
+      check_quantity_limit(get_checkpoints.request.count, GET_CHECKPOINTS::MAX_COUNT);
 
-    res.status             = STATUS_OK;
+    get_checkpoints.response["status"] = STATUS_OK;
     BlockchainDB const &db = m_core.get_blockchain_storage().get_db();
 
     std::vector<checkpoint_t> checkpoints;
-    if (req.start_height == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE &&
-        req.end_height   == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE)
+    if (get_checkpoints.request.start_height == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE &&
+        get_checkpoints.request.end_height   == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE)
     {
       checkpoint_t top_checkpoint;
       if (db.get_top_checkpoint(top_checkpoint))
-        checkpoints = db.get_checkpoints_range(top_checkpoint.height, 0, req.count);
+        checkpoints = db.get_checkpoints_range(top_checkpoint.height, 0, get_checkpoints.request.count);
     }
-    else if (req.start_height == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE)
+    else if (get_checkpoints.request.start_height == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE)
     {
-      checkpoints = db.get_checkpoints_range(req.end_height, 0, req.count);
+      checkpoints = db.get_checkpoints_range(get_checkpoints.request.end_height, 0, get_checkpoints.request.count);
     }
-    else if (req.end_height == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE)
+    else if (get_checkpoints.request.end_height == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE)
     {
-      checkpoints = db.get_checkpoints_range(req.start_height, UINT64_MAX, req.count);
+      checkpoints = db.get_checkpoints_range(get_checkpoints.request.start_height, UINT64_MAX, get_checkpoints.request.count);
     }
     else
     {
-      checkpoints = db.get_checkpoints_range(req.start_height, req.end_height);
+      checkpoints = db.get_checkpoints_range(get_checkpoints.request.start_height, get_checkpoints.request.end_height);
     }
 
-    res.checkpoints.reserve(checkpoints.size());
-    for (checkpoint_t const &checkpoint : checkpoints)
-      res.checkpoints.push_back(checkpoint);
+    get_checkpoints.response["checkpoints"] = checkpoints;
 
-    return res;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_MN_STATE_CHANGES& get_mn_state_changes, rpc_context context)

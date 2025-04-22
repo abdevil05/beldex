@@ -276,58 +276,45 @@ json rpc_command_executor::invoke(
 
 bool rpc_command_executor::print_checkpoints(uint64_t start_height, uint64_t end_height, bool print_json)
 {
-  GET_CHECKPOINTS::request  req{start_height, end_height};
-  if (req.start_height == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE &&
-      req.end_height   == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE)
+  uint32_t count;
+  if (start_height == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE &&
+      end_height   == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE)
   {
-    req.count = GET_CHECKPOINTS::NUM_CHECKPOINTS_TO_QUERY_BY_DEFAULT;
+    count = GET_CHECKPOINTS::NUM_CHECKPOINTS_TO_QUERY_BY_DEFAULT;
   }
-  else if (req.start_height == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE ||
-           req.end_height   == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE)
+  else if (start_height == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE ||
+          end_height   == GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE)
   {
-    req.count = 1;
+    count = 1;
   }
   // Otherwise, neither heights are set to HEIGHT_SENTINEL_VALUE, so get all the checkpoints between start and end
 
-  GET_CHECKPOINTS::response res{};
-  if (!invoke<GET_CHECKPOINTS>(std::move(req), res, "Failed to query blockchain checkpoints"))
+  auto maybe_checkpoints = try_running([&] { return invoke<GET_CHECKPOINTS>(json{{"start_height", start_height}, {"end_height", end_height}, {"count", count}}); }, "Failed to query blockchain checkpoints");
+  if (!maybe_checkpoints)
     return false;
 
+  auto checkpoints = *maybe_checkpoints;
+
   std::string entry;
-  if (print_json) entry.append("{\n\"checkpoints\": [");
-  for (size_t i = 0; i < res.checkpoints.size(); i++)
-  {
-    GET_CHECKPOINTS::checkpoint_serialized &checkpoint = res.checkpoints[i];
-    if (print_json)
-    {
-      entry.append("\n");
-      entry.append(epee::serialization::store_t_to_json(checkpoint));
-      entry.append(",\n");
-    }
-    else
+  if (print_json)
+    entry.append(checkpoints.dump());
+  else {
+    for (size_t i = 0; i < checkpoints.size(); i++)
     {
       entry.append("[");
       entry.append(std::to_string(i));
       entry.append("]");
 
       entry.append(" Type: ");
-      entry.append(checkpoint.type);
+      entry.append(checkpoints[i]["type"]);
 
       entry.append(" Height: ");
-      entry.append(std::to_string(checkpoint.height));
+      entry.append(checkpoints[i]["height"]);
 
       entry.append(" Hash: ");
-      entry.append(checkpoint.block_hash);
+      entry.append(checkpoints[i]["block_hash"]);
       entry.append("\n");
     }
-  }
-
-  if (print_json)
-  {
-    entry.append("]\n}");
-  }
-  else
-  {
     if (entry.empty())
       entry.append("No Checkpoints");
   }

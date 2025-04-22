@@ -35,4 +35,5 @@ target_link_libraries(multisig
     ringct
     cryptonote_basic
     common
+    nlohmann_json::nlohmann_json
     extra)

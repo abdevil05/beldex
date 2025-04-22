@@ -45,6 +45,7 @@
 #include "ringct/rctTypes.h"
 #include "device/device.hpp"
 #include "txtypes.h"
+#include <nlohmann/json.hpp>
 
 namespace master_nodes
 {
@@ -64,6 +65,15 @@ namespace master_nodes
       FIELD(voter_index)
       FIELD(signature)
     END_SERIALIZE()
+  };
+
+  inline void to_json(nlohmann::json& j, const quorum_signature& s)
+  {
+    j = nlohmann::json
+    {
+      {"voter_index", s.voter_index},
+      {"signature", tools::type_to_hex(s.signature)},
+    };
   };
 };
 

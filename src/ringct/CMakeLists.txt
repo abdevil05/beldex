@@ -38,6 +38,7 @@ target_link_libraries(ringct_basic
   PUBLIC
     common
   PRIVATE
+    nlohmann_json::nlohmann_json
     extra)
 
 add_library(ringct
@@ -49,4 +50,5 @@ target_link_libraries(ringct
     cryptonote_basic
     device
   PRIVATE
+    nlohmann_json::nlohmann_json
     extra)
