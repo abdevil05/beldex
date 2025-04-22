@@ -402,7 +402,6 @@ namespace cryptonote::rpc {
   ///
   /// - \p status General RPC status string. `"OK"` means everything looks good.
   /// - \p untrusted States if the result is obtained using the bootstrap mode, and is therefore
-  ///   untrusted ('true'), or when the daemon is fully synced ('false').
   /// - \p spent_status array of status codes returned in the same order as the `key_images` input.
   ///   Each value is one of:
   ///   - \p 0 the key image is unspent
@@ -437,7 +436,6 @@ namespace cryptonote::rpc {
   ///
   /// - \p status General RPC status string. `"OK"` means everything looks good.
   /// - \p untrusted States if the result is obtained using the bootstrap mode, and is therefore
-  ///   untrusted ('true'), or when the daemon is fully synced ('false').
   /// - \p outs List of outkey information; if `as_tuple` is not set then these are dicts containing
   ///   keys:
   ///   - \p key The public key of the output.
@@ -477,7 +475,6 @@ namespace cryptonote::rpc {
   ///
   /// - \p status General RPC status string. `"OK"` means everything looks good.
   /// - \p untrusted States if the result is obtained using the bootstrap mode, and is therefore
-  ///   untrusted ('true'), or when the daemon is fully synced ('false').
   /// - \p reason String containing additional information on why a transaction failed.
   /// - \p flash_status Set to the result of submitting this transaction to the flash quorum.  1
   ///   means the quorum rejected the transaction; 2 means the quorum accepted it; 3 means there was
@@ -631,7 +628,6 @@ namespace cryptonote::rpc {
   /// - \p bns_counts BNS registration counts.
   /// - \p offline Indicates that the node is offline, if true.  Omitted for online nodes.
   /// - \p untrusted Indicates that the result was obtained using a bootstrap mode, and is therefore
-  ///   not trusted (`true`).  Omitted for non-bootstrap responses.
   /// - \p database_size Current size of Blockchain data.  Over public RPC this is rounded up to the
   ///   next-largest GB value.
   /// - \p version Current version of this daemon, as a string.  For a public node this will just be
@@ -963,7 +959,6 @@ namespace cryptonote::rpc {
   /// - \p status General RPC status string. `"OK"` means everything looks good.
   /// - \p tx_hashes List of transaction hashes,
   /// - \p untrusted States if the result is obtained using the bootstrap mode, and is therefore not
-  ///   trusted (`true`), or when the daemon is fully synced (`false`).
   struct GET_TRANSACTION_POOL_HASHES : PUBLIC, LEGACY, NO_ARGS
   {
     static constexpr auto names() { return NAMES("get_transaction_pool_hashes"); }
@@ -1016,7 +1011,6 @@ namespace cryptonote::rpc {
   ///   - \p histo_98pc See `histo` for details.
   ///   - \p histo_max See `histo` for details.
   /// - \p untrusted States if the result is obtained using the bootstrap mode, and is therefore not
-  ///   trusted (`true`), or when the daemon is fully synced (`false`).
   struct GET_TRANSACTION_POOL_STATS : PUBLIC, LEGACY, NO_ARGS
   {
     static constexpr auto names() { return NAMES("get_transaction_pool_stats"); }
@@ -1214,7 +1208,6 @@ namespace cryptonote::rpc {
   ///
   /// - \p status General RPC status string. `"OK"` means everything looks good.
   /// - \p untrusted States if the result is obtained using the bootstrap mode, and is therefore
-  ///   untrusted ('true'), or when the daemon is fully synced ('false').
   /// - \p version The major block version for the fork.
   /// - \p enabled Indicates whether the hard fork is enforced on the blockchain (that is, whether
   ///   the blockchain height is at or above the requested hardfork).
@@ -1319,23 +1312,37 @@ namespace cryptonote::rpc {
     } request;
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Get a histogram of output amounts. For all amounts (possibly filtered by parameters),
-  // gives the number of outputs on the chain for that amount. RingCT outputs counts as 0 amount.
+  /// Get a histogram of output amounts. For all amounts (possibly filtered by parameters),
+  /// gives the number of outputs on the chain for that amount. RingCT outputs counts as 0 amount.
+  ///
+  /// Inputs: 
+  ///
+  /// - \p amounts list of amounts in Atomic Units.
+  /// - \p min_count The minimum amounts you are requesting.
+  /// - \p max_count The maximum amounts you are requesting.
+  /// - \p unlocked Look for locked only.
+  /// - \p recent_cutoff
+  ///
+  /// Output values available from a public RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p histogram List of histogram entries. Each element is structured as follows:
+  ///   - \p uint64_t amount Output amount in atomic units.
+  ///   - \p uint64_t total_instances
+  ///   - \p uint64_t unlocked_instances
+  ///   - \p uint64_t recent_instances
   struct GET_OUTPUT_HISTOGRAM : PUBLIC
   {
     static constexpr auto names() { return NAMES("get_output_histogram"); }
 
-    struct request
+    struct request_parameters
     {
       std::vector<uint64_t> amounts; // list of amounts in Atomic Units.
       uint64_t min_count;            // The minimum amounts you are requesting.
       uint64_t max_count;            // The maximum amounts you are requesting.
       bool unlocked;                 // Look for locked only.
       uint64_t recent_cutoff;
-
-      KV_MAP_SERIALIZABLE
-    };
+    } request;
 
     struct entry
     {
@@ -1343,23 +1350,10 @@ namespace cryptonote::rpc {
       uint64_t total_instances;
       uint64_t unlocked_instances;
       uint64_t recent_instances;
-
-      KV_MAP_SERIALIZABLE
-
-      entry(uint64_t amount, uint64_t total_instances, uint64_t unlocked_instances, uint64_t recent_instances):
-          amount(amount), total_instances(total_instances), unlocked_instances(unlocked_instances), recent_instances(recent_instances) {}
-      entry() = default;
-    };
-
-    struct response
-    {
-      std::string status;           // General RPC error code. "OK" means everything looks good.
-      std::vector<entry> histogram; // List of histogram entries:
-      // bool untrusted;               // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
-
-      KV_MAP_SERIALIZABLE
     };
   };
+  void to_json(nlohmann::json& j, const GET_OUTPUT_HISTOGRAM::entry& c);
+  void from_json(const nlohmann::json& j, GET_OUTPUT_HISTOGRAM::entry& c);
 
   /// Get current RPC protocol version.
   ///
@@ -1370,7 +1364,6 @@ namespace cryptonote::rpc {
   /// - \p status General RPC status string. `"OK"` means everything looks good.
   /// - \p version RPC current version.
   /// - \p untrusted States if the result is obtained using the bootstrap mode, and is therefore not
-  ///   trusted (`true`), or when the daemon is fully synced
   struct GET_VERSION : PUBLIC, NO_ARGS
   {
     static constexpr auto names() { return NAMES("get_version"); }

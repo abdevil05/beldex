@@ -2034,42 +2034,49 @@ namespace cryptonote::rpc {
       : STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_OUTPUT_HISTOGRAM::response core_rpc_server::invoke(GET_OUTPUT_HISTOGRAM::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_OUTPUT_HISTOGRAM& get_output_histogram, rpc_context context)
   {
-    GET_OUTPUT_HISTOGRAM::response res{};
-
     PERF_TIMER(on_get_output_histogram);
     // if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_HISTOGRAM>(req, res))
     //   return res;
 
-    if (!context.admin && req.recent_cutoff > 0 && req.recent_cutoff < (uint64_t)time(NULL) - OUTPUT_HISTOGRAM_RECENT_CUTOFF_RESTRICTION)
+    if (!context.admin && get_output_histogram.request.recent_cutoff > 0 && get_output_histogram.request.recent_cutoff < (uint64_t)time(NULL) - OUTPUT_HISTOGRAM_RECENT_CUTOFF_RESTRICTION)
     {
-      res.status = "Recent cutoff is too old";
-      return res;
+      get_output_histogram.response["status"] = "Recent cutoff is too old";
+      return;
     }
 
     std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> histogram;
     try
     {
       auto net = nettype();
-      histogram = m_core.get_blockchain_storage().get_output_histogram(req.amounts, req.unlocked, req.recent_cutoff, req.min_count,net);
-    }
+      histogram = m_core.get_blockchain_storage().get_output_histogram(
+        get_output_histogram.request.amounts,
+        get_output_histogram.request.unlocked,
+        get_output_histogram.request.recent_cutoff,
+        get_output_histogram.request.min_count,
+        net
+        );
+  }
     catch (const std::exception &e)
     {
-      res.status = "Failed to get output histogram";
-      return res;
+      get_output_histogram.response["status"] = "Failed to get output histogram";
+      return;
     }
 
-    res.histogram.clear();
-    res.histogram.reserve(histogram.size());
-    for (const auto &i: histogram)
+    std::vector<GET_OUTPUT_HISTOGRAM::entry> response_histogram;
+    response_histogram.reserve(histogram.size());
+    for (const auto &[amount, histogram_tuple]: histogram)
     {
-      if (std::get<0>(i.second) >= req.min_count && (std::get<0>(i.second) <= req.max_count || req.max_count == 0))
-        res.histogram.push_back(GET_OUTPUT_HISTOGRAM::entry(i.first, std::get<0>(i.second), std::get<1>(i.second), std::get<2>(i.second)));
+      auto& [total_instances, unlocked_instances, recent_instances] = histogram_tuple;
+
+      if (total_instances >= get_output_histogram.request.min_count && (total_instances <= get_output_histogram.request.max_count || get_output_histogram.request.max_count == 0))
+        response_histogram.push_back(GET_OUTPUT_HISTOGRAM::entry{amount, total_instances, unlocked_instances, recent_instances});
     }
 
-    res.status = STATUS_OK;
-    return res;
+    get_output_histogram.response["histogram"] = response_histogram;
+    get_output_histogram.response["status"] = STATUS_OK;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_VERSION& version, rpc_context context)

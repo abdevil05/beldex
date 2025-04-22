@@ -1232,26 +1232,22 @@ bool rpc_command_executor::flush_txpool(std::string txid)
 
 bool rpc_command_executor::output_histogram(const std::vector<uint64_t> &amounts, uint64_t min_count, uint64_t max_count)
 {
-    GET_OUTPUT_HISTOGRAM::request req{};
-    GET_OUTPUT_HISTOGRAM::response res{};
-
-    req.amounts = amounts;
-    req.min_count = min_count;
-    req.max_count = max_count;
-    req.unlocked = false;
-    req.recent_cutoff = 0;
-
-    if (!invoke<GET_OUTPUT_HISTOGRAM>(std::move(req), res, "Failed to retrieve output histogram"))
+  auto maybe_histogram= try_running([this, &amounts, min_count, max_count]
+      { return invoke<GET_OUTPUT_HISTOGRAM>(
+          json{{"amounts", amounts},
+          {"min_count", min_count},
+          {"max_count", max_count},
+          {"unlocked", false},
+          {"recent_cutoff", 0}});
+      }, "Failed to retrieve output histogram");
+  if (!maybe_histogram)
       return false;
-
-    // std::sort(res.histogram.begin(), res.histogram.end(),
-    //     [](const auto& e1, const auto& e2)->bool { return e1.total_instances < e2.total_instances; });
-    // for (const auto &e: res.histogram)
-    // {
-    //     tools::msg_writer() << e.total_instances << "  " << cryptonote::print_money(e.amount);
-    // }
-
-    return true;
+  std::vector<GET_OUTPUT_HISTOGRAM::entry> histogram = (*maybe_histogram)["histogram"];
+  std::sort(histogram.begin(), histogram.end(),
+      [](const auto& e1, const auto& e2)->bool { return e1.total_instances < e2.total_instances; });
+  for (const auto &e: histogram)
+      tools::msg_writer() << e.total_instances << "  " << cryptonote::print_money(e.amount);
+  return true;
 }
 
 bool rpc_command_executor::print_coinbase_tx_sum(uint64_t height, uint64_t count)

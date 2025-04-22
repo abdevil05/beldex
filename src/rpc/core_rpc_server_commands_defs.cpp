@@ -98,6 +98,23 @@ void from_json(const nlohmann::json& j, GET_ALTERNATE_CHAINS::chain_info& c)
   j.at("main_chain_parent_block").get_to(c.main_chain_parent_block);
 }
 
+void to_json(nlohmann::json& j, const GET_OUTPUT_HISTOGRAM::entry& e)
+{
+  j = nlohmann::json{
+    {"amount", e.amount},
+    {"total_instances", e.total_instances},
+    {"unlocked_instances", e.unlocked_instances},
+    {"recent_instances", e.recent_instances},
+  };
+}
+void from_json(const nlohmann::json& j, GET_OUTPUT_HISTOGRAM::entry& e)
+{
+  j.at("amount").get_to(e.amount);
+  j.at("total_instances").get_to(e.total_instances);
+  j.at("unlocked_instances").get_to(e.unlocked_instances);
+  j.at("recent_instances").get_to(e.recent_instances);
+};
+
 KV_SERIALIZE_MAP_CODE_BEGIN(STATUS)
   KV_SERIALIZE(status)
 KV_SERIALIZE_MAP_CODE_END()
@@ -698,28 +715,28 @@ KV_SERIALIZE_MAP_CODE_END()
 // KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_HISTOGRAM::request)
-  KV_SERIALIZE(amounts);
-  KV_SERIALIZE(min_count);
-  KV_SERIALIZE(max_count);
-  KV_SERIALIZE(unlocked);
-  KV_SERIALIZE(recent_cutoff);
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_HISTOGRAM::request)
+//   KV_SERIALIZE(amounts);
+//   KV_SERIALIZE(min_count);
+//   KV_SERIALIZE(max_count);
+//   KV_SERIALIZE(unlocked);
+//   KV_SERIALIZE(recent_cutoff);
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_HISTOGRAM::entry)
-  KV_SERIALIZE(amount);
-  KV_SERIALIZE(total_instances);
-  KV_SERIALIZE(unlocked_instances);
-  KV_SERIALIZE(recent_instances);
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_HISTOGRAM::entry)
+//   KV_SERIALIZE(amount);
+//   KV_SERIALIZE(total_instances);
+//   KV_SERIALIZE(unlocked_instances);
+//   KV_SERIALIZE(recent_instances);
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_HISTOGRAM::response)
-  KV_SERIALIZE(status)
-  KV_SERIALIZE(histogram)
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_HISTOGRAM::response)
+//   KV_SERIALIZE(status)
+//   KV_SERIALIZE(histogram)
   // KV_SERIALIZE(untrusted)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_END()
 
 
 // KV_SERIALIZE_MAP_CODE_BEGIN(GET_VERSION::response)

@@ -528,4 +528,12 @@ namespace cryptonote::rpc {
     get_values(in, "height",        get_block.request.height);
     get_values(in, "fill_pow_hash", get_block.request.fill_pow_hash);
   }
+
+  void parse_request(GET_OUTPUT_HISTOGRAM& get_output_histogram, rpc_input in) {
+    get_values(in, "amounts", get_output_histogram.request.amounts);
+    get_values(in, "min_count", get_output_histogram.request.min_count);
+    get_values(in, "max_count", get_output_histogram.request.max_count);
+    get_values(in, "unlocked", get_output_histogram.request.unlocked);
+    get_values(in, "recent_cutoff", get_output_histogram.request.recent_cutoff);
+  }
 }
