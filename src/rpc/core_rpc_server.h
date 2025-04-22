@@ -241,6 +241,9 @@ namespace cryptonote::rpc {
     void invoke(BELNET_PING& lokinet_ping, rpc_context context);
     void invoke(STORAGE_SERVER_PING& storage_server_ping, rpc_context context);
     void invoke(PRUNE_BLOCKCHAIN& prune_blockchain, rpc_context context);
+    void invoke(TEST_TRIGGER_P2P_RESYNC& test_trigger_p2p_resync, rpc_context context);
+    void invoke(TEST_TRIGGER_UPTIME_PROOF& test_trigger_uptime_proof, rpc_context context);
+    void invoke(REPORT_PEER_STATUS& report_peer_status, rpc_context context);
 
     // Deprecated Monero NIH binary endpoints:
     GET_ALT_BLOCKS_HASHES_BIN::response         invoke(GET_ALT_BLOCKS_HASHES_BIN::request&& req, rpc_context context);
@@ -275,9 +278,6 @@ namespace cryptonote::rpc {
     GET_STAKING_REQUIREMENT::response                   invoke(GET_STAKING_REQUIREMENT::request&& req, rpc_context context);
     GET_CHECKPOINTS::response                           invoke(GET_CHECKPOINTS::request&& req, rpc_context context);
     GET_MN_STATE_CHANGES::response                      invoke(GET_MN_STATE_CHANGES::request&& req, rpc_context context);
-    REPORT_PEER_STATUS::response                        invoke(REPORT_PEER_STATUS::request&& req, rpc_context context);
-    TEST_TRIGGER_P2P_RESYNC::response                   invoke(TEST_TRIGGER_P2P_RESYNC::request&& req, rpc_context context);
-    TEST_TRIGGER_UPTIME_PROOF::response                 invoke(TEST_TRIGGER_UPTIME_PROOF::request&& req, rpc_context context);
     BNS_NAMES_TO_OWNERS::response                       invoke(BNS_NAMES_TO_OWNERS::request&& req, rpc_context context);
     BNS_LOOKUP::response                                invoke(BNS_LOOKUP::request&& req, rpc_context context);
     BNS_OWNERS_TO_NAMES::response                       invoke(BNS_OWNERS_TO_NAMES::request&& req, rpc_context context);

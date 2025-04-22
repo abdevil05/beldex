@@ -2215,41 +2215,55 @@ namespace cryptonote::rpc {
   };
 
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Reports master node peer status (success/fail) from belnet and storage server.
+  /// Reports service node peer status (success/fail) from belnet and storage server.
+  ///
+  /// Inputs:
+  /// 
+  /// - /p type test type; currently supported are: "storage" and "belnet" for storage server and belnet tests, respectively.
+  /// - /p pubkey service node pubkey
+  /// - /p passed whether node is passing the test
+  ///
+  /// Output values available from a public RPC endpoint:
+  ///
+  /// - /p status Generic RPC error code. "OK" is the success value.
   struct REPORT_PEER_STATUS : RPC_COMMAND
   {
     // TODO: remove the `report_peer_storage_server_status` once we require a storage server version
     // that stops using the old name.
     static constexpr auto names() { return NAMES("report_peer_status", "report_peer_storage_server_status"); }
 
-    struct request
+    struct request_parameters
     {
       std::string type; // test type; currently supported are: "storage" and "belnet" for storage server and belnet tests, respectively.
       std::string pubkey; // master node pubkey
       bool passed; // whether the node is passing the test
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response : STATUS {};
+    } request;
   };
 
-  // Deliberately undocumented; this RPC call is really only useful for testing purposes to reset
-  // the resync idle timer (which normally fires every 60s) for the test suite.
-  struct TEST_TRIGGER_P2P_RESYNC : RPC_COMMAND
+  /// Deliberately undocumented; this RPC call is really only useful for testing purposes to reset
+  /// the resync idle timer (which normally fires every 60s) for the test suite.
+  ///
+  /// Inputs: none
+  ///
+  /// Output values available from a private/admin RPC endpoint:
+  ///
+  /// - /p status Generic RPC error code. "OK" is the success value.
+  struct TEST_TRIGGER_P2P_RESYNC : NO_ARGS
   {
     static constexpr auto names() { return NAMES("test_trigger_p2p_resync"); }
-
-    struct request : EMPTY {};
-    struct response : STATUS {};
   };
 
-  struct TEST_TRIGGER_UPTIME_PROOF : RPC_COMMAND
+  /// Deliberately undocumented; this RPC call is really only useful for testing purposes to
+  /// force send an uptime proof. NOT available on mainnet
+  ///
+  /// Inputs: none
+  ///
+  /// Output values available from a private/admin RPC endpoint:
+  ///
+  /// - /p status Generic RPC error code. "OK" is the success value.
+  struct TEST_TRIGGER_UPTIME_PROOF : NO_ARGS
   {
     static constexpr auto names() { return NAMES("test_trigger_uptime_proof"); }
-    struct request : EMPTY {};
-    struct response : STATUS {};
   };
 
   BELDEX_RPC_DOC_INTROSPECT
@@ -2481,8 +2495,11 @@ namespace cryptonote::rpc {
     IN_PEERS,
     POP_BLOCKS,
     STORAGE_SERVER_PING,
-    BELNET_PING
-    PRUNE_BLOCKCHAIN
+    BELNET_PING,
+    PRUNE_BLOCKCHAIN,
+    TEST_TRIGGER_P2P_RESYNC,
+    TEST_TRIGGER_UPTIME_PROOF,
+    REPORT_PEER_STATUS
   >;
   using FIXME_old_rpc_types = tools::type_list<
     GET_NET_STATS,
@@ -2507,9 +2524,6 @@ namespace cryptonote::rpc {
     GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES,
     GET_CHECKPOINTS,
     GET_MN_STATE_CHANGES,
-    REPORT_PEER_STATUS,
-    TEST_TRIGGER_P2P_RESYNC,
-    TEST_TRIGGER_UPTIME_PROOF,
     BNS_NAMES_TO_OWNERS,
     BNS_LOOKUP,
     BNS_OWNERS_TO_NAMES,

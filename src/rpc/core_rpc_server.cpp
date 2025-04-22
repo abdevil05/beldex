@@ -3195,47 +3195,39 @@ namespace cryptonote::rpc {
     return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  REPORT_PEER_STATUS::response core_rpc_server::invoke(REPORT_PEER_STATUS::request&& req, rpc_context context)
+  void core_rpc_server::invoke(REPORT_PEER_STATUS& report_peer_status, rpc_context context)
   {
-    REPORT_PEER_STATUS::response res{};
-
     crypto::public_key pubkey;
-    if (!tools::hex_to_type(req.pubkey, pubkey)) {
-      MERROR("Could not parse public key: " << req.pubkey);
+    if (!tools::hex_to_type(report_peer_status.request.pubkey, pubkey)) {
+      MERROR("Could not parse public key: " << report_peer_status.request.pubkey);
       throw rpc_error{ERROR_WRONG_PARAM, "Could not parse public key"};
     }
 
     bool success = false;
-    if (req.type == "belnet")
-      success = m_core.get_master_node_list().set_belnet_peer_reachable(pubkey, req.passed);
-    else if (req.type == "storage" || req.type == "reachability" /* TODO: old name, can be removed once SS no longer uses it */)
-      success = m_core.get_master_node_list().set_storage_server_peer_reachable(pubkey, req.passed);
+    if (report_peer_status.request.type == "belnet")
+      success = m_core.get_master_node_list().set_belnet_peer_reachable(pubkey, report_peer_status.request.passed);
+    else if (report_peer_status.request.type == "storage" || report_peer_status.request.type == "reachability" /* TODO: old name, can be removed once SS no longer uses it */)
+      success = m_core.get_master_node_list().set_storage_server_peer_reachable(pubkey, report_peer_status.request.passed);
     else
       throw rpc_error{ERROR_WRONG_PARAM, "Unknown status type"};
     if (!success)
       throw rpc_error{ERROR_WRONG_PARAM, "Pubkey not found"};
 
-    res.status = STATUS_OK;
-    return res;
+    report_peer_status.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  TEST_TRIGGER_P2P_RESYNC::response core_rpc_server::invoke(TEST_TRIGGER_P2P_RESYNC::request&& req, rpc_context context)
+  void core_rpc_server::invoke(TEST_TRIGGER_P2P_RESYNC& test_trigger_p2p_resync, rpc_context context)
   {
-    TEST_TRIGGER_P2P_RESYNC::response res{};
-
     m_p2p.reset_peer_handshake_timer();
-    res.status = STATUS_OK;
-    return res;
+    test_trigger_p2p_resync.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  TEST_TRIGGER_UPTIME_PROOF::response core_rpc_server::invoke(TEST_TRIGGER_UPTIME_PROOF::request&& req, rpc_context context)
+  void core_rpc_server::invoke(TEST_TRIGGER_UPTIME_PROOF& test_trigger_uptime_proof, rpc_context context)
   {
     if (m_core.get_nettype() != cryptonote::network_type::MAINNET)
       m_core.submit_uptime_proof();
 
-    TEST_TRIGGER_UPTIME_PROOF::response res{};
-    res.status = STATUS_OK;
-    return res;
+    test_trigger_uptime_proof.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   BNS_NAMES_TO_OWNERS::response core_rpc_server::invoke(BNS_NAMES_TO_OWNERS::request&& req, rpc_context context)

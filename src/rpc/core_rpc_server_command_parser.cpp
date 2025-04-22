@@ -464,4 +464,10 @@ namespace cryptonote::rpc {
   void parse_request(PRUNE_BLOCKCHAIN& prune_blockchain, rpc_input in){
     get_values(in, "check", prune_blockchain.request.check);
   }
+
+  void parse_request(REPORT_PEER_STATUS& report_peer_status, rpc_input in) {
+    get_values(in, "type", report_peer_status.request.type);
+    get_values(in, "pubkey", report_peer_status.request.pubkey);
+    get_values(in, "passed", report_peer_status.request.passed);
+  }
 }
