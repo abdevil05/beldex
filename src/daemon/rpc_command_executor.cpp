@@ -1932,11 +1932,7 @@ bool rpc_command_executor::print_mn(const std::vector<std::string> &args, bool s
 
 bool rpc_command_executor::flush_cache(bool bad_txs, bool bad_blocks)
 {
-  FLUSH_CACHE::response res{};
-  FLUSH_CACHE::request req{};
-  req.bad_txs    = bad_txs;
-  req.bad_blocks = bad_blocks;
-  if (!invoke<FLUSH_CACHE>(std::move(req), res, "Failed to flush TX cache"))
+  if (!invoke<FLUSH_CACHE>(json{{"bad_txs", bad_txs}, {"bad_blocks", bad_blocks}}, "Failed to flush TX cache"))
       return false;
   return true;
 }

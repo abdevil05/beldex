@@ -245,6 +245,7 @@ namespace cryptonote::rpc {
     void invoke(TEST_TRIGGER_UPTIME_PROOF& test_trigger_uptime_proof, rpc_context context);
     void invoke(REPORT_PEER_STATUS& report_peer_status, rpc_context context);
     void invoke(GET_MN_STATE_CHANGES& get_mn_state_changes, rpc_context context);
+    void invoke(FLUSH_CACHE& flush_cache, rpc_context context);
 
     // Deprecated Monero NIH binary endpoints:
     GET_ALT_BLOCKS_HASHES_BIN::response         invoke(GET_ALT_BLOCKS_HASHES_BIN::request&& req, rpc_context context);
@@ -282,7 +283,6 @@ namespace cryptonote::rpc {
     BNS_LOOKUP::response                                invoke(BNS_LOOKUP::request&& req, rpc_context context);
     BNS_OWNERS_TO_NAMES::response                       invoke(BNS_OWNERS_TO_NAMES::request&& req, rpc_context context);
     BNS_VALUE_DECRYPT::response                         invoke(BNS_VALUE_DECRYPT::request&& req, rpc_context context);
-    FLUSH_CACHE::response                               invoke(FLUSH_CACHE::request&& req, rpc_context);
 
 #if defined(BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
     void on_relay_uptime_and_votes()

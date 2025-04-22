@@ -2243,7 +2243,7 @@ namespace cryptonote::rpc {
   ///
   /// Inputs: none
   ///
-  /// Output values available from a private/admin RPC endpoint:
+  /// Output values available from a public RPC endpoint:
   ///
   /// - /p status Generic RPC error code. "OK" is the success value.
   struct TEST_TRIGGER_P2P_RESYNC : NO_ARGS
@@ -2256,7 +2256,7 @@ namespace cryptonote::rpc {
   ///
   /// Inputs: none
   ///
-  /// Output values available from a private/admin RPC endpoint:
+  /// Output values available from a public RPC endpoint:
   ///
   /// - /p status Generic RPC error code. "OK" is the success value.
   struct TEST_TRIGGER_UPTIME_PROOF : NO_ARGS
@@ -2437,17 +2437,24 @@ namespace cryptonote::rpc {
     };
   };
   
-  BELDEX_RPC_DOC_INTROSPECT
-  // Clear TXs from the daemon cache, currently only the cache storing TX hashes that were previously verified bad by the daemon.
+  /// Clear TXs from the daemon cache, currently only the cache storing TX hashes that were previously verified bad by the daemon.
+  ///
+  /// Inputs:
+  ///
+  /// - /p bad_txs Clear the cache storing TXs that failed verification.
+  /// - /p bad_blocks Clear the cache storing blocks that failed verfication.
+  ///
+  /// Output values available from a public RPC endpoint:
+  ///
+  /// - /p status Generic RPC error code. "OK" is the success value.
   struct FLUSH_CACHE : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("flush_cache"); }
-    struct request
+    struct request_parameter
     {
       bool bad_txs; // Clear the cache storing TXs that failed verification.
       bool bad_blocks; // Clear the cache storing blocks that failed verfication.
-      KV_MAP_SERIALIZABLE;
-    };
+    } request;
 
     struct response : STATUS { };
   };
@@ -2497,8 +2504,9 @@ namespace cryptonote::rpc {
     PRUNE_BLOCKCHAIN,
     TEST_TRIGGER_P2P_RESYNC,
     TEST_TRIGGER_UPTIME_PROOF,
-    REPORT_PEER_STATUS
-    GET_MN_STATE_CHANGES
+    REPORT_PEER_STATUS,
+    GET_MN_STATE_CHANGES,
+    FLUSH_CACHE
   >;
   using FIXME_old_rpc_types = tools::type_list<
     GET_NET_STATS,
@@ -2525,8 +2533,7 @@ namespace cryptonote::rpc {
     BNS_NAMES_TO_OWNERS,
     BNS_LOOKUP,
     BNS_OWNERS_TO_NAMES,
-    BNS_VALUE_DECRYPT,
-    FLUSH_CACHE
+    BNS_VALUE_DECRYPT
   >;
 
 } // namespace cryptonote::rpc

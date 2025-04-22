@@ -474,5 +474,9 @@ namespace cryptonote::rpc {
   void parse_request(GET_MN_STATE_CHANGES& get_mn_state_changes, rpc_input in) {
     get_values(in, "start_height", get_mn_state_changes.request.start_height);
     get_values(in, "end_height", get_mn_state_changes.request.end_height);
+
+  void parse_request(FLUSH_CACHE& flush_cache, rpc_input in) {
+    get_values(in, "bad_txs", flush_cache.request.bad_txs);
+    get_values(in, "bad_blocks", flush_cache.request.bad_blocks);
   }
 }

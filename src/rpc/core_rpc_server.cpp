@@ -2636,15 +2636,13 @@ namespace cryptonote::rpc {
     return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  FLUSH_CACHE::response core_rpc_server::invoke(FLUSH_CACHE::request&& req, rpc_context context)
+  void core_rpc_server::invoke(FLUSH_CACHE& flush_cache, rpc_context context)
   {
-    FLUSH_CACHE::response res{};
-    if (req.bad_txs)
+    if (flush_cache.request.bad_txs)
       m_core.flush_bad_txs_cache();
-    if (req.bad_blocks)
+    if (flush_cache.request.bad_blocks)
       m_core.flush_invalid_blocks();
-    res.status = STATUS_OK;
-    return res;
+    flush_cache.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   GET_MASTER_NODE_REGISTRATION_CMD_RAW::response core_rpc_server::invoke(GET_MASTER_NODE_REGISTRATION_CMD_RAW::request&& req, rpc_context context)
