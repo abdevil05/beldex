@@ -523,4 +523,9 @@ namespace cryptonote::rpc {
     get_values(in, "get_tx_hashes", get_block_header_by_height.request.get_tx_hashes);
   }
 
+  void parse_request(GET_BLOCK& get_block, rpc_input in) {
+    get_values(in, "hash",          get_block.request.hash);
+    get_values(in, "height",        get_block.request.height);
+    get_values(in, "fill_pow_hash", get_block.request.fill_pow_hash);
+  }
 }

@@ -258,6 +258,7 @@ namespace cryptonote::rpc {
     void invoke(RELAY_TX& relay_tx, rpc_context context);
     void invoke(GET_BLOCK_HEADERS_RANGE& get_block_headers_range, rpc_context context);
     void invoke(GET_BLOCK_HEADER_BY_HEIGHT& get_block_header_by_height, rpc_context context);
+    void invoke(GET_BLOCK& get_block, rpc_context context);
 
     // Deprecated Monero NIH binary endpoints:
     GET_ALT_BLOCKS_HASHES_BIN::response         invoke(GET_ALT_BLOCKS_HASHES_BIN::request&& req, rpc_context context);
@@ -269,11 +270,10 @@ namespace cryptonote::rpc {
     GET_OUTPUTS_BIN::response                   invoke(GET_OUTPUTS_BIN::request&& req, rpc_context context);
     GET_TRANSACTION_POOL_HASHES_BIN::response   invoke(GET_TRANSACTION_POOL_HASHES_BIN::request&& req, rpc_context context);
     GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN::response invoke(GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN::request&& req, rpc_context context);
+    GET_OUTPUT_DISTRIBUTION::response           invoke(GET_OUTPUT_DISTRIBUTION::request&& req, rpc_context context, bool binary = false);
 
     // FIXME: unconverted JSON RPC endpoints:
     SET_BOOTSTRAP_DAEMON::response                      invoke(SET_BOOTSTRAP_DAEMON::request&& req, rpc_context context);
-    GET_OUTPUT_DISTRIBUTION::response                   invoke(GET_OUTPUT_DISTRIBUTION::request&& req, rpc_context context, bool binary = false);
-    GET_BLOCK::response                                 invoke(GET_BLOCK::request&& req, rpc_context context);
     GET_OUTPUT_HISTOGRAM::response                      invoke(GET_OUTPUT_HISTOGRAM::request&& req, rpc_context context);
     GET_ALTERNATE_CHAINS::response                      invoke(GET_ALTERNATE_CHAINS::request&& req, rpc_context context);
     GET_QUORUM_STATE::response                          invoke(GET_QUORUM_STATE::request&& req, rpc_context context);

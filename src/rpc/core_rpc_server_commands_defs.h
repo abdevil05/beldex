@@ -838,33 +838,32 @@ namespace cryptonote::rpc {
     } request;
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Full block information can be retrieved by either block height or hash, like with the above block header calls.
-  // For full block information, both lookups use the same method, but with different input parameters.
+  /// Full block information can be retrieved by either block height or hash, like with the above block header calls.
+  /// For full block information, both lookups use the same method, but with different input parameters.
+  ///
+  /// Inputs:
+  ///
+  /// - \p hash The block's hash.
+  /// - \p height A block height to look up; returned in `block_header`
+  /// - \p fill_pow_hash Tell the daemon if it should fill out pow_hash field.
+  ///
+  /// Output values available from a public RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p block_header Block header information for the requested `height` block
+  /// - \p tx_hashes List of hashes of non-coinbase transactions in the block. If there are no other transactions, this will be an empty list.
+  /// - \p blob Hexadecimal blob of block information.
+  /// - \p json JSON formatted block details.
   struct GET_BLOCK : PUBLIC
   {
     static constexpr auto names() { return NAMES("get_block", "getblock"); }
 
-    struct request
+    struct request_parameters
     {
       std::string hash;   // The block's hash.
       uint64_t height;    // The block's height.
       bool fill_pow_hash; // Tell the daemon if it should fill out pow_hash field.
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response
-    {
-      std::string status;                 // General RPC error code. "OK" means everything looks good.
-      block_header_response block_header; // A structure containing block header information. See get_last_block_header.
-      std::vector<std::string> tx_hashes; // List of hashes of non-coinbase transactions in the block. If there are no other transactions, this will be an empty list.
-      std::string blob;                   // Hexadecimal blob of block information.
-      std::string json;                   // JSON formatted block details.
-      bool untrusted;                     // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
-
-      KV_MAP_SERIALIZABLE
-    };
+    } request;
   };
 
   /// Get the list of current network peers known to this node.

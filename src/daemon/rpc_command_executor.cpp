@@ -788,31 +788,40 @@ bool rpc_command_executor::print_height() {
   return false;
 }
 
-bool rpc_command_executor::print_block(GET_BLOCK::request&& req, bool include_hex) {
-  req.fill_pow_hash = true;
-  GET_BLOCK::response res{};
-
-  if (!invoke<GET_BLOCK>(std::move(req), res, "Block retrieval failed"))
-    return false;
+bool rpc_command_executor::print_block_by_hash(const crypto::hash& block_hash, bool include_hex) {  req.fill_pow_hash = true;
+  auto maybe_block = try_running([this, &block_hash] {
+    return invoke<GET_BLOCK>(json{
+      {"hash", tools::type_to_hex(block_hash)},
+      {"fill_pow_hash", true}});
+    }, "Block retrieval failed");
+    if (!maybe_block)
+      return false;
+    auto& block = *maybe_block;
 
   if (include_hex)
-    tools::success_msg_writer() << res.blob << std::endl;
-  print_block_header(res.block_header);
-  tools::success_msg_writer() << res.json << "\n";
+    tools::success_msg_writer() << block["blob"] << std::endl;
+  print_block_header(block["block_header"]);
+  tools::success_msg_writer() << block["json"] << "\n";
 
   return true;
 }
 
-bool rpc_command_executor::print_block_by_hash(const crypto::hash& block_hash, bool include_hex) {
-  GET_BLOCK::request req{};
-  req.hash = tools::type_to_hex(block_hash);
-  return print_block(std::move(req), include_hex);
-}
-
 bool rpc_command_executor::print_block_by_height(uint64_t height, bool include_hex) {
-  GET_BLOCK::request req{};
-  req.height = height;
-  return print_block(std::move(req), include_hex);
+  auto maybe_block = try_running([this, height] {
+    return invoke<GET_BLOCK>(json{
+      {"height", height},
+      {"fill_pow_hash", true}});
+  }, "Block retrieval failed");
+  if (!maybe_block)
+    return false;
+  auto& block = *maybe_block;
+
+  if (include_hex)
+    tools::success_msg_writer() << block["blob"] << std::endl;
+  print_block_header(block["block_header"]);
+  tools::success_msg_writer() << block["json"] << "\n";
+
+  return true;
 }
 
 bool rpc_command_executor::print_transaction(const crypto::hash& transaction_hash,

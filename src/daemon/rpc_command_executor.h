@@ -175,9 +175,6 @@ public:
 
   bool print_height();
 
-private:
-  bool print_block(cryptonote::rpc::GET_BLOCK::request&& req, bool include_hdex);
-
 public:
   bool print_block_by_hash(const crypto::hash& block_hash, bool include_hex);
 

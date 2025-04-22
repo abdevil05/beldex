@@ -1793,45 +1793,43 @@ namespace cryptonote::rpc {
     return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_BLOCK::response core_rpc_server::invoke(GET_BLOCK::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_BLOCK& get_block, rpc_context context)
   {
-    GET_BLOCK::response res{};
-
     PERF_TIMER(on_get_block);
-    if (use_bootstrap_daemon_if_necessary<GET_BLOCK>(req, res))
-      return res;
-
     block blk;
     uint64_t block_height;
     bool orphan = false;
     crypto::hash block_hash;
-    if (!req.hash.empty())
+    if (!get_block.request.hash.empty())
     {
-      if (!tools::hex_to_type(req.hash, block_hash))
-        throw rpc_error{ERROR_WRONG_PARAM, "Failed to parse hex representation of block hash. Hex = " + req.hash + '.'};
+      if (!tools::hex_to_type(get_block.request.hash, block_hash))
+        throw rpc_error{ERROR_WRONG_PARAM, "Failed to parse hex representation of block hash. Hex = " + get_block.request.hash + '.'};
       if (!m_core.get_block_by_hash(block_hash, blk, &orphan))
-        throw rpc_error{ERROR_INTERNAL, "Internal error: can't get block by hash. Hash = " + req.hash + '.'};
+        throw rpc_error{ERROR_INTERNAL, "Internal error: can't get block by hash. Hash = " + get_block.request.hash + '.'};
       if (blk.miner_tx.vin.size() != 1 || !std::holds_alternative<txin_gen>(blk.miner_tx.vin.front()))
         throw rpc_error{ERROR_INTERNAL, "Internal error: coinbase transaction in the block has the wrong type"};
       block_height = var::get<txin_gen>(blk.miner_tx.vin.front()).height;
     }
     else
     {
-      if (auto curr_height = m_core.get_current_blockchain_height(); req.height >= curr_height)
-        throw rpc_error{ERROR_TOO_BIG_HEIGHT, std::string("Requested block height: ") + std::to_string(req.height) + " greater than current top block height: " +  std::to_string(curr_height - 1)};
-      if (!m_core.get_block_by_height(req.height, blk))
-        throw rpc_error{ERROR_INTERNAL, "Internal error: can't get block by height. Height = " + std::to_string(req.height) + '.'};
+      if (auto curr_height = m_core.get_current_blockchain_height(); get_block.request.height >= curr_height)
+        throw rpc_error{ERROR_TOO_BIG_HEIGHT, std::string("Requested block height: ") + std::to_string(get_block.request.height) + " greater than current top block height: " +  std::to_string(curr_height - 1)};
+      if (!m_core.get_block_by_height(get_block.request.height, blk))
+        throw rpc_error{ERROR_INTERNAL, "Internal error: can't get block by height. Height = " + std::to_string(get_block.request.height) + '.'};
       block_hash = get_block_hash(blk);
-      block_height = req.height;
+      block_height = get_block.request.height;
     }
-    fill_block_header_response(blk, orphan, block_height, block_hash, res.block_header, req.fill_pow_hash && context.admin, false /*tx hashes*/);
-    res.tx_hashes.reserve(blk.tx_hashes.size());
-    for (const auto& tx_hash : blk.tx_hashes)
-        res.tx_hashes.push_back(tools::type_to_hex(tx_hash));
-    res.blob = oxenc::to_hex(t_serializable_object_to_blob(blk));
-    res.json = obj_to_json_str(blk);
-    res.status = STATUS_OK;
-    return res;
+    block_header_response header;
+    fill_block_header_response(blk, orphan, block_height, block_hash, header, get_block.request.fill_pow_hash && context.admin, false /*tx hashes*/);
+    get_block.response["block_header"] = header;
+    std::vector<std::string> tx_hashes;
+    tx_hashes.reserve(blk.tx_hashes.size());
+    std::transform(blk.tx_hashes.begin(), blk.tx_hashes.end(), tx_hashes.begin(), [](const auto& x) { return tools::type_to_hex(x); });
+    get_block.response["tx_hashes"] = tx_hashes;
+    get_block.response["blob"] = oxenmq::to_hex(t_serializable_object_to_blob(blk));
+    get_block.response["json"] = obj_to_json_str(blk);
+    get_block.response["status"] = STATUS_OK;
+    return;
   }
 
   static json json_connection_info(const connection_info& ci) {
