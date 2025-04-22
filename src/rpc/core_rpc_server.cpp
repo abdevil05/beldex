@@ -40,7 +40,7 @@
 #include <oxenc/endian.h>
 #include "epee/net/network_throttle.hpp"
 #include "common/string_util.h"
-#include "bootstrap_daemon.h"
+// #include "bootstrap_daemon.h"
 #include "crypto/crypto.h"
 #include "cryptonote_basic/hardfork.h"
 #include "cryptonote_basic/tx_extra.h"
@@ -202,17 +202,17 @@ namespace cryptonote::rpc {
 
   const std::unordered_map<std::string, std::shared_ptr<const rpc_command>> rpc_commands = register_rpc_commands(rpc::core_rpc_types{}, rpc::core_rpc_binary_types{});
 
-  const command_line::arg_descriptor<std::string> core_rpc_server::arg_bootstrap_daemon_address = {
-      "bootstrap-daemon-address"
-    , "URL of a 'bootstrap' remote daemon that the connected wallets can use while this daemon is still not fully synced."
-    , ""
-    };
+  // const command_line::arg_descriptor<std::string> core_rpc_server::arg_bootstrap_daemon_address = {
+  //     "bootstrap-daemon-address"
+  //   , "URL of a 'bootstrap' remote daemon that the connected wallets can use while this daemon is still not fully synced."
+  //   , ""
+  //   };
 
-  const command_line::arg_descriptor<std::string> core_rpc_server::arg_bootstrap_daemon_login = {
-      "bootstrap-daemon-login"
-    , "Specify username:password for the bootstrap daemon login"
-    , ""
-    };
+  // const command_line::arg_descriptor<std::string> core_rpc_server::arg_bootstrap_daemon_login = {
+  //     "bootstrap-daemon-login"
+  //   , "Specify username:password for the bootstrap daemon login"
+  //   , ""
+  //   };
 
   std::optional<std::string_view> rpc_request::body_view() const {
     if (auto* sv = std::get_if<std::string_view>(&body)) return *sv;
@@ -223,8 +223,8 @@ namespace cryptonote::rpc {
   //-----------------------------------------------------------------------------------
   void core_rpc_server::init_options(boost::program_options::options_description& desc, boost::program_options::options_description& hidden)
   {
-    command_line::add_arg(desc, arg_bootstrap_daemon_address);
-    command_line::add_arg(desc, arg_bootstrap_daemon_login);
+    // command_line::add_arg(desc, arg_bootstrap_daemon_address);
+    // command_line::add_arg(desc, arg_bootstrap_daemon_login);
     cryptonote::rpc_args::init_options(desc, hidden);
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -234,47 +234,48 @@ namespace cryptonote::rpc {
     )
     : m_core(cr)
     , m_p2p(p2p)
-    , m_should_use_bootstrap_daemon(false)
-    , m_was_bootstrap_ever_used(false)
+  //   , m_should_use_bootstrap_daemon(false)
+  //   , m_was_bootstrap_ever_used(false)
+  // {}
+  // bool core_rpc_server::set_bootstrap_daemon(const std::string &address, std::string_view username_password)
+  // {
+  //   std::string_view username, password;
+  //   if (auto loc = username_password.find(':'); loc != std::string::npos)
+  //   {
+  //     username = username_password.substr(0, loc);
+  //     password = username_password.substr(loc + 1);
+  //   }
+  //   return set_bootstrap_daemon(address, username, password);
+  // }
+  // //------------------------------------------------------------------------------------------------------------------------------
+  // bool core_rpc_server::set_bootstrap_daemon(const std::string &address, std::string_view username, std::string_view password)
+  // {
+  //   std::optional<std::pair<std::string_view, std::string_view>> credentials;
+  //   if (!username.empty() || !password.empty())
+  //     credentials.emplace(username, password);
+
+  //   std::unique_lock lock{m_bootstrap_daemon_mutex};
+
+  //   if (address.empty())
+  //     m_bootstrap_daemon.reset();
+  //   else
+  //     m_bootstrap_daemon = std::make_unique<bootstrap_daemon>(address, credentials);
+
+  //   m_should_use_bootstrap_daemon = (bool) m_bootstrap_daemon;
+
+  //   return true;
+  // }
+  // //------------------------------------------------------------------------------------------------------------------------------
+  // void core_rpc_server::init(const boost::program_options::variables_map& vm)
+  // {
+  //   if (!set_bootstrap_daemon(command_line::get_arg(vm, arg_bootstrap_daemon_address),
+  //                             command_line::get_arg(vm, arg_bootstrap_daemon_login)))
+  //   {
+  //     MERROR("Failed to parse bootstrap daemon address");
+  //   }
+  //   m_was_bootstrap_ever_used = false;
+  // }
   {}
-  bool core_rpc_server::set_bootstrap_daemon(const std::string &address, std::string_view username_password)
-  {
-    std::string_view username, password;
-    if (auto loc = username_password.find(':'); loc != std::string::npos)
-    {
-      username = username_password.substr(0, loc);
-      password = username_password.substr(loc + 1);
-    }
-    return set_bootstrap_daemon(address, username, password);
-  }
-  //------------------------------------------------------------------------------------------------------------------------------
-  bool core_rpc_server::set_bootstrap_daemon(const std::string &address, std::string_view username, std::string_view password)
-  {
-    std::optional<std::pair<std::string_view, std::string_view>> credentials;
-    if (!username.empty() || !password.empty())
-      credentials.emplace(username, password);
-
-    std::unique_lock lock{m_bootstrap_daemon_mutex};
-
-    if (address.empty())
-      m_bootstrap_daemon.reset();
-    else
-      m_bootstrap_daemon = std::make_unique<bootstrap_daemon>(address, credentials);
-
-    m_should_use_bootstrap_daemon = (bool) m_bootstrap_daemon;
-
-    return true;
-  }
-  //------------------------------------------------------------------------------------------------------------------------------
-  void core_rpc_server::init(const boost::program_options::variables_map& vm)
-  {
-    if (!set_bootstrap_daemon(command_line::get_arg(vm, arg_bootstrap_daemon_address),
-                              command_line::get_arg(vm, arg_bootstrap_daemon_login)))
-    {
-      MERROR("Failed to parse bootstrap daemon address");
-    }
-    m_was_bootstrap_ever_used = false;
-  }
   //------------------------------------------------------------------------------------------------------------------------------
   bool core_rpc_server::check_core_ready()
   {
@@ -412,11 +413,11 @@ namespace cryptonote::rpc {
       }
       info.response["free_space"] = m_core.get_free_space();
 
-      if (std::shared_lock lock{m_bootstrap_daemon_mutex}; m_bootstrap_daemon) {
-        info.response["bootstrap_daemon_address"] = m_bootstrap_daemon->address();
-        info.response["height_without_bootstrap"] = height;
-        info.response["was_bootstrap_ever_used"] = m_was_bootstrap_ever_used;
-      }
+      // if (std::shared_lock lock{m_bootstrap_daemon_mutex}; m_bootstrap_daemon) {
+      //   info.response["bootstrap_daemon_address"] = m_bootstrap_daemon->address();
+      //   info.response["height_without_bootstrap"] = height;
+      //   info.response["was_bootstrap_ever_used"] = m_was_bootstrap_ever_used;
+      // }
     }
 
     if (m_core.offline())
@@ -466,8 +467,8 @@ namespace cryptonote::rpc {
     GET_BLOCKS_BIN::response res{};
 
     PERF_TIMER(on_get_blocks);
-    if (use_bootstrap_daemon_if_necessary<GET_BLOCKS_BIN>(req, res))
-      return res;
+    // if (use_bootstrap_daemon_if_necessary<GET_BLOCKS_BIN>(req, res))
+    //   return res;
 
     std::vector<std::pair<std::pair<cryptonote::blobdata, crypto::hash>, std::vector<std::pair<crypto::hash, cryptonote::blobdata> > > > bs;
 
@@ -521,8 +522,8 @@ namespace cryptonote::rpc {
     GET_ALT_BLOCKS_HASHES_BIN::response res{};
 
     PERF_TIMER(on_get_alt_blocks_hashes);
-    if (use_bootstrap_daemon_if_necessary<GET_ALT_BLOCKS_HASHES_BIN>(req, res))
-      return res;
+    // if (use_bootstrap_daemon_if_necessary<GET_ALT_BLOCKS_HASHES_BIN>(req, res))
+    //   return res;
 
     std::vector<block> blks;
 
@@ -549,8 +550,8 @@ namespace cryptonote::rpc {
     GET_BLOCKS_BY_HEIGHT_BIN::response res{};
 
     PERF_TIMER(on_get_blocks_by_height);
-    if (use_bootstrap_daemon_if_necessary<GET_BLOCKS_BY_HEIGHT_BIN>(req, res))
-      return res;
+    // if (use_bootstrap_daemon_if_necessary<GET_BLOCKS_BY_HEIGHT_BIN>(req, res))
+    //   return res;
 
     res.status = "Failed";
     res.blocks.clear();
@@ -583,8 +584,8 @@ namespace cryptonote::rpc {
     GET_HASHES_BIN::response res{};
 
     PERF_TIMER(on_get_hashes);
-    if (use_bootstrap_daemon_if_necessary<GET_HASHES_BIN>(req, res))
-      return res;
+    // if (use_bootstrap_daemon_if_necessary<GET_HASHES_BIN>(req, res))
+    //   return res;
 
     res.start_height = req.start_height;
     if(!m_core.get_blockchain_storage().find_blockchain_supplement(req.block_ids, res.m_block_ids, res.start_height, res.current_height, false))
@@ -602,8 +603,8 @@ namespace cryptonote::rpc {
     GET_OUTPUTS_BIN::response res{};
 
     PERF_TIMER(on_get_outs_bin);
-    if (use_bootstrap_daemon_if_necessary<GET_OUTPUTS_BIN>(req, res))
-      return res;
+    // if (use_bootstrap_daemon_if_necessary<GET_OUTPUTS_BIN>(req, res))
+    //   return res;
 
     if (!context.admin && req.outputs.size() > GET_OUTPUTS_BIN::MAX_COUNT)
       res.status = "Too many outs requested";
@@ -675,8 +676,8 @@ namespace cryptonote::rpc {
     GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN::response res{};
 
     PERF_TIMER(on_get_indexes);
-    if (use_bootstrap_daemon_if_necessary<GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN>(req, res))
-      return res;
+    // if (use_bootstrap_daemon_if_necessary<GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN>(req, res))
+    //   return res;
 
     bool r = m_core.get_tx_outputs_gindexs(req.txid, res.o_indexes);
     if(!r)
@@ -1411,8 +1412,8 @@ namespace cryptonote::rpc {
     GET_TRANSACTION_POOL_HASHES_BIN::response res{};
 
     PERF_TIMER(on_get_transaction_pool_hashes);
-    if (use_bootstrap_daemon_if_necessary<GET_TRANSACTION_POOL_HASHES_BIN>(req, res))
-      return res;
+    // if (use_bootstrap_daemon_if_necessary<GET_TRANSACTION_POOL_HASHES_BIN>(req, res))
+    //   return res;
 
     std::vector<crypto::hash> tx_pool_hashes;
     m_core.get_pool().get_transaction_hashes(tx_pool_hashes, context.admin, req.flashed_txs_only);
@@ -1466,18 +1467,18 @@ namespace cryptonote::rpc {
     stats.response["status"] = STATUS_OK;
 
   }
-  //------------------------------------------------------------------------------------------------------------------------------
-  SET_BOOTSTRAP_DAEMON::response core_rpc_server::invoke(SET_BOOTSTRAP_DAEMON::request&& req, rpc_context context)
-  {
-    PERF_TIMER(on_set_bootstrap_daemon);
+  // //------------------------------------------------------------------------------------------------------------------------------
+  // SET_BOOTSTRAP_DAEMON::response core_rpc_server::invoke(SET_BOOTSTRAP_DAEMON::request&& req, rpc_context context)
+  // {
+  //   PERF_TIMER(on_set_bootstrap_daemon);
 
-    if (!set_bootstrap_daemon(req.address, req.username, req.password))
-      throw rpc_error{ERROR_WRONG_PARAM, "Failed to set bootstrap daemon to address = " + req.address};
+  //   if (!set_bootstrap_daemon(req.address, req.username, req.password))
+  //     throw rpc_error{ERROR_WRONG_PARAM, "Failed to set bootstrap daemon to address = " + req.address};
 
-    SET_BOOTSTRAP_DAEMON::response res{};
-    res.status = STATUS_OK;
-    return res;
-  }
+  //   SET_BOOTSTRAP_DAEMON::response res{};
+  //   res.status = STATUS_OK;
+  //   return res;
+  // }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(STOP_DAEMON& stop_daemon, rpc_context context)
   {
@@ -1496,8 +1497,8 @@ namespace cryptonote::rpc {
 
     PERF_TIMER(on_get_output_blacklist_bin);
 
-    if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_BLACKLIST_BIN>(req, res))
-      return res;
+    // if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_BLACKLIST_BIN>(req, res))
+    //   return res;
 
     try
     {
@@ -1516,14 +1517,14 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_BLOCK_COUNT& getblockcount, rpc_context context)
   {
     PERF_TIMER(on_getblockcount);
-    {
-      std::shared_lock lock{m_bootstrap_daemon_mutex};
-      if (m_should_use_bootstrap_daemon)
-      {
-        getblockcount.response["status"] = "This command is unsupported for bootstrap daemon";
-        return;
-      }
-    }
+    // {
+    //   std::shared_lock lock{m_bootstrap_daemon_mutex};
+    //   if (m_should_use_bootstrap_daemon)
+    //   {
+    //     getblockcount.response["status"] = "This command is unsupported for bootstrap daemon";
+    //     return;
+    //   }
+    // }
     getblockcount.response["count"] = m_core.get_current_blockchain_height();
     getblockcount.response["status"] = STATUS_OK;
   }
@@ -1531,14 +1532,14 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_BLOCK_HASH& getblockhash, rpc_context context)
   {
     PERF_TIMER(on_getblockhash);
-    {
-      std::shared_lock lock{m_bootstrap_daemon_mutex};
-      if (m_should_use_bootstrap_daemon)
-      {
-        getblockhash.response["status"] = "This command is unsupported for bootstrap daemon";
-        return;
-      }
-    }
+    // {
+    //   std::shared_lock lock{m_bootstrap_daemon_mutex};
+    //   if (m_should_use_bootstrap_daemon)
+    //   {
+    //     getblockhash.response["status"] = "This command is unsupported for bootstrap daemon";
+    //     return;
+    //   }
+    // }
 
     auto curr_height = m_core.get_current_blockchain_height();
     for (auto h : getblockhash.request.heights) {
@@ -1593,7 +1594,7 @@ namespace cryptonote::rpc {
         response.tx_hashes.push_back(tools::type_to_hex(tx_hash));
     }
   }
-
+/*
   /// All the common (untemplated) code for use_bootstrap_daemon_if_necessary.  Returns a held lock
   /// if we need to bootstrap, an unheld one if we don't.
   std::unique_lock<std::shared_mutex> core_rpc_server::should_bootstrap_lock()
@@ -1670,7 +1671,7 @@ namespace cryptonote::rpc {
     m_was_bootstrap_ever_used = true;
     res.untrusted = true;
     return true;
-  }
+  }*/
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_LAST_BLOCK_HEADER& get_last_block_header, rpc_context context)
   {
@@ -2038,8 +2039,8 @@ namespace cryptonote::rpc {
     GET_OUTPUT_HISTOGRAM::response res{};
 
     PERF_TIMER(on_get_output_histogram);
-    if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_HISTOGRAM>(req, res))
-      return res;
+    // if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_HISTOGRAM>(req, res))
+    //   return res;
 
     if (!context.admin && req.recent_cutoff > 0 && req.recent_cutoff < (uint64_t)time(NULL) - OUTPUT_HISTOGRAM_RECENT_CUTOFF_RESTRICTION)
     {
@@ -2419,8 +2420,8 @@ namespace cryptonote::rpc {
     GET_OUTPUT_DISTRIBUTION::response res{};
 
     PERF_TIMER(on_get_output_distribution);
-    if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_DISTRIBUTION>(req, res))
-      return res;
+    // if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_DISTRIBUTION>(req, res))
+    //   return res;
 
     try
     {
@@ -2466,8 +2467,8 @@ namespace cryptonote::rpc {
       return res;
     }
 
-    if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_DISTRIBUTION_BIN>(req, res))
-      return res;
+    // if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_DISTRIBUTION_BIN>(req, res))
+    //   return res;
 
     return invoke(std::move(static_cast<GET_OUTPUT_DISTRIBUTION::request&>(req)), context, true);
   }

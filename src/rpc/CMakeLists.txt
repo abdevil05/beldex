@@ -40,7 +40,7 @@ add_library(rpc_server_base
   )
 
 add_library(rpc
-  bootstrap_daemon.cpp
+  # bootstrap_daemon.cpp
   core_rpc_server.cpp
   )
 

@@ -1097,23 +1097,23 @@ namespace cryptonote::rpc {
     } request;
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Set the bootstrap daemon to use for data on the blockchain whilst syncing the chain.
-  struct SET_BOOTSTRAP_DAEMON : RPC_COMMAND
-  {
-    static constexpr auto names() { return NAMES("set_bootstrap_daemon"); }
-    struct request
-    {
+  // BELDEX_RPC_DOC_INTROSPECT
+  // // Set the bootstrap daemon to use for data on the blockchain whilst syncing the chain.
+  // struct SET_BOOTSTRAP_DAEMON : RPC_COMMAND
+  // {
+  //   static constexpr auto names() { return NAMES("set_bootstrap_daemon"); }
+  //   struct request
+  //   {
 
-      std::string address;
-      std::string username;
-      std::string password;
+  //     std::string address;
+  //     std::string username;
+  //     std::string password;
 
-      KV_MAP_SERIALIZABLE
-    };
+  //     KV_MAP_SERIALIZABLE
+  //   };
 
-    struct response : STATUS {};
-  };
+  //   struct response : STATUS {};
+  // };
 
   //-----------------------------------------------
   /// Stop the daemon.
@@ -1355,7 +1355,7 @@ namespace cryptonote::rpc {
     {
       std::string status;           // General RPC error code. "OK" means everything looks good.
       std::vector<entry> histogram; // List of histogram entries:
-      bool untrusted;               // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
+      // bool untrusted;               // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
 
       KV_MAP_SERIALIZABLE
     };
@@ -1555,7 +1555,7 @@ namespace cryptonote::rpc {
     {
       std::string status;                      // General RPC error code. "OK" means everything looks good.
       std::vector<distribution> distributions; //
-      bool untrusted;                          // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
+      // bool untrusted;                          // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
 
       KV_MAP_SERIALIZABLE
     };
@@ -1657,7 +1657,7 @@ namespace cryptonote::rpc {
     {
       std::string status;                     // Generic RPC error code. "OK" is the success value.
       std::vector<quorum_for_height> quorums; // An array of quorums associated with the requested height
-      bool untrusted;                         // If the result is obtained using bootstrap mode, and therefore not trusted `true`, or otherwise `false`.
+      // bool untrusted;                         // If the result is obtained using bootstrap mode, and therefore not trusted `true`, or otherwise `false`.
 
       KV_MAP_SERIALIZABLE
     };
@@ -2452,7 +2452,7 @@ namespace cryptonote::rpc {
     GET_BLOCK_HEADER_BY_HEIGHT,
     GET_BLOCK,
     GET_BLOCK_HEADERS_RANGE,
-    SET_BOOTSTRAP_DAEMON,
+    // SET_BOOTSTRAP_DAEMON,
     GETBANS,
     SETBANS,
     GET_OUTPUT_HISTOGRAM,

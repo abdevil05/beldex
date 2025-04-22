@@ -507,7 +507,7 @@ bool rpc_command_executor::show_status() {
 
   uint64_t height = info["height"].get<uint64_t>();
   uint64_t net_height = std::max(info["target_height"].get<uint64_t>(), height);
-  std::string bootstrap_msg;
+  // std::string bootstrap_msg;
 
   std::ostringstream str;
   str << "Height: " << height;
@@ -521,16 +521,16 @@ bool rpc_command_executor::show_status() {
   if (ires.height < net_height)
     str << ", syncing";
 
-  if (info.value("was_bootstrap_ever_used", false))
-  {
-    str << ", bootstrap " << info["bootstrap_daemon_address"].get<std::string_view>();
-    if (info.value("untrusted", false)){
-      auto hwb = info["height_without_bootstrap"].get<uint64_t>();
-      str << fmt::format(", local height: {} ({:.1f}%)", hwb, get_sync_percentage(hwb, net_height));
-    }
-    else
-      str << " was used";
-  }
+  // if (info.value("was_bootstrap_ever_used", false))
+  // {
+  //   str << ", bootstrap " << info["bootstrap_daemon_address"].get<std::string_view>();
+  //   if (info.value("untrusted", false)){
+  //     auto hwb = info["height_without_bootstrap"].get<uint64_t>();
+  //     str << fmt::format(", local height: {} ({:.1f}%)", hwb, get_sync_percentage(hwb, net_height));
+  //   }
+  //   else
+  //     str << " was used";
+  // }
 
   auto hf_version = hfinfo["version"].get<uint8_t>();
   if (hf_version < cryptonote::feature::POS && !has_mining_info)
@@ -1243,12 +1243,12 @@ bool rpc_command_executor::output_histogram(const std::vector<uint64_t> &amounts
     if (!invoke<GET_OUTPUT_HISTOGRAM>(std::move(req), res, "Failed to retrieve output histogram"))
       return false;
 
-    std::sort(res.histogram.begin(), res.histogram.end(),
-        [](const auto& e1, const auto& e2)->bool { return e1.total_instances < e2.total_instances; });
-    for (const auto &e: res.histogram)
-    {
-        tools::msg_writer() << e.total_instances << "  " << cryptonote::print_money(e.amount);
-    }
+    // std::sort(res.histogram.begin(), res.histogram.end(),
+    //     [](const auto& e1, const auto& e2)->bool { return e1.total_instances < e2.total_instances; });
+    // for (const auto &e: res.histogram)
+    // {
+    //     tools::msg_writer() << e.total_instances << "  " << cryptonote::print_money(e.amount);
+    // }
 
     return true;
 }
@@ -2536,25 +2536,25 @@ bool rpc_command_executor::check_blockchain_pruning()
     return true;
 }
 
-bool rpc_command_executor::set_bootstrap_daemon(
-  const std::string &address,
-  const std::string &username,
-  const std::string &password)
-{
-    SET_BOOTSTRAP_DAEMON::request req{};
-    req.address = address;
-    req.username = username;
-    req.password = password;
+// bool rpc_command_executor::set_bootstrap_daemon(
+//   const std::string &address,
+//   const std::string &username,
+//   const std::string &password)
+// {
+//     SET_BOOTSTRAP_DAEMON::request req{};
+//     req.address = address;
+//     req.username = username;
+//     req.password = password;
 
-    SET_BOOTSTRAP_DAEMON::response res{};
-    if (!invoke<SET_BOOTSTRAP_DAEMON>(std::move(req), res, "Failed to set bootstrap daemon to: " + address))
-        return false;
+//     SET_BOOTSTRAP_DAEMON::response res{};
+//     if (!invoke<SET_BOOTSTRAP_DAEMON>(std::move(req), res, "Failed to set bootstrap daemon to: " + address))
+//         return false;
 
-    tools::success_msg_writer()
-      << "Successfully set bootstrap daemon address to "
-      << (!req.address.empty() ? req.address : "none");
-    return true;
-}
+//     tools::success_msg_writer()
+//       << "Successfully set bootstrap daemon address to "
+//       << (!req.address.empty() ? req.address : "none");
+//     return true;
+// }
 
 bool rpc_command_executor::version()
 {
