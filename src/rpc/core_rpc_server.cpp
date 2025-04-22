@@ -1732,18 +1732,16 @@ namespace cryptonote::rpc {
     return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_BLOCK_HEADERS_RANGE::response core_rpc_server::invoke(GET_BLOCK_HEADERS_RANGE::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_BLOCK_HEADERS_RANGE& get_block_headers_range, rpc_context context)
   {
-    GET_BLOCK_HEADERS_RANGE::response res{};
-
     PERF_TIMER(on_get_block_headers_range);
-    if (use_bootstrap_daemon_if_necessary<GET_BLOCK_HEADERS_RANGE>(req, res))
-      return res;
-
     const uint64_t bc_height = m_core.get_current_blockchain_height();
-    if (req.start_height >= bc_height || req.end_height >= bc_height || req.start_height > req.end_height)
+    uint64_t start_height = get_block_headers_range.request.start_height;
+    uint64_t end_height = get_block_headers_range.request.end_height;
+    if (start_height >= bc_height || end_height >= bc_height || start_height > end_height)
       throw rpc_error{ERROR_TOO_BIG_HEIGHT, "Invalid start/end heights."};
-    for (uint64_t h = req.start_height; h <= req.end_height; ++h)
+    std::vector<block_header_response> headers;
+    for (uint64_t h = start_height; h <= end_height; ++h)
     {
       block blk;
       bool have_block = m_core.get_block_by_height(h, blk);
@@ -1755,11 +1753,12 @@ namespace cryptonote::rpc {
       uint64_t block_height = var::get<txin_gen>(blk.miner_tx.vin.front()).height;
       if (block_height != h)
         throw rpc_error{ERROR_INTERNAL, "Internal error: coinbase transaction in the block has the wrong height"};
-      res.headers.push_back(block_header_response());
-      fill_block_header_response(blk, false, block_height, get_block_hash(blk), res.headers.back(), req.fill_pow_hash && context.admin, req.get_tx_hashes);
+      headers.push_back(block_header_response());
+      fill_block_header_response(blk, false, block_height, get_block_hash(blk), headers.back(), get_block_headers_range.request.fill_pow_hash && context.admin, get_block_headers_range.request.get_tx_hashes);
     }
-    res.status = STATUS_OK;
-    return res;
+    get_block_headers_range.response["headers"] = headers;
+    get_block_headers_range.response["status"] = STATUS_OK;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_BLOCK_HEADER_BY_HEIGHT& get_block_header_by_height, rpc_context context)

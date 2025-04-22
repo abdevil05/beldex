@@ -690,9 +690,6 @@ bool rpc_command_executor::print_net_stats()
 }
 
 bool rpc_command_executor::print_blockchain_info(int64_t start_block_index, uint64_t end_block_index) {
-  GET_BLOCK_HEADERS_RANGE::request req{};
-  GET_BLOCK_HEADERS_RANGE::response res{};
-
   // negative: relative to the end
   if (start_block_index < 0)
   {
@@ -711,15 +708,13 @@ bool rpc_command_executor::print_blockchain_info(int64_t start_block_index, uint
     end_block_index += start_block_index - 1;
   }
 
-  req.start_height = start_block_index;
-  req.end_height = end_block_index;
-  req.fill_pow_hash = false;
-
-  if (!invoke<GET_BLOCK_HEADERS_RANGE>(std::move(req), res, "Failed to retrieve block headers"))
+  auto maybe_block_headers = try_running([this, start_block_index, end_block_index] { return invoke<GET_BLOCK_HEADERS_RANGE>(json{{"start_height", start_block_index},{"end_height", end_block_index}, {"fill_pow_hash", false}}); }, "Failed to retrieve block headers");
+  if (!maybe_block_headers)
     return false;
+  auto& block_headers = *maybe_block_headers;
 
   bool first = true;
-  for (auto & header : res.headers)
+  for (auto & header : block_headers["headers"])
   {
     if (first)
       first = false;
@@ -727,11 +722,11 @@ bool rpc_command_executor::print_blockchain_info(int64_t start_block_index, uint
       tools::msg_writer() << "\n";
 
     tools::msg_writer()
-      << "height: " << header.height << ", timestamp: " << header.timestamp << " (" << tools::get_human_readable_timestamp(header.timestamp) << ")"
-      << ", size: " << header.block_size << ", weight: " << header.block_weight << " (long term " << header.long_term_weight << "), transactions: " << header.num_txes
-      << "\nmajor version: " << (unsigned)header.major_version << ", minor version: " << (unsigned)header.minor_version
-      << "\nblock id: " << header.hash << ", previous block id: " << header.prev_hash
-      << "\ndifficulty: " << header.difficulty << ", nonce " << header.nonce << ", reward " << cryptonote::print_money(header.reward) << "\n";
+      << "height: " << header["height"] << ", timestamp: " << header["timestamp"] << " (" << tools::get_human_readable_timestamp(header["timestamp"].get<uint64_t>()) << ")"
+      << ", size: " << header["block_size"] << ", weight: " << header["block_weight"] << " (long term " << header["long_term_weight"] << "), transactions: " << header["num_txes"]
+      << "\nmajor version: " << header["major_version"] << ", minor version: " << header["minor_version"]
+      << "\nblock id: " << header["hash"] << ", previous block id: " << header["prev_hash"]
+      << "\ndifficulty: " << header["difficulty"] << ", nonce " << header["nonce"] << ", reward " << cryptonote::print_money(header["reward"].get<uint64_t>()) << "\n";
   }
 
   return true;
@@ -1380,14 +1375,10 @@ bool rpc_command_executor::print_blockchain_dynamic_stats(uint64_t nblocks)
     if (nblocks > height)
       nblocks = height;
 
-    GET_BLOCK_HEADERS_RANGE::request bhreq{};
-    GET_BLOCK_HEADERS_RANGE::response bhres{};
-
-    bhreq.start_height = height - nblocks;
-    bhreq.end_height = height - 1;
-    bhreq.fill_pow_hash = false;
-    if (!invoke<GET_BLOCK_HEADERS_RANGE>(std::move(bhreq), bhres, "Failed to retrieve block headers"))
+    auto maybe_block_headers = try_running([this, height, nblocks] { return invoke<GET_BLOCK_HEADERS_RANGE>(json{{"start_height", height - nblocks},{"end_height", height - 1}, {"fill_pow_hash", false}}); }, "Failed to retrieve block headers");
+    if (!maybe_block_headers)
       return false;
+    auto& block_headers = *maybe_block_headers;
 
     double avgdiff = 0;
     double avgnumtxes = 0;
@@ -1396,16 +1387,16 @@ bool rpc_command_executor::print_blockchain_dynamic_stats(uint64_t nblocks)
     weights.reserve(nblocks);
     uint64_t earliest = std::numeric_limits<uint64_t>::max(), latest = 0;
     std::map<unsigned, std::pair<unsigned, unsigned>> versions; // version -> {majorcount, minorcount}
-    for (const auto &bhr: bhres.headers)
+    for (const auto &bhr: block_headers["headers"])
     {
-      avgdiff += bhr.difficulty;
-      avgnumtxes += bhr.num_txes;
-      avgreward += bhr.reward;
-      weights.push_back(bhr.block_weight);
-      versions[bhr.major_version].first++;
-      versions[bhr.minor_version].second++;
-      earliest = std::min(earliest, bhr.timestamp);
-      latest = std::max(latest, bhr.timestamp);
+      avgdiff += bhr["difficulty"].get<double>();
+      avgnumtxes += bhr["num_txes"].get<double>();
+      avgreward += bhr["reward"].get<double>();
+      weights.push_back(bhr["block_weight"].get<uint64_t>());
+      versions[bhr["major_version"]].first++;
+      versions[bhr["minor_version"]].second++;
+      earliest = std::min(earliest, bhr["timestamp"].get<uint64_t>());
+      latest = std::max(latest, bhr["timestamp"].get<uint64_t>());
     }
     avgdiff /= nblocks;
     avgnumtxes /= nblocks;

@@ -254,6 +254,7 @@ namespace cryptonote::rpc {
     void invoke(GET_MASTER_KEYS& get_master_keys, rpc_context context);
     void invoke(GET_MASTER_PRIVKEYS& get_master_privkeys, rpc_context context);
     void invoke(GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES& get_master_node_blacklisted_key_images, rpc_context context);
+    void invoke(GET_BLOCK_HEADERS_RANGE& get_block_headers_range, rpc_context context);
     void invoke(GET_BLOCK_HEADER_BY_HEIGHT& get_block_header_by_height, rpc_context context);
 
     // Deprecated Monero NIH binary endpoints:
@@ -270,7 +271,11 @@ namespace cryptonote::rpc {
     // FIXME: unconverted JSON RPC endpoints:
     SET_BOOTSTRAP_DAEMON::response                      invoke(SET_BOOTSTRAP_DAEMON::request&& req, rpc_context context);
     GET_OUTPUT_DISTRIBUTION::response                   invoke(GET_OUTPUT_DISTRIBUTION::request&& req, rpc_context context, bool binary = false);
+<<<<<<< Updated upstream
     GET_BLOCK_HEADERS_RANGE::response                   invoke(GET_BLOCK_HEADERS_RANGE::request&& req, rpc_context context);
+=======
+    GET_BLOCK_HEADER_BY_HEIGHT::response                invoke(GET_BLOCK_HEADER_BY_HEIGHT::request&& req, rpc_context context);
+>>>>>>> Stashed changes
     GET_BLOCK::response                                 invoke(GET_BLOCK::request&& req, rpc_context context);
     GET_OUTPUT_HISTOGRAM::response                      invoke(GET_OUTPUT_HISTOGRAM::request&& req, rpc_context context);
     GET_ALTERNATE_CHAINS::response                      invoke(GET_ALTERNATE_CHAINS::request&& req, rpc_context context);
