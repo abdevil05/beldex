@@ -1911,11 +1911,12 @@ bool rpc_command_executor::print_mn_status(std::vector<std::string> args)
 
 bool rpc_command_executor::print_sr(uint64_t height)
 {
-  GET_STAKING_REQUIREMENT::response res{};
-  if (!invoke<GET_STAKING_REQUIREMENT>({height}, res, "Failed to retrieve staking requirements"))
+  auto maybe_staking_requirement = try_running([this, height] { return invoke<GET_STAKING_REQUIREMENT>(json{{"height", height}}); }, "Failed to retrieve staking requirements");
+  if (!maybe_staking_requirement)
     return false;
-
-  tools::success_msg_writer() << "Staking Requirement: " << cryptonote::print_money(res.staking_requirement);
+  
+  auto& staking_requirement = *maybe_staking_requirement;
+  tools::success_msg_writer() << "Staking Requirement: " << cryptonote::print_money(staking_requirement["staking_requirement"]);
   return true;
 }
 
@@ -1926,7 +1927,7 @@ bool rpc_command_executor::pop_blocks(uint64_t num_blocks)
     return false;
   auto& pop_blocks = *maybe_pop_blocks;
 
-  tools::success_msg_writer() << "new height: " << pop_blocks["height"].get<std::string_view>();
+  tools::success_msg_writer() << "new height: " << pop_blocks["height"];
   return true;
 }
 

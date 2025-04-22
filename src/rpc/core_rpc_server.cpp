@@ -3024,16 +3024,14 @@ namespace cryptonote::rpc {
         [this](bool significant) { if (significant) m_core.reset_proof_interval(); });
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_STAKING_REQUIREMENT::response core_rpc_server::invoke(GET_STAKING_REQUIREMENT::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_STAKING_REQUIREMENT& get_staking_requirement, rpc_context context)
   {
-    GET_STAKING_REQUIREMENT::response res{};
-
     PERF_TIMER(on_get_staking_requirement);
-    res.height = req.height > 0 ? req.height : m_core.get_current_blockchain_height();
+    get_staking_requirement.response["height"] = get_staking_requirement.request.height > 0 ? get_staking_requirement.request.height : m_core.get_current_blockchain_height();
 
-    res.staking_requirement = master_nodes::get_staking_requirement(res.height);
-    res.status = STATUS_OK;
-    return res;
+    get_staking_requirement.response["staking_requirement"] = service_nodes::get_staking_requirement(nettype(), get_staking_requirement.request.height);
+    get_staking_requirement.response["status"] = STATUS_OK;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   static void check_quantity_limit(size_t count, size_t max, char const *container_name = nullptr)

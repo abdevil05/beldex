@@ -499,6 +499,10 @@ namespace cryptonote::rpc {
     get_values(in, "ban", set_bans.request.ban);
   }
 
+  void parse_request(GET_STAKING_REQUIREMENT& get_staking_requirement, rpc_input in) {
+    get_values(in, "height", get_staking_requirement.request.height);
+  }
+
   void parse_request(GET_BLOCK_HEADERS_RANGE& get_block_headers_range, rpc_input in) {
     get_values(in, "start_height", get_block_headers_range.request.start_height);
     get_values(in, "end_height", get_block_headers_range.request.end_height);

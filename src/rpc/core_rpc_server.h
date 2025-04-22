@@ -251,6 +251,7 @@ namespace cryptonote::rpc {
     void invoke(GETBANS& get_bans, rpc_context context);
     void invoke(SETBANS& set_bans, rpc_context context);
     void invoke(GET_CHECKPOINTS& get_checkpoints, rpc_context context);
+    void invoke(GET_STAKING_REQUIREMENT& get_staking_requirement, rpc_context context);
     void invoke(GET_MASTER_KEYS& get_master_keys, rpc_context context);
     void invoke(GET_MASTER_PRIVKEYS& get_master_privkeys, rpc_context context);
     void invoke(GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES& get_master_node_blacklisted_key_images, rpc_context context);
@@ -283,7 +284,6 @@ namespace cryptonote::rpc {
     GET_QUORUM_STATE::response                          invoke(GET_QUORUM_STATE::request&& req, rpc_context context);
     GET_MASTER_NODE_REGISTRATION_CMD_RAW::response     invoke(GET_MASTER_NODE_REGISTRATION_CMD_RAW::request&& req, rpc_context context);
     GET_MASTER_NODE_REGISTRATION_CMD::response         invoke(GET_MASTER_NODE_REGISTRATION_CMD::request&& req, rpc_context context);
-    GET_STAKING_REQUIREMENT::response                   invoke(GET_STAKING_REQUIREMENT::request&& req, rpc_context context);
     BNS_NAMES_TO_OWNERS::response                       invoke(BNS_NAMES_TO_OWNERS::request&& req, rpc_context context);
     BNS_LOOKUP::response                                invoke(BNS_LOOKUP::request&& req, rpc_context context);
     BNS_OWNERS_TO_NAMES::response                       invoke(BNS_OWNERS_TO_NAMES::request&& req, rpc_context context);
