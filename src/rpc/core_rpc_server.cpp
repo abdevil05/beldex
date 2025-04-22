@@ -2982,8 +2982,8 @@ namespace cryptonote::rpc {
     // after the ping had expired).  `Success` is a callback that is invoked with a single boolean
     // argument: true if this ping should trigger an immediate proof send (i.e. first ping after
     // startup or after a ping expiry), false for an ordinary ping.
-    template <typename RPC, typename Success>
-    auto handle_ping(
+    template <typename Success>
+    std::string handle_ping(
             core& core,
             std::array<uint16_t, 3> cur_version,
             std::array<uint16_t, 3> required,
@@ -2994,14 +2994,14 @@ namespace cryptonote::rpc {
             Success success)
     {
       std::string our_pubkey_ed25519 = tools::type_to_hex(core.get_master_keys().pub_ed25519);
-      typename RPC::response res{};
+      std::string status{};
       if (cur_version < required) {
-        res.status = fmt::format("Outdated {}. Current: {}.{}.{}, Required: {}.{}.{}",name, cur_version[0], cur_version[1], cur_version[2], required[0], required[1], required[2]);
-        MERROR(res.status);
+        status = fmt::format("Outdated {}. Current: {}.{}.{}, Required: {}.{}.{}",name, cur_version[0], cur_version[1], cur_version[2], required[0], required[1], required[2]);
+        MERROR(status);
       } else if (!pubkey_ed25519.empty() && !(pubkey_ed25519.find_first_not_of('0') == std::string_view::npos) // TODO: once belnet & ss are always sending this we can remove this empty bypass
           && (pubkey_ed25519 != our_pubkey_ed25519)) {
-        res.status = fmt::format("Invalid {} pubkey: expected {}, received {}", name, our_pubkey_ed25519, pubkey_ed25519);
-        MERROR(res.status);
+        status = fmt::format("Invalid {} pubkey: expected {}, received {}", name, our_pubkey_ed25519, pubkey_ed25519);
+        MERROR(status);
       } else {
         auto now = std::time(nullptr);
         auto old = update.exchange(now);
@@ -3011,34 +3011,34 @@ namespace cryptonote::rpc {
         else
           MDEBUG(fmt::format("Accepted ping from {} {}.{}.{}", name, cur_version[0], cur_version[1], cur_version[2]));
         success(significant);
-        res.status = STATUS_OK;
+        status = STATUS_OK;
       }
       return res;
     }
   }
 
   //------------------------------------------------------------------------------------------------------------------------------
-  STORAGE_SERVER_PING::response core_rpc_server::invoke(STORAGE_SERVER_PING::request&& req, rpc_context context)
+  void core_rpc_server::invoke(STORAGE_SERVER_PING& storage_server_ping, rpc_context context)
   {
-    m_core.ss_version = req.version;
-    return handle_ping<STORAGE_SERVER_PING>(m_core,
-      req.version, master_nodes::MIN_STORAGE_SERVER_VERSION,
-      req.pubkey_ed25519,
+    m_core.ss_version = storage_server_ping.request.version;
+    storage_server_ping.response["status"] = handle_ping(m_core,
+      storage_server_ping.request.version, master_nodes::MIN_STORAGE_SERVER_VERSION,
+      storage_server_ping.request.pubkey_ed25519,
       "Storage Server", m_core.m_last_storage_server_ping, m_core.get_net_config().UPTIME_PROOF_FREQUENCY,
-      [this, &req](bool significant) {
-        m_core.m_storage_https_port = req.https_port;
-        m_core.m_storage_omq_port = req.omq_port;
+      [this, &storage_server_ping](bool significant) {
+        m_core.m_storage_https_port = storage_server_ping.request.https_port;
+        m_core.m_storage_omq_port = storage_server_ping.request.omq_port;
         if (significant)
           m_core.reset_proof_interval();
       });
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  BELNET_PING::response core_rpc_server::invoke(BELNET_PING::request&& req, rpc_context context)
+  void core_rpc_server::invoke(BELNET_PING& belnet_ping, rpc_context context)
   {
-    m_core.belnet_version = req.version;
-    return handle_ping<BELNET_PING>(m_core,
-        req.version, master_nodes::MIN_BELNET_VERSION,
-        req.pubkey_ed25519,
+    m_core.belnet_version = belnet_ping.request.version;
+    belnet_ping.response["status"] = handle_ping(m_core,
+      belnet_ping.request.version, master_nodes::MIN_BELNET_VERSION,
+      belnet_ping.request.pubkey_ed25519,
         "Belnet", m_core.m_last_belnet_ping, m_core.get_net_config().UPTIME_PROOF_FREQUENCY,
         [this](bool significant) { if (significant) m_core.reset_proof_interval(); });
   }

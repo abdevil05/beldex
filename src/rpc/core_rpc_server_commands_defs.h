@@ -1995,36 +1995,57 @@ namespace cryptonote::rpc {
     static constexpr auto names() { return NAMES("get_master_node_status"); }
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
+  /// Endpoint to receive an uptime ping from the connected storage server. This is used
+  /// to record whether the storage server is ready before the service node starts
+  /// sending uptime proofs. This is usually called internally from the storage server
+  /// and this endpoint is mostly available for testing purposes.
+  ///
+  /// Inputs:
+  ///
+  /// - \p version Storage server version
+  /// - \p https_port Storage server https port to include in uptime proofs.
+  /// - \p omq_port Storage server oxenmq port to include in uptime proofs.
+  /// - \p pubkey_ed25519 Master node Ed25519 pubkey for verifying that storage server is using the right one
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// - \p status generic RPC error code; "OK" means the request was successful.
   struct STORAGE_SERVER_PING : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("storage_server_ping"); }
 
-    struct request
+    struct request_parameters
     {
       std::array<uint16_t, 3> version; // Storage server version
       uint16_t https_port; // Storage server https port to include in uptime proofs
       uint16_t omq_port; // Storage Server oxenmq port to include in uptime proofs
       std::string pubkey_ed25519; // Master node Ed25519 pubkey for verifying that storage server is using the right one
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response : STATUS {};
+    } request;
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
+  /// Endpoint to receive an uptime ping from the connected belnet server. This is used 
+  /// to record whether belnet is ready before the service node starts sending uptime proofs.
+  /// This is usually called internally from belnet and this endpoint is mostly
+  /// available for testing purposes.
+  ///
+  /// Inputs:
+  ///
+  /// - \p version Belnet version
+  /// - \p pubkey_ed25519 // Master node Ed25519 pubkey for verifying that belnet is using the right one
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// - \p status generic RPC error code; "OK" means the request was successful.
   struct BELNET_PING : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("belnet_ping"); }
 
-    struct request
+    struct request_parameters
     {
       std::array<uint16_t, 3> version; // Belnet version
       std::string pubkey_ed25519; // Master node Ed25519 pubkey for verifying that belnet is using the right one
-      KV_MAP_SERIALIZABLE
-    };
+    } request;
 
-    struct response : STATUS {};
   };
 
   BELDEX_RPC_DOC_INTROSPECT
@@ -2455,7 +2476,9 @@ namespace cryptonote::rpc {
     GET_BASE_FEE_ESTIMATE,
     OUT_PEERS,
     IN_PEERS,
-    POP_BLOCKS
+    POP_BLOCKS,
+    STORAGE_SERVER_PING,
+    BELNET_PING
   >;
   using FIXME_old_rpc_types = tools::type_list<
     GET_NET_STATS,
@@ -2477,8 +2500,6 @@ namespace cryptonote::rpc {
     GET_MASTER_NODE_REGISTRATION_CMD,
     GET_MASTER_KEYS,
     GET_MASTER_PRIVKEYS,
-    STORAGE_SERVER_PING,
-    BELNET_PING,
     GET_STAKING_REQUIREMENT,
     GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES,
     GET_CHECKPOINTS,
