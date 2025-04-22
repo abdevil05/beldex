@@ -77,6 +77,27 @@ void to_json(nlohmann::json& j, const GET_QUORUM_STATE::quorum_for_height& q)
   j = nlohmann::json{{"height", q.height}, {"quorum_type", q.quorum_type}, {"quorum", q.quorum}};
 };
 
+void to_json(nlohmann::json& j, const GET_ALTERNATE_CHAINS::chain_info& c)
+{
+  j = nlohmann::json{
+    {"block_hash", c.block_hash},
+    {"height", c.height},
+    {"length", c.length},
+    {"difficulty", c.difficulty},
+    {"block_hashes", c.block_hashes},
+    {"main_chain_parent_block", c.main_chain_parent_block},
+  };
+}
+void from_json(const nlohmann::json& j, GET_ALTERNATE_CHAINS::chain_info& c)
+{
+  j.at("block_hash").get_to(c.block_hash);
+  j.at("height").get_to(c.height);
+  j.at("length").get_to(c.length);
+  j.at("difficulty").get_to(c.difficulty);
+  j.at("block_hashes").get_to(c.block_hashes);
+  j.at("main_chain_parent_block").get_to(c.main_chain_parent_block);
+}
+
 KV_SERIALIZE_MAP_CODE_BEGIN(STATUS)
   KV_SERIALIZE(status)
 KV_SERIALIZE_MAP_CODE_END()
@@ -739,20 +760,20 @@ KV_SERIALIZE_MAP_CODE_END()
 // KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_ALTERNATE_CHAINS::chain_info)
-  KV_SERIALIZE(block_hash)
-  KV_SERIALIZE(height)
-  KV_SERIALIZE(length)
-  KV_SERIALIZE(difficulty)
-  KV_SERIALIZE(block_hashes)
-  KV_SERIALIZE(main_chain_parent_block)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_ALTERNATE_CHAINS::chain_info)
+//   KV_SERIALIZE(block_hash)
+//   KV_SERIALIZE(height)
+//   KV_SERIALIZE(length)
+//   KV_SERIALIZE(difficulty)
+//   KV_SERIALIZE(block_hashes)
+//   KV_SERIALIZE(main_chain_parent_block)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_ALTERNATE_CHAINS::response)
-  KV_SERIALIZE(status)
-  KV_SERIALIZE(chains)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_ALTERNATE_CHAINS::response)
+//   KV_SERIALIZE(status)
+//   KV_SERIALIZE(chains)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
 // KV_SERIALIZE_MAP_CODE_BEGIN(RELAY_TX::request)

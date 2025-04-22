@@ -2142,37 +2142,37 @@ namespace cryptonote::rpc {
     get_base_fee_estimate.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_ALTERNATE_CHAINS::response core_rpc_server::invoke(GET_ALTERNATE_CHAINS::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_ALTERNATE_CHAINS& get_alternate_chains, rpc_context context)
   {
-    GET_ALTERNATE_CHAINS::response res{};
-
     PERF_TIMER(on_get_alternate_chains);
     try
     {
-      std::vector<std::pair<Blockchain::block_extended_info, std::vector<crypto::hash>>> chains = m_core.get_blockchain_storage().get_alternative_chains();
-      for (const auto &i: chains)
+      std::vector<GET_ALTERNATE_CHAINS::chain_info> chains;
+      std::vector<std::pair<Blockchain::block_extended_info, std::vector<crypto::hash>>> alt_chains = m_core.get_blockchain_storage().get_alternative_chains();
+      for (const auto &i: alt_chains)
       {
-        res.chains.push_back(GET_ALTERNATE_CHAINS::chain_info{tools::type_to_hex(get_block_hash(i.first.bl)), i.first.height, i.second.size(), i.first.cumulative_difficulty, {}, std::string()});
-        res.chains.back().block_hashes.reserve(i.second.size());
+        chains.push_back(GET_ALTERNATE_CHAINS::chain_info{tools::type_to_hex(get_block_hash(i.first.bl)), i.first.height, i.second.size(), i.first.cumulative_difficulty, {}, std::string()});
+        chains.back().block_hashes.reserve(i.second.size());
         for (const crypto::hash &block_id: i.second)
-          res.chains.back().block_hashes.push_back(tools::type_to_hex(block_id));
+          chains.back().block_hashes.push_back(tools::type_to_hex(block_id));
         if (i.first.height < i.second.size())
         {
-          res.status = "Error finding alternate chain attachment point";
-          return res;
+          get_alternate_chains.response["status"] = "Error finding alternate chain attachment point";
+          return;
         }
         cryptonote::block main_chain_parent_block;
         try { main_chain_parent_block = m_core.get_blockchain_storage().get_db().get_block_from_height(i.first.height - i.second.size()); }
-        catch (const std::exception &e) { res.status = "Error finding alternate chain attachment point"; return res; }
-        res.chains.back().main_chain_parent_block = tools::type_to_hex(get_block_hash(main_chain_parent_block));
+        catch (const std::exception &e) { get_alternate_chains.response["status"] = "Error finding alternate chain attachment point"; return; }
+        chains.back().main_chain_parent_block = tools::type_to_hex(get_block_hash(main_chain_parent_block));
       }
-      res.status = STATUS_OK;
+      get_alternate_chains.response["chains"] = chains;
+      get_alternate_chains.response["status"] = STATUS_OK;
     }
     catch (...)
     {
-      res.status = "Error retrieving alternate chains";
+      get_alternate_chains.response["status"] = "Error retrieving alternate chains";
     }
-    return res;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_LIMIT& limit, rpc_context context)

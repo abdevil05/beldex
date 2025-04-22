@@ -1277,15 +1277,16 @@ bool rpc_command_executor::alt_chain_info(const std::string &tip, size_t above, 
   if (!height)
     return false;
 
-  GET_ALTERNATE_CHAINS::response res{};
-
-  if (!invoke<GET_ALTERNATE_CHAINS>({}, res, "Failed to retrieve alt chain data"))
+  auto maybe_chains = try_running([this] {
+    return invoke<GET_ALTERNATE_CHAINS>();
+  }, "Failed to retrieve node info");
+  if (!maybe_chains)
     return false;
+  std::vector<GET_ALTERNATE_CHAINS::chain_info> chains = (*maybe_chains)["chains"];
 
   if (tip.empty())
   {
-    auto chains = res.chains;
-    std::sort(chains.begin(), chains.end(), [](const GET_ALTERNATE_CHAINS::chain_info &info0, GET_ALTERNATE_CHAINS::chain_info &info1){ return info0.height < info1.height; });
+    std::sort(chains.begin(), chains.end(), [](const auto& info0, auto& info1){ return info0.height < info1.height; });
     std::vector<size_t> display;
     for (size_t i = 0; i < chains.size(); ++i)
     {
@@ -1309,8 +1310,8 @@ bool rpc_command_executor::alt_chain_info(const std::string &tip, size_t above, 
   else
   {
     const uint64_t now = time(NULL);
-    const auto i = std::find_if(res.chains.begin(), res.chains.end(), [&tip](GET_ALTERNATE_CHAINS::chain_info &info){ return info.block_hash == tip; });
-    if (i != res.chains.end())
+    const auto i = std::find_if(chains.begin(), chains.end(), [&tip](GET_ALTERNATE_CHAINS::chain_info &info){ return info.block_hash == tip; });
+    if (i != chains.end())
     {
       const auto &chain = *i;
       tools::success_msg_writer() << "Found alternate chain with tip " << tip;
