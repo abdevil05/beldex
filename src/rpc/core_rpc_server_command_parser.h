@@ -40,4 +40,5 @@ namespace cryptonote::rpc {
   void parse_request(POP_BLOCKS& pop_blocks, rpc_input in);
   void parse_request(BELNET_PING& belnet_ping, rpc_input in);
   void parse_request(STORAGE_SERVER_PING& storage_server_ping, rpc_input in);
+  void parse_request(PRUNE_BLOCKCHAIN& prune_blockchain, rpc_input in);
 }

@@ -450,7 +450,6 @@ namespace cryptonote::rpc {
     get_values(in, "nblocks", pop_blocks.request.nblocks);
   }
 
-
   void parse_request(BELNET_PING& belnet_ping, rpc_input in){
     get_values(in, "version", belnet_ping.request.version);
     get_values(in, "pubkey_ed25519", belnet_ping.request.pubkey_ed25519);
@@ -461,5 +460,8 @@ namespace cryptonote::rpc {
     get_values(in, "https_port", storage_server_ping.request.https_port);
     get_values(in, "omq_port", storage_server_ping.request.omq_port);
     get_values(in, "pubkey_ed25519", storage_server_ping.request.pubkey_ed25519);
+
+  void parse_request(PRUNE_BLOCKCHAIN& prune_blockchain, rpc_input in){
+    get_values(in, "check", prune_blockchain.request.check);
   }
 }

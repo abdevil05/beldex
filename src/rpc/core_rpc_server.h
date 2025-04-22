@@ -240,6 +240,7 @@ namespace cryptonote::rpc {
     void invoke(POP_BLOCKS& pop_blocks, rpc_context context);
     void invoke(BELNET_PING& lokinet_ping, rpc_context context);
     void invoke(STORAGE_SERVER_PING& storage_server_ping, rpc_context context);
+    void invoke(PRUNE_BLOCKCHAIN& prune_blockchain, rpc_context context);
 
     // Deprecated Monero NIH binary endpoints:
     GET_ALT_BLOCKS_HASHES_BIN::response         invoke(GET_ALT_BLOCKS_HASHES_BIN::request&& req, rpc_context context);
@@ -265,7 +266,6 @@ namespace cryptonote::rpc {
     GET_OUTPUT_HISTOGRAM::response                      invoke(GET_OUTPUT_HISTOGRAM::request&& req, rpc_context context);
     GET_ALTERNATE_CHAINS::response                      invoke(GET_ALTERNATE_CHAINS::request&& req, rpc_context context);
     RELAY_TX::response                                  invoke(RELAY_TX::request&& req, rpc_context context);
-    PRUNE_BLOCKCHAIN::response                          invoke(PRUNE_BLOCKCHAIN::request&& req, rpc_context context);
     GET_QUORUM_STATE::response                          invoke(GET_QUORUM_STATE::request&& req, rpc_context context);
     GET_MASTER_NODE_REGISTRATION_CMD_RAW::response     invoke(GET_MASTER_NODE_REGISTRATION_CMD_RAW::request&& req, rpc_context context);
     GET_MASTER_NODE_REGISTRATION_CMD::response         invoke(GET_MASTER_NODE_REGISTRATION_CMD::request&& req, rpc_context context);
