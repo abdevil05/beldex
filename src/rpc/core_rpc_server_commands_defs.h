@@ -811,31 +811,31 @@ namespace cryptonote::rpc {
     } request;
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Similar to get_block_header_by_hash above, this method includes a block's height as an input parameter to retrieve basic information about the block.
+  /// Similar to get_block_header_by_hash above, this method includes a block's height as an input parameter to retrieve basic information about the block.
+  ///
+  /// Inputs:
+  ///
+  /// - \p height A block height to look up; returned in `block_header`
+  /// - \p heights Block heights to retrieve; returned in `block_headers`
+  /// - \p fill_pow_hash Tell the daemon if it should fill out pow_hash field.
+  /// - \p get_tx_hashes If true (default false) then include the hashes of non-coinbase transactions
+  ///
+  /// Output values available from a public RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p block_header Block header information for the requested `height` block
+  /// - \p block_headers Block header information for the requested `heights` blocks
   struct GET_BLOCK_HEADER_BY_HEIGHT : PUBLIC
   {
     static constexpr auto names() { return NAMES("get_block_header_by_height", "getblockheaderbyheight"); }
 
-    struct request
+    struct request_parameters
     {
       std::optional<uint64_t> height; // A block height to look up; returned in `block_header`
       std::vector<uint64_t> heights;  // Block heights to retrieve; returned in `block_headers`
       bool fill_pow_hash; // Tell the daemon if it should fill out pow_hash field.
       bool get_tx_hashes; // If true (default false) then include the hashes of non-coinbase transactions
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response
-    {
-      std::string status;                 // General RPC error code. "OK" means everything looks good.
-      std::optional<block_header_response> block_header; // Block header information for the requested `height` block
-      std::vector<block_header_response> block_headers;  // Block header information for the requested `heights` blocks
-      bool untrusted;                     // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
-
-      KV_MAP_SERIALIZABLE
-    };
+    } request;
   };
 
   BELDEX_RPC_DOC_INTROSPECT

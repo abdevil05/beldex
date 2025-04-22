@@ -1762,15 +1762,10 @@ namespace cryptonote::rpc {
     return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_BLOCK_HEADER_BY_HEIGHT::response core_rpc_server::invoke(GET_BLOCK_HEADER_BY_HEIGHT::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_BLOCK_HEADER_BY_HEIGHT& get_block_header_by_height, rpc_context context)
   {
-    GET_BLOCK_HEADER_BY_HEIGHT::response res{};
-
     PERF_TIMER(on_get_block_header_by_height);
-    if (use_bootstrap_daemon_if_necessary<GET_BLOCK_HEADER_BY_HEIGHT>(req, res))
-      return res;
-
-    auto get = [this, curr_height=m_core.get_current_blockchain_height(), pow=req.fill_pow_hash && context.admin, tx_hashes=req.get_tx_hashes]
+    auto get = [this, curr_height=m_core.get_current_blockchain_height(), pow=get_block_header_by_height.request.fill_pow_hash && context.admin, tx_hashes=get_block_header_by_height.request.get_tx_hashes]
         (uint64_t height, block_header_response& bhr) {
       if (height >= curr_height)
         throw rpc_error{ERROR_TOO_BIG_HEIGHT,
@@ -1782,15 +1777,21 @@ namespace cryptonote::rpc {
       fill_block_header_response(blk, false, height, get_block_hash(blk), bhr, pow, tx_hashes);
     };
 
-    if (req.height)
-      get(*req.height, res.block_header.emplace());
-    if (!req.heights.empty())
-      res.block_headers.reserve(req.heights.size());
-    for (auto height : req.heights)
-      get(height, res.block_headers.emplace_back());
+    block_header_response header;
+    if (get_block_header_by_height.request.height)
+    {
+      get(*get_block_header_by_height.request.height, header);
+      get_block_header_by_height.response["block_header"] = header;
+    }
+    std::vector<block_header_response> headers;
+    if (!get_block_header_by_height.request.heights.empty())
+      headers.reserve(get_block_header_by_height.request.heights.size());
+    for (auto height : get_block_header_by_height.request.heights)
+      get(height, headers.emplace_back());
 
-    res.status = STATUS_OK;
-    return res;
+    get_block_header_by_height.response["status"] = STATUS_OK;
+    get_block_header_by_height.response["block_headers"] = headers;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   GET_BLOCK::response core_rpc_server::invoke(GET_BLOCK::request&& req, rpc_context context)

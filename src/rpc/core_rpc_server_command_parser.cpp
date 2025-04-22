@@ -498,4 +498,11 @@ namespace cryptonote::rpc {
     get_values(in, "seconds", set_bans.request.seconds);
     get_values(in, "ban", set_bans.request.ban);
   }
+
+  void parse_request(GET_BLOCK_HEADER_BY_HEIGHT& get_block_header_by_height, rpc_input in) {
+    get_values(in, "height",        get_block_header_by_height.request.height);
+    get_values(in, "heights",       get_block_header_by_height.request.heights);
+    get_values(in, "fill_pow_hash", get_block_header_by_height.request.fill_pow_hash);
+    get_values(in, "get_tx_hashes", get_block_header_by_height.request.get_tx_hashes);
+  }
 }
