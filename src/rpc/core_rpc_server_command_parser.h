@@ -42,4 +42,5 @@ namespace cryptonote::rpc {
   void parse_request(STORAGE_SERVER_PING& storage_server_ping, rpc_input in);
   void parse_request(PRUNE_BLOCKCHAIN& prune_blockchain, rpc_input in);
   void parse_request(REPORT_PEER_STATUS& report_peer_status, rpc_input in);
+  void parse_request(GET_MN_STATE_CHANGES& get_mn_state_changes, rpc_input in);
 }

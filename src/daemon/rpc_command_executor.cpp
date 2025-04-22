@@ -338,23 +338,20 @@ bool rpc_command_executor::print_checkpoints(uint64_t start_height, uint64_t end
 
 bool rpc_command_executor::print_mn_state_changes(uint64_t start_height, uint64_t end_height)
 {
-  GET_MN_STATE_CHANGES::request  req{};
-  GET_MN_STATE_CHANGES::response res{};
-
-  req.start_height = start_height;
-  req.end_height   = end_height;
-
-  if (!invoke<GET_MN_STATE_CHANGES>(std::move(req), res, "Failed to query master nodes state changes"))
+  auto maybe_mn_state = try_running([&] { return invoke<GET_MN_STATE_CHANGES>(json{{"start_height", start_height}, {"end_height", end_height}}); }, "Failed to query master nodes state changes");
+  if (!maybe_mn_state)
     return false;
+
+  auto mn_state_changes = *maybe_mn_state;
 
   std::stringstream output;
 
-  output << "Master Node State Changes (blocks " << res.start_height << "-" << res.end_height << ")" << std::endl;
-  output << " Recommissions:\t\t" << res.total_recommission << std::endl;
-  output << " Unlocks:\t\t" << res.total_unlock << std::endl;
-  output << " Decommissions:\t\t" << res.total_decommission << std::endl;
-  output << " Deregistrations:\t" << res.total_deregister << std::endl;
-  output << " IP change penalties:\t" << res.total_ip_change_penalty << std::endl;
+  output << "Master Node State Changes (blocks " << mn_state_changes["start_height"].get<std::string_view>() << "-" << mn_state_changes["end_height"].get<std::string_view>() << ")" << std::endl;
+  output << " Recommissions:\t\t" << mn_state_changes["total_recommission"].get<std::string_view>() << std::endl;
+  output << " Unlocks:\t\t" << mn_state_changes["total_unlock"].get<std::string_view>() << std::endl;
+  output << " Decommissions:\t\t" << mn_state_changes["total_decommission"].get<std::string_view>() << std::endl;
+  output << " Deregistrations:\t" << mn_state_changes["total_deregister"].get<std::string_view>() << std::endl;
+  output << " IP change penalties:\t" << mn_state_changes["total_ip_change_penalty"].get<std::string_view>() << std::endl;
 
   tools::success_msg_writer() << output.str();
   return true;

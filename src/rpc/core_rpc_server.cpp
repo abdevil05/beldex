@@ -3106,10 +3106,8 @@ namespace cryptonote::rpc {
     return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_MN_STATE_CHANGES::response core_rpc_server::invoke(GET_MN_STATE_CHANGES::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_MN_STATE_CHANGES& get_mn_state_changes, rpc_context context)
   {
-    GET_MN_STATE_CHANGES::response res{};
-
     using blob_t = cryptonote::blobdata;
     using block_pair_t = std::pair<blob_t, block>;
     std::vector<block_pair_t> blocks;
@@ -3118,23 +3116,25 @@ namespace cryptonote::rpc {
     const uint64_t current_height = db.get_current_blockchain_height();
 
     uint64_t end_height;
-    if (req.end_height == GET_MN_STATE_CHANGES::HEIGHT_SENTINEL_VALUE) {
+    uint64_t start_height = get_mn_state_changes.request.start_height;
+    if (get_mn_state_changes.request.end_height == GET_MN_STATE_CHANGES::HEIGHT_SENTINEL_VALUE) {
       // current height is the block being mined, so exclude it from the results
       end_height = current_height - 1;
     } else {
-      end_height = req.end_height;
+      end_height = get_mn_state_changes.request.end_height;
     }
 
-    if (end_height < req.start_height)
+    if (end_height < start_height)
       throw rpc_error{ERROR_WRONG_PARAM, "The provided end_height needs to be higher than start_height"};
 
-    if (!db.get_blocks(req.start_height, end_height - req.start_height + 1, blocks))
-      throw rpc_error{ERROR_INTERNAL, "Could not query block at requested height: " + std::to_string(req.start_height)};
+    if (!db.get_blocks(start_height, end_height - start_height + 1, blocks))
+      throw rpc_error{ERROR_INTERNAL, "Could not query block at requested height: " + std::to_string(start_height)};
 
-    res.start_height = req.start_height;
-    res.end_height = end_height;
+    get_mn_state_changes.response["start_height"] = start_height;
+    get_mn_state_changes.response["end_height"] = end_height;
 
     std::vector<blob_t> blobs;
+    int total_deregister = 0, total_decommission = 0, total_recommission = 0, total_ip_change_penalty = 0, total_unlock = 0;
     for (const auto& block : blocks)
     {
       blobs.clear();
@@ -3163,19 +3163,19 @@ namespace cryptonote::rpc {
 
           switch(state_change.state) {
             case master_nodes::new_state::deregister:
-              res.total_deregister++;
+              total_deregister++;
               break;
 
             case master_nodes::new_state::decommission:
-              res.total_decommission++;
+              total_decommission++;
               break;
 
             case master_nodes::new_state::recommission:
-              res.total_recommission++;
+              total_recommission++;
               break;
 
             case master_nodes::new_state::ip_change_penalty:
-              res.total_ip_change_penalty++;
+              total_ip_change_penalty++;
               break;
 
             default:
@@ -3186,13 +3186,17 @@ namespace cryptonote::rpc {
 
         if (tx.type == cryptonote::txtype::key_image_unlock)
         {
-          res.total_unlock++;
+          total_unlock++;
         }
       }
     }
 
-    res.status = STATUS_OK;
-    return res;
+    get_mn_state_changes.response["total_deregister"] = total_deregister;
+    get_mn_state_changes.response["total_decommission"] = total_decommission;
+    get_mn_state_changes.response["total_recommission"] = total_recommission;
+    get_mn_state_changes.response["total_ip_change_penalty"] = total_ip_change_penalty;
+    get_mn_state_changes.response["total_unlock"] = total_unlock;
+    get_mn_state_changes.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(REPORT_PEER_STATUS& report_peer_status, rpc_context context)

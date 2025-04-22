@@ -244,6 +244,7 @@ namespace cryptonote::rpc {
     void invoke(TEST_TRIGGER_P2P_RESYNC& test_trigger_p2p_resync, rpc_context context);
     void invoke(TEST_TRIGGER_UPTIME_PROOF& test_trigger_uptime_proof, rpc_context context);
     void invoke(REPORT_PEER_STATUS& report_peer_status, rpc_context context);
+    void invoke(GET_MN_STATE_CHANGES& get_mn_state_changes, rpc_context context);
 
     // Deprecated Monero NIH binary endpoints:
     GET_ALT_BLOCKS_HASHES_BIN::response         invoke(GET_ALT_BLOCKS_HASHES_BIN::request&& req, rpc_context context);
@@ -277,7 +278,6 @@ namespace cryptonote::rpc {
     GET_MASTER_PRIVKEYS::response                      invoke(GET_MASTER_PRIVKEYS::request&& req, rpc_context context);
     GET_STAKING_REQUIREMENT::response                   invoke(GET_STAKING_REQUIREMENT::request&& req, rpc_context context);
     GET_CHECKPOINTS::response                           invoke(GET_CHECKPOINTS::request&& req, rpc_context context);
-    GET_MN_STATE_CHANGES::response                      invoke(GET_MN_STATE_CHANGES::request&& req, rpc_context context);
     BNS_NAMES_TO_OWNERS::response                       invoke(BNS_NAMES_TO_OWNERS::request&& req, rpc_context context);
     BNS_LOOKUP::response                                invoke(BNS_LOOKUP::request&& req, rpc_context context);
     BNS_OWNERS_TO_NAMES::response                       invoke(BNS_OWNERS_TO_NAMES::request&& req, rpc_context context);
