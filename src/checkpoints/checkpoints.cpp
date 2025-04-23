@@ -36,7 +36,6 @@
 #include "epee/serialization/keyvalue_serialization.h"
 #include "cryptonote_core/master_node_rules.h"
 #include <vector>
-#include <nlohmann/json.hpp>
 #include "blockchain_db/blockchain_db.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 
@@ -56,19 +55,6 @@ namespace cryptonote
     if (result) MINFO   ("CHECKPOINT PASSED FOR HEIGHT " << height << " " << block_hash);
     else        MWARNING("CHECKPOINT FAILED FOR HEIGHT " << height << ". EXPECTED HASH " << block_hash << "GIVEN HASH: " << hash);
     return result;
-  };
-
-  void to_json(nlohmann::json& j, const checkpoint_t& c)
-  {
-    j = nlohmann::json
-    {
-      {"version", c.version},
-      {"type", c.type},
-      {"height", c.height},
-      {"block_hash", tools::type_to_hex(c.block_hash)},
-      {"signatures", c.signatures},
-      {"prev_height", c.prev_height},
-    };
   };
 
   height_to_hash const HARDCODED_MAINNET_CHECKPOINTS[] =

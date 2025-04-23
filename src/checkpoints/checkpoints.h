@@ -79,7 +79,6 @@ namespace cryptonote
       FIELD(prev_height)
     END_SERIALIZE()
   };
-  void to_json(nlohmann::json& j, const checkpoint_t& c);
 
   struct height_to_hash
   {

@@ -44,5 +44,4 @@ target_link_libraries(cryptonote_basic
     Boost::program_options
     Boost::serialization
     filesystem
-    nlohmann_json::nlohmann_json
     extra)

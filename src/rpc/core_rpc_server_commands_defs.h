@@ -55,6 +55,7 @@
 #include "crypto/hash.h"
 #include "cryptonote_config.h"
 #include "cryptonote_core/master_node_voting.h"
+#include "cryptonote_core/master_node_list.h"
 #include "common/varint.h"
 #include "common/perf_timer.h"
 #include "common/meta.h"
@@ -71,9 +72,17 @@
 #include <type_traits>
 #include <unordered_set>
 
+namespace cryptonote {
+  void to_json(nlohmann::json& j, const checkpoint_t& c);
+}
+
+namespace master_nodes {
+  void to_json(nlohmann::json& j, const key_image_blacklist_entry& b);
+  void to_json(nlohmann::json& j, const quorum_signature& s);
+}
+
 /// Namespace for core RPC commands.  Every RPC commands gets defined here (including its name(s),
 /// access, and data type), and added to `core_rpc_types` list at the bottom of the file.
-
 namespace cryptonote::rpc {
 
   using version_t = std::pair<uint16_t, uint16_t>;

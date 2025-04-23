@@ -2,6 +2,34 @@
 #include <nlohmann/json.hpp>
 #include <oxenc/base64.h>
 
+namespace cryptonote {
+  void to_json(nlohmann::json& j, const checkpoint_t& c)
+  {
+    j = nlohmann::json
+    {
+      {"version", c.version},
+      {"type", c.type},
+      {"height", c.height},
+      {"block_hash", tools::type_to_hex(c.block_hash)},
+      {"signatures", c.signatures},
+      {"prev_height", c.prev_height},
+    };
+  };
+}
+
+namespace master_nodes {
+  void to_json(nlohmann::json& j, const key_image_blacklist_entry& b) { j = nlohmann::json{{"key_image", tools::type_to_hex(b.key_image)}, {"unlock_height", b.unlock_height}, {"amount", b.amount} }; };
+
+  void to_json(nlohmann::json& j, const quorum_signature& s)
+  {
+    j = nlohmann::json
+    {
+      {"voter_index", s.voter_index},
+      {"signature", tools::type_to_hex(s.signature)},
+    };
+  };
+}
+
 namespace cryptonote::rpc {
 
 void RPC_COMMAND::set_bt() {

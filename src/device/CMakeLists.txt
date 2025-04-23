@@ -41,7 +41,6 @@ target_link_libraries(device
     Boost::serialization
   PRIVATE
     version
-    nlohmann_json::nlohmann_json
     extra)
 
 option(HWDEVICE_DEBUG "Enable hardware wallet debugging (requires also using a debug build of the Ledger wallet)" OFF)

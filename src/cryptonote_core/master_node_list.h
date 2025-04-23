@@ -39,7 +39,6 @@
 #include "cryptonote_core/master_node_voting.h"
 #include "cryptonote_core/master_node_quorum_cop.h"
 #include "common/util.h"
-#include <nlohmann/json.hpp>
 
 namespace cryptonote
 {
@@ -382,7 +381,6 @@ namespace master_nodes
     END_SERIALIZE()
   };
 
-  inline void to_json(nlohmann::json& j, const key_image_blacklist_entry& b) { j = nlohmann::json{{"key_image", tools::type_to_hex(b.key_image)}, {"unlock_height", b.unlock_height}, {"amount", b.amount} }; };
   struct payout_entry
   {
     cryptonote::account_public_address address;
