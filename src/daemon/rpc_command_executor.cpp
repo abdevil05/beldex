@@ -2494,18 +2494,13 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
   scoped_log_cats.reset();
 
   {
-    GET_MASTER_NODE_REGISTRATION_CMD_RAW::request req{};
-    GET_MASTER_NODE_REGISTRATION_CMD_RAW::response res{};
-
-    req.args = args;
-    req.make_friendly = true;
-    req.staking_requirement = staking_requirement;
-
-    if (!invoke<GET_MASTER_NODE_REGISTRATION_CMD_RAW>(std::move(req), res, "Failed to validate registration arguments; "
-          "check the addresses and registration parameters and that the Daemon is running with the '--master-node' flag"))
+    auto maybe_registration = try_running([this, staking_requirement, &args] { return invoke<GET_MASTER_NODE_REGISTRATION_CMD_RAW>(json{{"staking_requirement", staking_requirement}, {"args", args}, {"make_friendly", true}}); }, "Failed to validate registration arguments; check the addresses and registration parameters and that the Daemon is running with the '--master-node' flag");
+    if (!maybe_registration)
       return false;
 
-    tools::success_msg_writer() << res.registration_cmd;
+    auto& registration = *maybe_registration;
+
+    tools::success_msg_writer() << registration["registration_cmd"];
   }
 
   return true;

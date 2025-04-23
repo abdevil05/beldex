@@ -2654,28 +2654,36 @@ namespace cryptonote::rpc {
     flush_cache.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_MASTER_NODE_REGISTRATION_CMD_RAW::response core_rpc_server::invoke(GET_MASTER_NODE_REGISTRATION_CMD_RAW::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_MASTER_NODE_REGISTRATION_CMD_RAW& get_master_node_registration_cmd_raw, rpc_context context)
   {
-    GET_MASTER_NODE_REGISTRATION_CMD_RAW::response res{};
-
     PERF_TIMER(on_get_master_node_registration_cmd_raw);
 
     if (!m_core.master_node())
       throw rpc_error{ERROR_WRONG_PARAM, "Daemon has not been started in master node mode, please relaunch with --master-node flag."};
 
     auto hf_version = get_network_version(nettype(), m_core.get_current_blockchain_height());
-    if (!master_nodes::make_registration_cmd(m_core.get_nettype(), hf_version, req.staking_requirement, req.args, m_core.get_master_keys(), res.registration_cmd, req.make_friendly))
+    std::string registration_cmd;
+    if (!master_nodes::make_registration_cmd(m_core.get_nettype(),
+          hf_version,
+          get_master_node_registration_cmd_raw.request.staking_requirement,
+          get_master_node_registration_cmd_raw.request.args,
+          m_core.get_master_keys(),
+          registration_cmd,
+          get_master_node_registration_cmd_raw.request.make_friendly))
       throw rpc_error{ERROR_INTERNAL, "Failed to make registration command"};
 
-    res.status = STATUS_OK;
-    return res;
+    get_master_node_registration_cmd_raw.response["registration_cmd"] = registration_cmd;
+    get_master_node_registration_cmd_raw.response["status"] = STATUS_OK;
+    return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  GET_MASTER_NODE_REGISTRATION_CMD::response core_rpc_server::invoke(GET_MASTER_NODE_REGISTRATION_CMD::request&& req, rpc_context context)
+  void core_rpc_server::invoke(GET_MASTER_NODE_REGISTRATION_CMD& get_master_node_registration_cmd, rpc_context context) 
   {
-    GET_MASTER_NODE_REGISTRATION_CMD::response res{};
 
     PERF_TIMER(on_get_master_node_registration_cmd);
+    
+    if (!m_core.master_node())
+      throw rpc_error{ERROR_WRONG_PARAM, "Daemon has not been started in master node mode, please relaunch with --master-node flag."};
 
     std::vector<std::string> args;
 
@@ -2684,29 +2692,40 @@ namespace cryptonote::rpc {
 
     {
       uint64_t portions_cut;
-      if (!master_nodes::get_portions_from_percent_str(req.operator_cut, portions_cut))
+      if (!master_nodes::get_portions_from_percent_str(get_master_node_registration_cmd.request.operator_cut, portions_cut))
       {
-        res.status = "Invalid value: " + req.operator_cut + ". Should be between [0-100]";
-        MERROR(res.status);
-        return res;
+        get_master_node_registration_cmd.response["status"] = "Invalid value: " + get_master_node_registration_cmd.request.operator_cut + ". Should be between [0-100]";
+        MERROR(get_master_node_registration_cmd.response["status"]);
+        return;
       }
 
       args.push_back(std::to_string(portions_cut));
     }
 
-    for (const auto& [address, amount] : req.contributions)
+    auto& addresses = get_master_node_registration_cmd.request.contributor_addresses;
+    auto& amounts = get_master_node_registration_cmd.request.contributor_amounts;
+
+    if (addresses.size() != amounts.size()) {
+        throw std::runtime_error("Mismatch in sizes of addresses and amounts");
+    }
+
+    for (size_t i = 0; i < addresses.size(); ++i) {
     {
-        uint64_t num_portions = master_nodes::get_portions_to_make_amount(staking_requirement, amount);
-        args.push_back(address);
+        uint64_t num_portions = master_nodes::get_portions_to_make_amount(staking_requirement, amounts[i]);
+        args.push_back(addresses[i]);
         args.push_back(std::to_string(num_portions));
     }
 
-    GET_MASTER_NODE_REGISTRATION_CMD_RAW::request req_old{};
+    GET_MASTER_NODE_REGISTRATION_CMD_RAW req_old{};
 
-    req_old.staking_requirement = req.staking_requirement;
-    req_old.args = std::move(args);
-    req_old.make_friendly = false;
-    return invoke(std::move(req_old), context);
+    req_old.request.staking_requirement = req.staking_requirement;
+    req_old.request.args = std::move(args);
+    req_old.request.make_friendly = false;
+
+    invoke(req_old, context);
+    res.status = req_old.response["status"];
+    res.registration_cmd = req_old.response["registration_cmd"];
+    return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES& get_master_node_blacklisted_key_images, rpc_context context)

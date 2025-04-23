@@ -1660,27 +1660,30 @@ namespace cryptonote::rpc {
   void to_json(nlohmann::json& j, const GET_QUORUM_STATE::quorum_t& q);
   void to_json(nlohmann::json& j, const GET_QUORUM_STATE::quorum_for_height& q);
 
-  BELDEX_RPC_DOC_INTROSPECT
+  /// Returns the command that should be run to prepare a master node, includes correct parameters 
+  /// and master node ids formatted ready for cut and paste into daemon console.
+  ///
+  /// Inputs:
+  ///
+  /// - \p check Instead of running check if the blockchain has already been pruned.
+  /// - \p args (Developer) The list of arguments used in raw registration, i.e. portions
+  /// - \p make_friendly Provide information about how to use the command in the result.
+  /// - \p staking_requirement The staking requirement to become a Master Node the registration command will be generated upon
+  ///
+  /// Output values available from a restricted/admin RPC endpoint:
+  ///
+  /// - \p status General RPC status string. `"OK"` means everything looks good.
+  /// - \p registration_cmd The command to execute in the wallet CLI to register the queried daemon as a Master Node.
   struct GET_MASTER_NODE_REGISTRATION_CMD_RAW : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("get_master_node_registration_cmd_raw"); }
 
-    struct request
+    struct request_parameters
     {
-      std::vector<std::string> args; // (Developer) The arguments used in raw registration, i.e. portions
-      bool make_friendly;            // Provide information about how to use the command in the result.
-      uint64_t staking_requirement;  // The staking requirement to become a Master Node the registration command will be generated upon
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response
-    {
-      std::string status;           // Generic RPC error code. "OK" is the success value.
-      std::string registration_cmd; // The command to execute in the wallet CLI to register the queried daemon as a Master Node.
-
-      KV_MAP_SERIALIZABLE
-    };
+      std::vector<std::string> args; 
+      bool make_friendly;
+      uint64_t staking_requirement;
+    } request;
   };
 
   BELDEX_RPC_DOC_INTROSPECT
@@ -1688,24 +1691,13 @@ namespace cryptonote::rpc {
   {
     static constexpr auto names() { return NAMES("get_master_node_registration_cmd"); }
 
-    struct contribution_t
-    {
-      std::string address; // The wallet address for the contributor
-      uint64_t amount;     // The amount that the contributor will reserve in Beldex atomic units towards the staking requirement
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct request
+    struct request_parameters
     {
       std::string operator_cut;                  // The percentage of cut per reward the operator receives expressed as a string, i.e. "1.1%"
-      std::vector<contribution_t> contributions; // Array of contributors for this Master Node
+      std::vector<std::string> contributor_addresses;
+      std::vector<uint64_t> contributor_amounts;
       uint64_t staking_requirement;              // The staking requirement to become a Master Node the registration command will be generated upon
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    using response = GET_MASTER_NODE_REGISTRATION_CMD_RAW::response;
+    } request;
   };
 
   /// Get the master public keys of the queried daemon, encoded in hex.  All three keys are used
@@ -2423,6 +2415,8 @@ namespace cryptonote::rpc {
     SUBMIT_TRANSACTION,
     GET_BLOCK_HASH,
     GET_PEER_LIST,
+    GET_MASTER_NODE_REGISTRATION_CMD_RAW,
+    GET_MASTER_NODE_REGISTRATION_CMD,
     SET_LOG_LEVEL,
     SET_LOG_CATEGORIES,
     BANNED,
@@ -2457,8 +2451,6 @@ namespace cryptonote::rpc {
     RELAY_TX,
     GET_OUTPUT_DISTRIBUTION,
     GET_QUORUM_STATE,
-    GET_MASTER_NODE_REGISTRATION_CMD_RAW,
-    GET_MASTER_NODE_REGISTRATION_CMD,
     GET_MASTER_KEYS,
     GET_MASTER_PRIVKEYS,
     GET_STAKING_REQUIREMENT,

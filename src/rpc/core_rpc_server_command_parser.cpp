@@ -536,4 +536,11 @@ namespace cryptonote::rpc {
     get_values(in, "unlocked", get_output_histogram.request.unlocked);
     get_values(in, "recent_cutoff", get_output_histogram.request.recent_cutoff);
   }
+
+  void parse_request(GET_SERVICE_NODE_REGISTRATION_CMD& cmd, rpc_input in) {
+    get_values(in, "contributor_addresses", cmd.request.contributor_addresses);
+    get_values(in, "contributor_amounts", cmd.request.contributor_amounts);
+    get_values(in, "operator_cut", cmd.request.operator_cut);
+    get_values(in, "staking_requirement", cmd.request.staking_requirement);
+  }
 }
