@@ -3332,20 +3332,18 @@ namespace cryptonote::rpc {
   }
 
   //------------------------------------------------------------------------------------------------------------------------------
-  BNS_OWNERS_TO_NAMES::response core_rpc_server::invoke(BNS_OWNERS_TO_NAMES::request&& req, rpc_context context)
+  void core_rpc_server::invoke(BNS_OWNERS_TO_NAMES& bns_owners_to_names, rpc_context context)
   {
-    BNS_OWNERS_TO_NAMES::response res{};
-
     if (!context.admin)
-      check_quantity_limit(req.entries.size(), BNS_OWNERS_TO_NAMES::MAX_REQUEST_ENTRIES);
+      check_quantity_limit(bns_owners_to_names.request.entries.size(), BNS_OWNERS_TO_NAMES::MAX_REQUEST_ENTRIES);
 
     std::unordered_map<bns::generic_owner, size_t> owner_to_request_index;
     std::vector<bns::generic_owner> owners;
 
-    owners.reserve(req.entries.size());
-    for (size_t request_index = 0; request_index < req.entries.size(); request_index++)
+    owners.reserve(bns_owners_to_names.request.entries.size());
+    for (size_t request_index = 0; request_index < bns_owners_to_names.request.entries.size(); request_index++)
     {
-      std::string const &owner     = req.entries[request_index];
+      std::string const &owner     = bns_owners_to_names.request.entries[request_index];
       bns::generic_owner bns_owner = {};
       std::string errmsg;
       if (!bns::parse_owner_to_generic_owner(m_core.get_nettype(), owner, bns_owner, &errmsg))
@@ -3361,8 +3359,9 @@ namespace cryptonote::rpc {
 
     bns::name_system_db &db = m_core.get_blockchain_storage().name_system_db();
     std::optional<uint64_t> height;
-    if (!req.include_expired) height = m_core.get_current_blockchain_height();
+    if (!bns_owners_to_names.request.include_expired) height = m_core.get_current_blockchain_height();
 
+    std::vector<BNS_OWNERS_TO_NAMES::response_entry> entries;
     std::vector<bns::mapping_record> records = db.get_mappings_by_owners(owners, height);
     for (auto &record : records)
     {
@@ -3377,7 +3376,7 @@ namespace cryptonote::rpc {
             (record.backup_owner ? ("BackupOwner=" + record.backup_owner.to_string(nettype()) + " ") : ""s) +
             " could not be mapped back a index in the request 'entries' array"};
 
-      auto& entry = res.entries.emplace_back();
+      auto& entry = entries.emplace_back();
       entry.request_index   = it->second;
       entry.name_hash       = std::move(record.name_hash);
       if (record.owner) entry.owner = record.owner.to_string(nettype());
@@ -3391,8 +3390,9 @@ namespace cryptonote::rpc {
       entry.txid            = tools::type_to_hex(record.txid);
     }
 
-    res.status = STATUS_OK;
-    return res;
+    bns_owners_to_names.response["entries"] = entries;
+    bns_owners_to_names.response["status"] = STATUS_OK;
+    return;
   }
 
   //------------------------------------------------------------------------------------------------------------------------------

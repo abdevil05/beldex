@@ -2,6 +2,28 @@
 #include <nlohmann/json.hpp>
 #include <oxenc/base64.h>
 
+namespace nlohmann {
+
+	template <class T>
+	void to_json(nlohmann::json& j, const std::optional<T>& v)
+	{
+		if (v.has_value())
+			j = *v;
+		else
+			j = nullptr;
+	}
+
+	template <class T>
+	void from_json(const nlohmann::json& j, std::optional<T>& v)
+	{
+		if (j.is_null())
+			v = std::nullopt;
+		else
+			v = j.get<T>();
+	}
+	
+}
+
 namespace cryptonote {
   void to_json(nlohmann::json& j, const checkpoint_t& c)
   {
@@ -135,6 +157,7 @@ void to_json(nlohmann::json& j, const GET_OUTPUT_HISTOGRAM::entry& e)
     {"recent_instances", e.recent_instances},
   };
 }
+
 void from_json(const nlohmann::json& j, GET_OUTPUT_HISTOGRAM::entry& e)
 {
   j.at("amount").get_to(e.amount);
@@ -142,6 +165,23 @@ void from_json(const nlohmann::json& j, GET_OUTPUT_HISTOGRAM::entry& e)
   j.at("unlocked_instances").get_to(e.unlocked_instances);
   j.at("recent_instances").get_to(e.recent_instances);
 };
+
+void to_json(nlohmann::json& j, const BNS_OWNERS_TO_NAMES::response_entry& r)
+{      
+  j = nlohmann::json{
+    {"request_index", r.request_index},
+    {"name_hash", r.name_hash},
+    {"owner", r.owner},
+    {"backup_owner", r.backup_owner},
+    {"encrypted_bchat_value", r.encrypted_bchat_value},
+    {"encrypted_wallet_value", r.encrypted_wallet_value},
+    {"encrypted_belnet_value", r.encrypted_belnet_value},
+    {"encrypted_eth_addr_value", r.encrypted_eth_addr_value},
+    {"update_height", r.update_height},
+    {"expiration_height", r.expiration_height},
+    {"txid", r.txid},
+  };
+}
 
 KV_SERIALIZE_MAP_CODE_BEGIN(STATUS)
   KV_SERIALIZE(status)
@@ -1275,31 +1315,31 @@ KV_SERIALIZE_MAP_CODE_END()
 
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(BNS_NAMES_TO_OWNERS::request)
-  KV_SERIALIZE(entries)
-  KV_SERIALIZE(include_expired)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(BNS_NAMES_TO_OWNERS::request)
+//   KV_SERIALIZE(entries)
+//   KV_SERIALIZE(include_expired)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(BNS_NAMES_TO_OWNERS::response_entry)
-  KV_SERIALIZE(entry_index)
-  KV_SERIALIZE(name_hash)
-  KV_SERIALIZE(owner)
-  KV_SERIALIZE(backup_owner)
-  KV_SERIALIZE(encrypted_bchat_value)
-  KV_SERIALIZE(encrypted_wallet_value)
-  KV_SERIALIZE(encrypted_belnet_value)
-  KV_SERIALIZE(encrypted_eth_addr_value)
-  KV_SERIALIZE(update_height)
-  KV_SERIALIZE(expiration_height)
-  KV_SERIALIZE(txid)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(BNS_NAMES_TO_OWNERS::response_entry)
+//   KV_SERIALIZE(entry_index)
+//   KV_SERIALIZE(name_hash)
+//   KV_SERIALIZE(owner)
+//   KV_SERIALIZE(backup_owner)
+//   KV_SERIALIZE(encrypted_bchat_value)
+//   KV_SERIALIZE(encrypted_wallet_value)
+//   KV_SERIALIZE(encrypted_belnet_value)
+//   KV_SERIALIZE(encrypted_eth_addr_value)
+//   KV_SERIALIZE(update_height)
+//   KV_SERIALIZE(expiration_height)
+//   KV_SERIALIZE(txid)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(BNS_NAMES_TO_OWNERS::response)
-  KV_SERIALIZE(entries)
-  KV_SERIALIZE(status)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(BNS_NAMES_TO_OWNERS::response)
+//   KV_SERIALIZE(entries)
+//   KV_SERIALIZE(status)
+// KV_SERIALIZE_MAP_CODE_END()
 
 KV_SERIALIZE_MAP_CODE_BEGIN(BNS_LOOKUP::request)
   KV_SERIALIZE(name)
@@ -1319,31 +1359,31 @@ KV_SERIALIZE_MAP_CODE_BEGIN(BNS_LOOKUP::response)
   KV_SERIALIZE(status)
 KV_SERIALIZE_MAP_CODE_END()
 
-KV_SERIALIZE_MAP_CODE_BEGIN(BNS_OWNERS_TO_NAMES::request)
-  KV_SERIALIZE(entries)
-  KV_SERIALIZE(include_expired)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(BNS_OWNERS_TO_NAMES::request)
+//   KV_SERIALIZE(entries)
+//   KV_SERIALIZE(include_expired)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(BNS_OWNERS_TO_NAMES::response_entry)
-  KV_SERIALIZE(request_index)
-  KV_SERIALIZE(name_hash)
-  KV_SERIALIZE(owner)
-  KV_SERIALIZE(backup_owner)
-  KV_SERIALIZE(encrypted_bchat_value)
-  KV_SERIALIZE(encrypted_wallet_value)
-  KV_SERIALIZE(encrypted_belnet_value)
-  KV_SERIALIZE(update_height)
-  KV_SERIALIZE(expiration_height)
-  KV_SERIALIZE(txid)
-  KV_SERIALIZE(encrypted_eth_addr_value)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(BNS_OWNERS_TO_NAMES::response_entry)
+//   KV_SERIALIZE(request_index)
+//   KV_SERIALIZE(name_hash)
+//   KV_SERIALIZE(owner)
+//   KV_SERIALIZE(backup_owner)
+//   KV_SERIALIZE(encrypted_bchat_value)
+//   KV_SERIALIZE(encrypted_wallet_value)
+//   KV_SERIALIZE(encrypted_belnet_value)
+//   KV_SERIALIZE(update_height)
+//   KV_SERIALIZE(expiration_height)
+//   KV_SERIALIZE(txid)
+//   KV_SERIALIZE(encrypted_eth_addr_value)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(BNS_OWNERS_TO_NAMES::response)
-  KV_SERIALIZE(entries)
-  KV_SERIALIZE(status)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(BNS_OWNERS_TO_NAMES::response)
+//   KV_SERIALIZE(entries)
+//   KV_SERIALIZE(status)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
 // KV_SERIALIZE_MAP_CODE_BEGIN(BNS_RESOLVE::request)
