@@ -1329,11 +1329,13 @@ bool rpc_command_executor::alt_chain_info(const std::string &tip, size_t above, 
         tools::fail_msg_writer() << "Failed to get block header info for alt chain";
         return true;
       }
-      uint64_t t0 = headers["block_headers"].front()["timestamp"], t1 = t0;
-      for (const block_header_response &block_header: headers["block_headers"])
+      uint64_t t0 = std::numeric_limits<uint64_t>::max(),
+               t1 = std::numeric_limits<uint64_t>::min();
+      for (const auto& block_header: headers["block_headers"])
       {
-        t0 = std::min<uint64_t>(t0, block_header.timestamp);
-        t1 = std::max<uint64_t>(t1, block_header.timestamp);
+        const uint64_t ts = block_header.get<uint64_t>();
+        t0 = std::min(t0, ts);
+        t1 = std::max(t1, ts);
       }
       const uint64_t dt = t1 - t0;
       const uint64_t age = std::max(dt, t0 < now ? now - t0 : 0);

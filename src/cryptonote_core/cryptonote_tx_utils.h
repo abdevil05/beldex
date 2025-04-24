@@ -165,9 +165,9 @@ namespace cryptonote
 
   struct tx_destination_entry
   {
-    std::string original;
-    uint64_t amount;                    //money
-    account_public_address addr;        //destination address
+    std::string original;               // Cached string of the address. Access using address()
+    uint64_t amount;                    // Money
+    account_public_address addr;        // Destination Address
     bool is_subaddress;
     bool is_integrated;
 
