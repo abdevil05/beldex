@@ -145,3 +145,5 @@ if(cpr_cmake_head MATCHES "project\\(cpr VERSION ([0-9]+)\.([0-9]+)\.([0-9]+) LA
 else()
     message(FATAL_ERROR "Could not identify cpr submodule version!")
 endif()
+
+add_subdirectory(Catch2)

@@ -87,7 +87,7 @@ namespace cryptonote::rpc {
     };
   };
 
-  OXEN_RPC_DOC_INTROSPECT
+  BELDEX_RPC_DOC_INTROSPECT
   // Get blocks by height. Binary request.
   struct GET_BLOCKS_BY_HEIGHT_BIN : PUBLIC, BINARY
   {
@@ -111,7 +111,7 @@ namespace cryptonote::rpc {
   };
 
 
-  OXEN_RPC_DOC_INTROSPECT
+  BELDEX_RPC_DOC_INTROSPECT
   // Get the known blocks hashes which are not on the main chain.
   struct GET_ALT_BLOCKS_HASHES_BIN : PUBLIC, BINARY
   {
@@ -128,7 +128,7 @@ namespace cryptonote::rpc {
     };
   };
 
-  OXEN_RPC_DOC_INTROSPECT
+  BELDEX_RPC_DOC_INTROSPECT
   // Get hashes. Binary request.
   struct GET_HASHES_BIN : PUBLIC, BINARY
   {
@@ -154,7 +154,7 @@ namespace cryptonote::rpc {
     };
   };
 
-  OXEN_RPC_DOC_INTROSPECT
+  BELDEX_RPC_DOC_INTROSPECT
   // Get global outputs of transactions. Binary request.
   struct GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN : PUBLIC, BINARY
   {
@@ -178,7 +178,7 @@ namespace cryptonote::rpc {
     };
   };
 
-  OXEN_RPC_DOC_INTROSPECT
+  BELDEX_RPC_DOC_INTROSPECT
   struct get_outputs_out
   {
     uint64_t amount; // Amount of Loki in TXID.
@@ -187,7 +187,7 @@ namespace cryptonote::rpc {
     KV_MAP_SERIALIZABLE
   };
 
-  OXEN_RPC_DOC_INTROSPECT
+  BELDEX_RPC_DOC_INTROSPECT
   // Get outputs. Binary request.
   struct GET_OUTPUTS_BIN : PUBLIC, BINARY
   {
@@ -225,7 +225,7 @@ namespace cryptonote::rpc {
     };
   };
 
-  OXEN_RPC_DOC_INTROSPECT
+  BELDEX_RPC_DOC_INTROSPECT
   // Get hashes from transaction pool. Binary request.
   struct GET_TRANSACTION_POOL_HASHES_BIN : PUBLIC, BINARY
   {
@@ -251,7 +251,7 @@ namespace cryptonote::rpc {
     };
   };
 
-  OXEN_RPC_DOC_INTROSPECT
+  BELDEX_RPC_DOC_INTROSPECT
   // Exactly like GET_OUTPUT_DISTRIBUTION, but does a binary RPC transfer instead of JSON
   struct GET_OUTPUT_DISTRIBUTION_BIN : PUBLIC, BINARY
   {
@@ -261,7 +261,7 @@ namespace cryptonote::rpc {
     using response = GET_OUTPUT_DISTRIBUTION::response;
   };
 
-  OXEN_RPC_DOC_INTROSPECT
+  BELDEX_RPC_DOC_INTROSPECT
   // Get information on output blacklist.
   struct GET_OUTPUT_BLACKLIST_BIN : PUBLIC, BINARY
   {

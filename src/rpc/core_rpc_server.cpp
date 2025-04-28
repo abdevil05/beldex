@@ -80,7 +80,6 @@ namespace cryptonote::rpc {
   namespace {
 
     oxenc::bt_value json_to_bt(json&& j) {
-      using namespace oxenmq;
       if (j.is_object()) {
         oxenc::bt_dict res;
         for (auto& [k, v] : j.items()) {
@@ -125,7 +124,7 @@ namespace cryptonote::rpc {
           if (auto body = request.body_view()) {
             if (body->front() == 'd') { // Looks like a bt dict
               rpc.set_bt();
-              parse_request(rpc, oxenmq::bt_dict_consumer{*body});
+              parse_request(rpc, oxenc::bt_dict_consumer{*body});
             }
             else
               parse_request(rpc, json::parse(*body));
@@ -1827,7 +1826,7 @@ namespace cryptonote::rpc {
     tx_hashes.reserve(blk.tx_hashes.size());
     std::transform(blk.tx_hashes.begin(), blk.tx_hashes.end(), tx_hashes.begin(), [](const auto& x) { return tools::type_to_hex(x); });
     get_block.response["tx_hashes"] = tx_hashes;
-    get_block.response["blob"] = oxenmq::to_hex(t_serializable_object_to_blob(blk));
+    get_block.response["blob"] = oxenc::to_hex(t_serializable_object_to_blob(blk));
     get_block.response["json"] = obj_to_json_str(blk);
     get_block.response["status"] = STATUS_OK;
     return;
@@ -1881,7 +1880,7 @@ namespace cryptonote::rpc {
     */
     const auto& blockchain = m_core.get_blockchain_storage();
     auto version =
-      hfinfo.request.version > 0 ? hfinfo.request.version :
+      hfinfo.request.version > 0 ? static_cast<hf>(hfinfo.request.version) :
       hfinfo.request.height > 0 ? blockchain.get_network_version(hfinfo.request.height) :
       blockchain.get_network_version();
       hfinfo.response["version"] = version;
@@ -2141,7 +2140,7 @@ namespace cryptonote::rpc {
     auto fees = m_core.get_blockchain_storage().get_dynamic_base_fee_estimate(get_base_fee_estimate.request.grace_blocks);
     get_base_fee_estimate.response["fee_per_byte"] = fees.first;
     get_base_fee_estimate.response["fee_per_output"] = fees.second;
-    get_base_fee_estimate.response["flash_fee_fixed"] = FLASH_BURN_FIXED;
+    get_base_fee_estimate.response["flash_fee_fixed"] = beldex::FLASH_BURN_FIXED;
     constexpr auto flash_percent =  beldex::FLASH_MINER_TX_FEE_PERCENT +  beldex::FLASH_BURN_TX_FEE_PERCENT_OLD;
     get_base_fee_estimate.response["flash_fee_per_byte"] = fees.first * flash_percent / 100;
     get_base_fee_estimate.response["flash_fee_per_output"] = fees.second * flash_percent / 100;
@@ -3056,7 +3055,7 @@ namespace cryptonote::rpc {
     PERF_TIMER(on_get_staking_requirement);
     get_staking_requirement.response["height"] = get_staking_requirement.request.height > 0 ? get_staking_requirement.request.height : m_core.get_current_blockchain_height();
 
-    get_staking_requirement.response["staking_requirement"] = service_nodes::get_staking_requirement(nettype(), get_staking_requirement.request.height);
+    get_staking_requirement.response["staking_requirement"] = master_nodes::get_staking_requirement(nettype(), get_staking_requirement.request.height);
     get_staking_requirement.response["status"] = STATUS_OK;
     return;
   }

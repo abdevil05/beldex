@@ -1,5 +1,4 @@
 #include "p2p_protocol_defs.h"
-#include "epee/misc_language.h"
 #include "epee/string_tools.h"
 #include "epee/time_helper.h"
 #include "net/tor_address.h" // needed for serialization

@@ -4484,7 +4484,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   try {
     m_master_node_list.block_add(bl, only_txs, checkpoint);
   } catch (const std::exception& e) {
-    MGINFO_RED("Failed to add block to Service Node List: " << e.what());
+    MGINFO_RED("Failed to add block to Master Node List: " << e.what());
     bvc.m_verifivation_failed = true;
     return false;
   }

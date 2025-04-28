@@ -279,7 +279,7 @@ namespace master_nodes {
 //If a nodes timestamp varies by this amount of seconds they will be considered out of sync
 inline constexpr uint8_t THRESHOLD_SECONDS_OUT_OF_SYNC = 30;
 
-  //If the below percentage of service nodes are out of sync we will consider our clock out of sync
+  //If the below percentage of master nodes are out of sync we will consider our clock out of sync
 inline constexpr uint8_t MAXIMUM_EXTERNAL_OUT_OF_SYNC = 80;
 
 static_assert(cryptonote::old::STAKING_PORTIONS != UINT64_MAX, "UINT64_MAX is used as the invalid value for failing to calculate the min_node_contribution");

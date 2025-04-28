@@ -521,18 +521,6 @@ namespace cryptonote::rpc {
       bool flash = false;
     } request;
 
-   /*struct response
-   {
-     std::string status; // General RPC error code. "OK" means everything looks good. Any other value means that something went wrong.
-     std::string reason; // Additional information. Currently empty, "Not relayed" if transaction was accepted but not relayed, or some descriptive message of why the tx failed.
-     bool not_relayed;   // Transaction was not relayed (true) or relayed (false).
-     bool untrusted;     // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
-     tx_verification_context tvc;
-     bool sanity_check_failed;
-     flash_result flash_status; // 0 for a non-flash tx.  For a flash tx: 1 means rejected, 2 means accepted, 3 means timeout.
-
-     KV_MAP_SERIALIZABLE
-   };*/
   };
 
   //-----------------------------------------------
@@ -2079,7 +2067,7 @@ namespace cryptonote::rpc {
     static constexpr auto names() { return NAMES("get_master_node_blacklisted_key_images"); }
   };
 
-  /// Query hardcoded/service node checkpoints stored for the blockchain. Omit all arguments to retrieve the latest "count" checkpoints.
+  /// Query hardcoded/master node checkpoints stored for the blockchain. Omit all arguments to retrieve the latest "count" checkpoints.
   ///
   /// Inputs:
   ///

@@ -1223,6 +1223,13 @@ namespace nodetool
     auto ago = std::chrono::system_clock::now() - std::chrono::system_clock::from_time_t(it->second);
     return ago <= cryptonote::p2p::FAILED_ADDR_FORGET;
   }
+
+  //-----------------------------------------------------------------------------------
+  static std::string peerid_to_string(peerid_type peer_id)
+  {
+    return fmt::format("{:016x}", peer_id);
+  }
+
   //-----------------------------------------------------------------------------------
   template<class t_payload_net_handler>
   bool node_server<t_payload_net_handler>::make_new_connection_from_anchor_peerlist(const std::vector<anchor_peerlist_entry>& anchor_peerlist)
@@ -1256,11 +1263,6 @@ namespace nodetool
     }
 
     return false;
-  }
-
-  static std::string peerid_to_string(peerid_type peer_id)
-  {
-    return fmt::format("{:016x}", peer_id);
   }
 
   //-----------------------------------------------------------------------------------
