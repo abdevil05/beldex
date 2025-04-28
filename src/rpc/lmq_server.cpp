@@ -248,7 +248,7 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
   }
 
   omq.add_request_command("rpc", "get_blocks", [this](oxenmq::Message& m) {
-    OnGetBlocks(m);
+    on_get_blocks(m);
   });
 
   // Subscription commands
@@ -275,7 +275,7 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
   // txblob are binary: in particular, txhash is *not* hex-encoded.
   //
   omq.add_request_command("sub", "mempool", [this](oxenmq::Message& m) {
-    OnMempoolSubRequest(m);
+    on_mempool_sub_request(m);
   });
 
   // New block subscriptions: [sub.block].  This sends a notification every time a new block is
@@ -290,7 +290,7 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
   // containing the latest height/hash.  (Note that blockhash is the hash in bytes, *not* the hex
   // encoded block hash).
   omq.add_request_command("sub", "block", [this](oxenmq::Message& m) {
-    OnBlockSubRequest(m);
+    on_block_sub_request(m);
   });
 
   core_.get_blockchain_storage().hook_block_post_add([this] (const auto& info) { send_block_notifications(info.block); return true; });
@@ -353,7 +353,7 @@ void omq_rpc::send_mempool_notifications(const crypto::hash& id, const transacti
   });
 }
 
-void omq_rpc::OnGetBlocks(oxenmq::Message& m)
+void omq_rpc::on_get_blocks(oxenmq::Message& m)
 {
   if (m.data.size() == 0)
   {
@@ -495,7 +495,7 @@ void omq_rpc::OnGetBlocks(oxenmq::Message& m)
   m.send_reply(status, oxenmq::send_option::data_parts(bt_blocks));
 }
 
-void omq_rpc::OnMempoolSubRequest(oxenmq::Message& m)
+void omq_rpc::on_mempool_sub_request(oxenmq::Message& m)
 {
   if (m.data.size() != 1) {
     m.send_reply("Invalid subscription request: no subscription type given");
@@ -530,7 +530,7 @@ void omq_rpc::OnMempoolSubRequest(oxenmq::Message& m)
   }
 }
 
-void omq_rpc::OnBlockSubRequest(oxenmq::Message& m)
+void omq_rpc::on_block_sub_request(oxenmq::Message& m)
 {
   std::unique_lock lock{subs_mutex_};
   auto expiry = std::chrono::steady_clock::now() + 30min;
