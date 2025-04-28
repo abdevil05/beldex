@@ -87,6 +87,9 @@ namespace cryptonote::rpc {
     };
   };
 
+  void to_json(nlohmann::json& j, const GET_BLOCKS_BIN::tx_output_indices& toi);
+  void to_json(nlohmann::json& j, const GET_BLOCKS_BIN::block_output_indices& boi);
+
   BELDEX_RPC_DOC_INTROSPECT
   // Get blocks by height. Binary request.
   struct GET_BLOCKS_BY_HEIGHT_BIN : PUBLIC, BINARY

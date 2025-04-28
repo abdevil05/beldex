@@ -59,11 +59,10 @@ public:
   std::pair<bool, nlohmann::json>             get_master_nodes(std::vector<std::string> pubkeys) const;
   std::pair<bool, nlohmann::json>             get_all_master_nodes() const;
   std::pair<bool, nlohmann::json>             get_contributed_master_nodes(const std::string& contributor) const;
-  std::pair<bool, std::vector<cryptonote::rpc::GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES::entry>> get_master_node_blacklisted_key_images() const;
-  std::pair<bool, std::vector<cryptonote::rpc::BNS_OWNERS_TO_NAMES::response_entry>>            bns_owners_to_names(cryptonote::rpc::BNS_OWNERS_TO_NAMES::request const &request) const;
-  std::pair<bool, std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry>>            bns_names_to_owners(cryptonote::rpc::BNS_NAMES_TO_OWNERS::request const &request) const;
-  std::pair<bool, nlohmann::json>
-    bns_resolve(nlohmann::json const &request) const;
+  std::pair<bool, nlohmann::json> get_master_node_blacklisted_key_images() const;
+  std::pair<bool, nlohmann::json> bns_owners_to_names(nlohmann::json const &request) const;
+  std::pair<bool, nlohmann::json> bns_names_to_owners(nlohmann::json const &request) const;
+  std::pair<bool, nlohmann::json> bns_resolve(nlohmann::json const &request) const;
 
 private:
   bool get_info() const;
@@ -117,7 +116,7 @@ private:
   bool m_offline;
 
   mutable uint64_t m_master_node_blacklisted_key_images_cached_height;
-  mutable std::vector<cryptonote::rpc::GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES::entry> m_master_node_blacklisted_key_images;
+  mutable nlohmann::json m_master_node_blacklisted_key_images;
 
   bool update_all_master_nodes_cache(uint64_t height) const;
 

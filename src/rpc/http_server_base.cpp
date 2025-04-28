@@ -85,7 +85,7 @@ namespace cryptonote::rpc {
     if (m_closing) res.writeHeader("Connection", "close");
     res.end(nlohmann::json{
       {"jsonrpc", "2.0"},
-      {"id", std::move(id)},
+      {"id", id.get<std::string()},
       {"error", nlohmann::json{
         {"code", code},
         {"message", std::move(message)}

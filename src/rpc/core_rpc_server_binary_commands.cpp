@@ -2,6 +2,16 @@
 
 namespace cryptonote::rpc {
 
+  void to_json(nlohmann::json& j, const GET_BLOCKS_BIN::tx_output_indices& toi)
+  {
+    j = nlohmann::json{{"indices", toi.indices}};
+  }
+
+  void to_json(nlohmann::json& j, const GET_BLOCKS_BIN::block_output_indices& boi)
+  {
+    j = nlohmann::json{{"indices", boi.indices}};
+  }
+
 KV_SERIALIZE_MAP_CODE_BEGIN(GET_BLOCKS_BIN::request)
   KV_SERIALIZE_CONTAINER_POD_AS_BLOB(block_ids)
   KV_SERIALIZE(start_height)
