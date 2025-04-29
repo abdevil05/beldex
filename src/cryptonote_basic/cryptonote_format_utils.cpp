@@ -1498,9 +1498,11 @@ namespace cryptonote
   std::vector<uint64_t> absolute_output_offsets_to_relative(const std::vector<uint64_t>& off)
   {
     std::vector<uint64_t> res = off;
-    if(!off.size())
-      return res;
-    std::sort(res.begin(), res.end());//just to be sure, actually it is already should be sorted
+    CHECK_AND_ASSERT_THROW_MES(not off.empty(), "absolute index to relative offset, no indices provided");
+
+    // vector must be sorted before calling this, else an index' offset would be negative
+    CHECK_AND_ASSERT_THROW_MES(std::is_sorted(res.begin(), res.end()), "absolute index to relative offset, indices not sorted");
+
     for(size_t i = res.size()-1; i != 0; i--)
       res[i] -= res[i-1];
 
