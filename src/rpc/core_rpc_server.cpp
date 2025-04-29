@@ -53,7 +53,9 @@
 #include "core_rpc_server_binary_commands.h"
 #include "core_rpc_server_command_parser.h"
 #include "core_rpc_server_error_codes.h"
-#include "rpc_args.h"
+#include "rpc/common/rpc_args.h"
+#include "rpc/common/json_bt.h"
+#include "rpc/common/rpc_command.h"
 #include "common/command_line.h"
 #include "common/beldex.h"
 #include "common/sha256sum.h"
@@ -77,35 +79,8 @@
 namespace cryptonote::rpc {
 
   using nlohmann::json;
+  using beldex::json_to_bt;
   namespace {
-
-    oxenc::bt_value json_to_bt(json&& j) {
-      if (j.is_object()) {
-        oxenc::bt_dict res;
-        for (auto& [k, v] : j.items()) {
-          if (v.is_null())
-            continue; // skip k-v pairs with a null v (for other nulls we fail).
-            res[k] = json_to_bt(std::move(v));
-        }
-        return res;
-      }
-      if (j.is_array()) {
-        oxenc::bt_list res;
-        for (auto& v : j)
-          res.push_back(json_to_bt(std::move(v)));
-        return res;
-      }
-      if (j.is_string()) {
-        return std::move(j.get_ref<std::string&>());
-      }
-      if (j.is_boolean())
-        return j.get<bool>() ? 1 : 0;
-      if (j.is_number_unsigned())
-        return j.get<uint64_t>();
-      if (j.is_number_integer())
-        return j.get<int64_t>();
-      throw std::domain_error{"internal error: encountered some unhandled/invalid type in json-to-bt translation"};
-    }
     
     template <typename RPC>
     void register_rpc_command(std::unordered_map<std::string, std::shared_ptr<const rpc_command>>& regs)
@@ -118,36 +93,7 @@ namespace cryptonote::rpc {
       // Temporary: remove once RPC conversion is complete
       static_assert(!FIXME_has_nested_response_v<RPC>);
 
-      cmd->invoke = [](rpc_request&& request, core_rpc_server& server) -> rpc_command::result_type {
-        RPC rpc{};
-        try {
-          if (auto body = request.body_view()) {
-            if (body->front() == 'd') { // Looks like a bt dict
-              rpc.set_bt();
-              parse_request(rpc, oxenc::bt_dict_consumer{*body});
-            }
-            else
-              parse_request(rpc, json::parse(*body));
-          } else if (auto* j = std::get_if<json>(&request.body)) {
-            parse_request(rpc, std::move(*j));
-          } else {
-            assert(std::holds_alternative<std::monostate>(request.body));
-            parse_request(rpc, std::monostate{});
-          }
-        } catch (const std::exception& e) {
-          throw parse_error{"Failed to parse request parameters: "s + e.what()};
-        }
-
-        server.invoke(rpc, std::move(request.context));
-
-        if (rpc.response.is_null())
-          rpc.response = json::object();
-
-        if (rpc.is_bt())
-          return json_to_bt(std::move(rpc.response));
-        else
-          return std::move(rpc.response);
-      };
+      cmd->invoke = make_invoke<RPC, core_rpc_server, rpc_command>();
 
       for (const auto& name : RPC::names())
         regs.emplace(name, cmd);
@@ -201,23 +147,18 @@ namespace cryptonote::rpc {
 
   const std::unordered_map<std::string, std::shared_ptr<const rpc_command>> rpc_commands = register_rpc_commands(rpc::core_rpc_types{}, rpc::core_rpc_binary_types{});
 
-  // const command_line::arg_descriptor<std::string> core_rpc_server::arg_bootstrap_daemon_address = {
-  //     "bootstrap-daemon-address"
-  //   , "URL of a 'bootstrap' remote daemon that the connected wallets can use while this daemon is still not fully synced."
-  //   , ""
-  //   };
+  /*const command_line::arg_descriptor<std::string> core_rpc_server::arg_bootstrap_daemon_address = {
+      "bootstrap-daemon-address"
+    , "URL of a 'bootstrap' remote daemon that the connected wallets can use while this daemon is still not fully synced."
+    , ""
+    };
 
-  // const command_line::arg_descriptor<std::string> core_rpc_server::arg_bootstrap_daemon_login = {
-  //     "bootstrap-daemon-login"
-  //   , "Specify username:password for the bootstrap daemon login"
-  //   , ""
-  //   };
+  const command_line::arg_descriptor<std::string> core_rpc_server::arg_bootstrap_daemon_login = {
+      "bootstrap-daemon-login"
+    , "Specify username:password for the bootstrap daemon login"
+    , ""
+    };*/
 
-  std::optional<std::string_view> rpc_request::body_view() const {
-    if (auto* sv = std::get_if<std::string_view>(&body)) return *sv;
-    if (auto* s = std::get_if<std::string>(&body)) return *s;
-    return std::nullopt;
-  }
 
   //-----------------------------------------------------------------------------------
   void core_rpc_server::init_options(boost::program_options::options_description& desc, boost::program_options::options_description& hidden)
@@ -1593,10 +1534,10 @@ namespace cryptonote::rpc {
         response.tx_hashes.push_back(tools::type_to_hex(tx_hash));
     }
   }
-/*
+
   /// All the common (untemplated) code for use_bootstrap_daemon_if_necessary.  Returns a held lock
   /// if we need to bootstrap, an unheld one if we don't.
-  std::unique_lock<std::shared_mutex> core_rpc_server::should_bootstrap_lock()
+  /*std::unique_lock<std::shared_mutex> core_rpc_server::should_bootstrap_lock()
   {
     // TODO - support bootstrapping via a remote LMQ RPC; requires some argument fiddling
 
@@ -2676,9 +2617,8 @@ namespace cryptonote::rpc {
     return;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  void core_rpc_server::invoke(GET_MASTER_NODE_REGISTRATION_CMD& get_master_node_registration_cmd, rpc_context context) 
+  void core_rpc_server::invoke(GET_MASTER_NODE_REGISTRATION_CMD& get_master_node_registration_cmd, rpc_context context)
   {
-
     PERF_TIMER(on_get_master_node_registration_cmd);
     
     if (!m_core.master_node())
@@ -2708,7 +2648,7 @@ namespace cryptonote::rpc {
         throw std::runtime_error("Mismatch in sizes of addresses and amounts");
     }
 
-    for (size_t i = 0; i < addresses.size(); ++i) {
+    for (size_t i = 0; i < addresses.size(); ++i)
     {
         uint64_t num_portions = master_nodes::get_portions_to_make_amount(staking_requirement, amounts[i]);
         args.push_back(addresses[i]);
@@ -2726,6 +2666,7 @@ namespace cryptonote::rpc {
     res.registration_cmd = req_old.response["registration_cmd"];
     return res;
   }
+
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES& get_master_node_blacklisted_key_images, rpc_context context)
   {

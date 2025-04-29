@@ -1,5 +1,5 @@
 #include "core_rpc_server_command_parser.h"
-#include "param_parser.hpp"
+#include "rpc/common/param_parser.hpp"
 
 
 namespace cryptonote::rpc {

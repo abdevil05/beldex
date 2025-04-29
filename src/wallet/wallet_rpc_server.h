@@ -42,7 +42,7 @@
 #include "common/periodic_task.h"
 #include "wallet_rpc_server_commands_defs.h"
 #include "wallet2.h"
-#include "rpc/http_server_base.h"
+#include "rpc/common/http_server_base.h"
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "wallet.rpc"
