@@ -95,6 +95,24 @@ namespace cryptonote::rpc {
         json_binary_proxy{a.emplace_back(), format} = val;
       return e = std::move(a);
     }
+     /// Emplaces a new nlohman::json to the end of an underlying list and returns a
+     /// json_binary_proxy wrapping it.
+     ///
+     /// Example:
+     ///
+     ///     auto child = wrappedelem.emplace_back({"key1": 1}, {"key2": 2});
+     ///     child["binary-key"] = some_binary_thing;
+     template <typename... Args>
+     json_binary_proxy emplace_back(Args&&... args) {
+       return json_binary_proxy{e.emplace_back(std::forward<Args>(args)...), format};
+     }
+ 
+     /// Adds an element to an underlying list, then copies or moves the given argument onto it via
+     /// json_binary_proxy assignment.
+     template <typename T>
+     void push_back(T&& val) {
+       emplace_back() = std::forward<T>(val);
+     }
   };
 
 }

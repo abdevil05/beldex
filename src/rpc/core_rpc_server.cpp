@@ -584,27 +584,32 @@ namespace cryptonote::rpc {
       return;
     }
 
+    auto binary_format = get_outputs.is_bt() ? json_binary_proxy::fmt::bt : json_binary_proxy::fmt::hex;
+
     auto& outs = (get_outputs.response["outs"] = json::array());
     if (!get_outputs.request.as_tuple) {
       for (auto& outkey : res_bin.outs) {
-        outs.push_back(json{
-          {"key", std::move(outkey.key)},
-          {"mask", std::move(outkey.mask)},
-          {"unlocked", outkey.unlocked},
-          {"height", outkey.height}
-        });
+        json o;
+        json_binary_proxy b{o, binary_format};
+        b["key"] = std::move(outkey.key);
+        b["mask"] = std::move(outkey.mask);
+        o["unlocked"] = outkey.unlocked;
+        o["height"] = outkey.height;
         if (get_outputs.request.get_txid)
-          outs.back()["txid"] = std::move(outkey.txid);
+          b["txid"] = std::move(outkey.txid);
+        outs.push_back(std::move(o));
       }
     } else {
       for (auto& outkey : res_bin.outs) {
-        outs.push_back(json::array({
-            std::move(outkey.key),
-            std::move(outkey.mask),
-            outkey.unlocked,
-            outkey.height}));
+        auto o = json::array();
+        json_binary_proxy b{o, binary_format};
+        b.push_back(std::move(outkey.key));
+        b.push_back(std::move(outkey.mask));
+        o.push_back(outkey.unlocked);
+        o.push_back(outkey.height);
         if (get_outputs.request.get_txid)
-          outs.back().push_back(std::move(outkey.txid));
+          b.push_back(std::move(outkey.txid));
+        outs.push_back(o);
       }
     }
 
