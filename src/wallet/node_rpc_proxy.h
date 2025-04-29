@@ -33,6 +33,7 @@
 #include <type_traits>
 #include "rpc/http_client.h"
 #include "rpc/core_rpc_server_commands_defs.h"
+#include <nlohmann/json.hpp>
 
 namespace tools
 {

@@ -184,7 +184,7 @@ std::optional<cryptonote::hf> NodeRPCProxy::get_hardfork_version() const
 
   try {
     auto res = m_http_client.json_rpc("hard_fork_info", {});
-    return res["version"].get<uint8_t>();
+    return res["version"].get<cryptonote::hf>();
   }catch (...) {}
 
   return std::nullopt;
@@ -395,7 +395,6 @@ std::pair<bool, nlohmann::json> NodeRPCProxy::bns_names_to_owners(nlohmann::json
 }
 
 std::pair<bool, nlohmann::json> NodeRPCProxy::bns_resolve(nlohmann::json const& request) const
-{
 {
   std::pair<bool, nlohmann::json> result;
   auto& [success, resolved] = result;

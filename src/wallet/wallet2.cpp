@@ -56,7 +56,6 @@
 #include "common/boost_serialization_helper.h"
 #include "common/command_line.h"
 #include "common/threadpool.h"
-#include "epee/profile_tools.h"
 #include "crypto/crypto.h"
 #include "serialization/binary_utils.h"
 #include "serialization/string.h"
@@ -896,7 +895,7 @@ bool get_pruned_tx(const nlohmann::json& entry, cryptonote::transaction &tx, cry
   if (entry["as_hex"] || (entry["prunable"] && entry["pruned"]))
   {
     if (entry["as_hex"]) {
-      CHECK_AND_ASSERT_MES(oxenc::is_hex(entry["as_hex"]).get<std::string>(), false, "Failed to parse tx data");
+      CHECK_AND_ASSERT_MES(oxenc::is_hex(entry["as_hex"].get<std::string>()), false, "Failed to parse tx data");
       bd = oxenc::from_hex(*entry.["as_hex"]);
     } else {
       CHECK_AND_ASSERT_MES(oxenc::is_hex(entry["pruned"].get<std::string>()) && oxenc::is_hex(entry["prunable"].get<std::string>()), false, "Failed to parse tx data");
@@ -8173,7 +8172,7 @@ wallet2::stake_result wallet2::check_stake_allowed(const crypto::public_key& mn_
     return result;
   }
 
-  const bool full = mnode_info["contributors"].size() >= MAX_NUMBER_OF_CONTRIBUTORS;
+  const bool full = mnode_info["contributors"].size() >= beldex::MAX_NUMBER_OF_CONTRIBUTORS;
   if (full && !is_preexisting_contributor)
   {
     result.status = stake_result_status::master_node_contributors_maxed;

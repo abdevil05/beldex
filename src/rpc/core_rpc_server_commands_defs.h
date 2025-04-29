@@ -1370,7 +1370,6 @@ namespace cryptonote::rpc {
       std::vector<std::string> txids; // List of transactions IDs to relay from pool.
     } request;
 
-    struct response : STATUS {};
   };
 
   /// Get node synchronisation information.  This returns information on the node's syncing "spans"
@@ -2277,8 +2276,6 @@ namespace cryptonote::rpc {
       bool bad_txs; // Clear the cache storing TXs that failed verification.
       bool bad_blocks; // Clear the cache storing blocks that failed verfication.
     } request;
-
-    struct response : STATUS { };
   };
 
   /// List of all supported rpc command structs to allow compile-time enumeration of all supported

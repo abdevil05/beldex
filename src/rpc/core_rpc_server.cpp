@@ -580,7 +580,7 @@ namespace cryptonote::rpc {
 
     GET_OUTPUTS_BIN::response res_bin{};
     if (!m_core.get_outs(req_bin, res_bin)){
-      get_outputs.response["status"] = "Failed";
+      get_outputs.response["status"] = STATUS_FAILED;
       return;
     }
 
@@ -687,7 +687,7 @@ namespace cryptonote::rpc {
       void operator()(const tx_extra_burn& x) { set("burn_amount", x.amount); }
       void operator()(const tx_extra_master_node_winner& x) { set("mn_winner", x.m_master_node_key); }
       void operator()(const tx_extra_master_node_pubkey& x) { set("mn_pubkey", x.m_master_node_key); }
-      void operator()(const tx_extra_security_signature& x) {  entry.security_sig = tools::type_to_hex(x.m_security_signature); }
+      void operator()(const tx_extra_security_signature& x) { set("security_sig", x.m_security_signature); }
       void operator()(const tx_extra_master_node_register& x) {
         json reservations{};
         for (size_t i = 0; i < x.m_portions.size(); i++)
@@ -2655,20 +2655,20 @@ namespace cryptonote::rpc {
 
     for (size_t i = 0; i < addresses.size(); ++i)
     {
-        uint64_t num_portions = master_nodes::get_portions_to_make_amount(staking_requirement, amounts[i]);
-        args.push_back(addresses[i]);
-        args.push_back(std::to_string(num_portions));
+      uint64_t num_portions = master_nodes::get_portions_to_make_amount(staking_requirement, amounts[i]);
+      args.push_back(addresses[i]);
+      args.push_back(std::to_string(num_portions));
     }
 
     GET_MASTER_NODE_REGISTRATION_CMD_RAW req_old{};
 
-    req_old.request.staking_requirement = req.staking_requirement;
+    req_old.request.staking_requirement = staking_requirement;
     req_old.request.args = std::move(args);
     req_old.request.make_friendly = false;
 
     invoke(req_old, context);
-    res.status = req_old.response["status"];
-    res.registration_cmd = req_old.response["registration_cmd"];
+    get_master_node_registration_cmd.response["status"] = req_old.response["status"];
+    get_master_node_registration_cmd.response["registration_cmd"] = req_old.response["registration_cmd"];
     return res;
   }
 
@@ -3001,7 +3001,7 @@ namespace cryptonote::rpc {
     PERF_TIMER(on_get_staking_requirement);
     get_staking_requirement.response["height"] = get_staking_requirement.request.height > 0 ? get_staking_requirement.request.height : m_core.get_current_blockchain_height();
 
-    get_staking_requirement.response["staking_requirement"] = master_nodes::get_staking_requirement(nettype(), get_staking_requirement.request.height);
+    get_staking_requirement.response["staking_requirement"] = master_nodes::get_staking_requirement(get_staking_requirement.response["height"]);
     get_staking_requirement.response["status"] = STATUS_OK;
     return;
   }
