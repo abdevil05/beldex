@@ -6898,12 +6898,12 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
 
     if (backup_owner.size())
     {
-      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Backup Owner  : {}\n"), response[0]["backup_owner"]));
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Backup Owner  : {}\n"), response[0].value("backup_owner", "")));
       fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Backup Owner  : {}\n"), backup_owner));
     }
     else
     {
-      fmt::print(fmt::format(tr("Backup Owner      : {} (unchanged)\n"), response[0]["backup_owner"]));
+      fmt::print(fmt::format(tr("Backup Owner      : {} (unchanged)\n"), response[0].value("backup_owner", "")));
     }
 
     if (value_bchat.size() && (value_bchat == bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat)))
@@ -7205,11 +7205,11 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
       << "\n    Value ethAddress       : " << value_eth.to_readable_value(m_wallet->nettype(), bns::mapping_type::eth_addr);
     writer
       << "\n    Owner                  : " << mapping["owner"];
-    if (mapping.backup_owner) writer
-      << "\n    Backup owner           : " << *mapping["backup_owner"];
+    if (mapping["backup_owner"]) writer
+      << "\n    Backup owner           : " << mapping["backup_owner"];
     writer
       << "\n    Last updated height    : " << mapping["update_height"];
-    if (mapping.expiration_height) writer
+    if (mapping["expiration_height"]) writer
       << "\n    Expiration height      : " << mapping["expiration_height"];
     writer
       << "\n    Encrypted bchat value  : " << (enc_bchat_hex.empty() ? "(none)" :enc_bchat_hex);

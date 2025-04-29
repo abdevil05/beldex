@@ -220,31 +220,32 @@ namespace {
     else {
       std::ostringstream os;
 
-      if (res["tvc"]["m_verbose_error"].size()) os << res["tvc"]["m_verbose_error"].get<std::string>() << "\n";
+      const auto tvc = res["tvc"];
+      if (auto got = tvc.find("m_verbose_error"); got != tvc.end()) os << res["tvc"]["m_verbose_error"].get<std::string>() << "\n";
+      if (auto got = tvc.find("m_verifivation_failed"); got != tvc.end()) os << "Verification failed, connection should be dropped, "; //bad tx, should drop connection
+      if (auto got = tvc.find("m_verifivation_impossible"); got != tvc.end()) os << "Verification impossible, related to alt chain, "; //the transaction is related with an alternative blockchain
+      if (auto got = tvc.find("m_should_be_relayed"); got == tvc.end()) os << "TX should NOT be relayed, ";
+      if (auto got = tvc.find("m_added_to_pool"); got != tvc.end()) os << "TX added to pool, ";
+      if (auto got = tvc.find("m_low_mixin"); got != tvc.end()) os << "Insufficient mixin, ";
+      if (auto got = tvc.find("m_double_spend"); got != tvc.end()) os << "Double spend TX, ";
+      if (auto got = tvc.find("m_invalid_input"); got != tvc.end()) os << "Invalid inputs, ";
+      if (auto got = tvc.find("m_invalid_output"); got != tvc.end()) os << "Invalid outputs, ";
+      if (auto got = tvc.find("m_too_few_outputs"); got != tvc.end()) os << "Need at least 2 outputs, ";
+      if (auto got = tvc.find("m_too_big"); got != tvc.end()) os << "TX too big, ";
+      if (auto got = tvc.find("m_overspend"); got != tvc.end()) os << "Overspend, ";
+      if (auto got = tvc.find("m_fee_too_low"); got != tvc.end()) os << "Fee too low, ";
+      if (auto got = tvc.find("m_invalid_version"); got != tvc.end()) os << "TX has invalid version, ";
+      if (auto got = tvc.find("m_invalid_type"); got != tvc.end()) os << "TX has invalid type, ";
+      if (auto got = tvc.find("m_key_image_locked_by_mnode"); got != tvc.end()) os << "Key image is locked by master node, ";
+      if (auto got = tvc.find("m_key_image_blacklisted"); got != tvc.end()) os << "Key image is blacklisted on the master node network, ";
 
-      if (res["tvc"]["m_verifivation_failed"].get<bool>())       os << "Verification failed, connection should be dropped, "; //bad tx, should drop connection
-      if (res["tvc"]["m_verifivation_impossible"].get<bool>())   os << "Verification impossible, related to alt chain, "; //the transaction is related with an alternative blockchain
-      if (!res["tvc"]["m_should_be_relayed"].get<bool>())        os << "TX should NOT be relayed, ";
-      if (res["tvc"]["m_added_to_pool"].get<bool>())             os << "TX added to pool, ";
-      if (res["tvc"]["m_low_mixin"].get<bool>())                 os << "Insufficient mixin, ";
-      if (res["tvc"]["m_double_spend"].get<bool>())              os << "Double spend TX, ";
-      if (res["tvc"]["m_invalid_input"].get<bool>())             os << "Invalid inputs, ";
-      if (res["tvc"]["m_invalid_output"].get<bool>())            os << "Invalid outputs, ";
-      if (res["tvc"]["m_too_few_outputs"].get<bool>())           os << "Need at least 2 outputs, ";
-      if (res["tvc"]["m_too_big"].get<bool>())                   os << "TX too big, ";
-      if (res["tvc"]["m_overspend"].get<bool>())                 os << "Overspend, ";
-      if (res["tvc"]["m_fee_too_low"].get<bool>())               os << "Fee too low, ";
-      if (res["tvc"]["m_invalid_version"].get<bool>())           os << "TX has invalid version, ";
-      if (res["tvc"]["m_invalid_type"].get<bool>())              os << "TX has invalid type, ";
-      if (res["tvc"]["m_key_image_locked_by_mnode"].get<bool>()) os << "Key image is locked by master node, ";
-      if (res["tvc"]["m_key_image_blacklisted"].get<bool>())     os << "Key image is blacklisted on the master node network, ";
-
-      if (res["tvc"]["m_vote_ctx"]["m_validator_index_out_of_bounds"].get<bool>()) os << "Validator index out of bounds";
-      if (res["tvc"]["m_vote_ctx"]["m_signature_not_valid"].get<bool>())           os << "Signature not valid, ";
-      if (res["tvc"]["m_vote_ctx"]["m_added_to_pool"].get<bool>())                 os << "Added to pool, ";
-      if (res["tvc"]["m_vote_ctx"]["m_not_enough_votes"].get<bool>())              os << "Not enough votes, ";
-      if (res["tvc"]["m_vote_ctx"]["m_incorrect_voting_group"].get<bool>())        os << "Incorrect voting group specified,";
-      if (res["tvc"]["m_vote_ctx"]["m_votes_not_sorted"].get<bool>())              os << "Votes are not stored in ascending order";
+      const auto m_vote_ctx = tvc["m_vote_ctx"];
+      if (auto got = m_vote_ctx.find("m_validator_index_out_of_bounds"); got != m_vote_ctx.end()) os << "Validator index out of bounds";
+      if (auto got = m_vote_ctx.find("m_signature_not_valid"); got != m_vote_ctx.end()) os << "Signature not valid, ";
+      if (auto got = m_vote_ctx.find("m_added_to_pool"); got != m_vote_ctx.end()) os << "Added to pool, ";
+      if (auto got = m_vote_ctx.find("m_not_enough_votes"); got != m_vote_ctx.end()) os << "Not enough votes, ";
+      if (auto got = m_vote_ctx.find("m_incorrect_voting_group"); got != m_vote_ctx.end()) os << "Incorrect voting group specified,";
+      if (auto got = m_vote_ctx.find("m_votes_not_sorted"); got != m_vote_ctx.end()) os << "Votes are not stored in ascending order";
 
       if (tx)
         os << "TX Version: " << tx->version << ", Type: " << tx->type;
@@ -5645,9 +5646,13 @@ bool wallet2::check_connection(rpc::version_t *version, bool *ssl, bool throw_on
 
   if (!m_rpc_version)
   {
-    auto res = m_http_client.json_rpc("get_version", {});
-    if(res["status"] != rpc::STATUS_OK) return false;
-    m_rpc_version = res["version"];
+    try {
+      auto res = m_http_client.json_rpc("get_version", {});
+      if(res["status"] != rpc::STATUS_OK) return false;
+      m_rpc_version = res["version"];
+    } catch(...) {
+      return false;
+    }
   }
   if (version)
     *version = rpc::make_version(m_rpc_version);
@@ -5860,18 +5865,25 @@ void wallet2::trim_hashchain()
     nlohmann::json req_params{
       {"height", m_blockchain.size() - 1}
     };
-    auto res = m_http_client.json_rpc("get_block_header_by_height", req_params);
-    if (res["status"] == rpc::STATUS_OK)
-    {
-      crypto::hash hash;
-      tools::hex_to_type(res["block_header"]["hash"].get<std::string>(), hash);
-      m_blockchain.refill(hash);
+    try {
+      auto res = m_http_client.json_rpc("get_block_header_by_height", req_params);
+      if (res["status"] == rpc::STATUS_OK)
+      {
+        crypto::hash hash;
+        tools::hex_to_type(res["block_header"]["hash"].get<std::string>(), hash);
+        m_blockchain.refill(hash);
+      }
+      else
+      {
+        MERROR("Failed to request block header from daemon, hash chain may be unable to sync till the wallet is loaded with a usable daemon");
+      }
     }
-    else
+    catch (const std::exception &e)
     {
-      MERROR("Failed to request block header from daemon, hash chain may be unable to sync till the wallet is loaded with a usable daemon");
+      MERROR("Failed to request block header from daemon when requesting get_block_header_by_height, hash chain may be unable to sync till the wallet is loaded with a usable daemon");
     }
   }
+
   if (height > 0 && m_blockchain.size() > height)
   {
     --height;
@@ -7966,16 +7978,17 @@ bool wallet2::unset_ring(const crypto::hash &txid)
   if (!m_ringdb)
     return false;
 
-    nlohmann::json get_transactions_params{
-      {"tx_hashes", tools::type_to_hex(txid)}
-    };
-    auto res = m_http_client.json_rpc("get_transactions", get_transactions_params);
-  
+  nlohmann::json get_transactions_params{
+    {"tx_hashes", tools::type_to_hex(txid)}
+  };
   cryptonote::transaction tx;
-  crypto::hash tx_hash;
-  if (!get_pruned_tx(res["txs"].front(), tx, tx_hash))
-    return false;
-  THROW_WALLET_EXCEPTION_IF(tx_hash != txid, error::wallet_internal_error, "Failed to get the right transaction from daemon");
+  try {
+    auto res = m_http_client.json_rpc("get_transactions", get_transactions_params);
+    crypto::hash tx_hash;
+    if (!get_pruned_tx(res["txs"].front(), tx, tx_hash))
+      return false;
+    THROW_WALLET_EXCEPTION_IF(tx_hash != txid, error::wallet_internal_error, "Failed to get the right transaction from daemon");
+  } catch (const std::exception &e) { return false; }
 
   try { return m_ringdb->remove_rings(get_ringdb_key(), tx); }
   catch (const std::exception &e) { return false; }
@@ -8617,7 +8630,7 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
 
       result.msg.reserve(1024);
       auto const &contribution = contributions[0];
-      if (node_info["requested_unlock_height"] != 0)
+      if (node_info["requested_unlock_height"].get<uint64_t>() != 0)
       {
         result.msg.append("Key image: ");
         result.msg.append(contribution["key_image"]);
@@ -8848,17 +8861,17 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
       cryptonote::address_parse_info curr_owner_parsed        = {};
       cryptonote::address_parse_info curr_backup_owner_parsed = {};
       auto& rowner = (*response)["entries"].front()["owner"];
-      auto& rbackup_owner = (*response)["entries"].front()["backup_owner"];
+      std::string* rbackup_owner = (*response)["entries"].front().value("backup_owner", nullptr);
       bool curr_owner        = cryptonote::get_account_address_from_str(curr_owner_parsed, wallet.nettype(), rowner.get<std::string>());
-      bool curr_backup_owner = rbackup_owner && cryptonote::get_account_address_from_str(curr_backup_owner_parsed, wallet.nettype(), rbackup_owner.get<std::string>());
+      bool curr_backup_owner = rbackup_owner && cryptonote::get_account_address_from_str(curr_backup_owner_parsed, wallet.nettype(), *rbackup_owner);
       if (!try_generate_bns_signature(wallet, rowner, owner, backup_owner, result))
       {
-        if (!rbackup_owner || !try_generate_bns_signature(wallet, rbackup_owner, owner, backup_owner, result))
+        if (!rbackup_owner || !try_generate_bns_signature(wallet, *rbackup_owner, owner, backup_owner, result))
         {
           if (reason)
           {
             *reason = "Signature requested when preparing ONS TX, but this wallet is not the owner of the record owner=" + rowner.get<std::string>();
-            if (rbackup_owner) *reason += ", backup_owner=" + rbackup_owner.get<std::string>();
+            if (rbackup_owner) *reason += ", backup_owner=" + *rbackup_owner;
           }
           return result;
         }
