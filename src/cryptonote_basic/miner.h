@@ -87,7 +87,6 @@ namespace cryptonote
   private:
     bool worker_thread(uint32_t index, bool slow_mining = false);
     bool request_block_template();
-    void update_hashrate();
     
     struct miner_config
     {

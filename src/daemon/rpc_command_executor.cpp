@@ -149,7 +149,7 @@ namespace {
       << "long term weight: " << header.long_term_weight << "\n"
       << "num txes: " << header.num_txes << "\n"
       << "reward: " << cryptonote::print_money(header.reward) << "\n"
-      << "miner reward: " << cryptonote::print_money(header.miner_reward) << "\n"
+      << "coinbase_payouts: " << cryptonote::print_money(header.coinbase_payouts) << "\n"
       << "master node winner: " << header.master_node_winner << "\n"
       << "miner tx hash: " << header.miner_tx_hash;
   }
@@ -532,7 +532,7 @@ bool rpc_command_executor::show_status() {
   //     str << " was used";
   // }
 
-  auto hf_version = hfinfo["version"].get<uint8_t>();
+  auto hf_version = hfinfo["version"].get<cryptonote::hf>();
   if (hf_version < cryptonote::feature::POS && !has_mining_info)
     str << ", mining info unavailable";
   if (has_mining_info && !mining_busy && mining_active)
@@ -625,6 +625,19 @@ bool rpc_command_executor::mining_status() {
   return true;
 }
 
+static const char *get_address_type_name(epee::net_utils::address_type address_type)
+{
+  switch (address_type)
+  {
+    default:
+    case epee::net_utils::address_type::invalid: return "invalid";
+    case epee::net_utils::address_type::ipv4: return "IPv4";
+    case epee::net_utils::address_type::ipv6: return "IPv6";
+    case epee::net_utils::address_type::i2p: return "I2P";
+    case epee::net_utils::address_type::tor: return "Tor";
+  }
+}
+
 bool rpc_command_executor::print_connections() {
   auto maybe_conns = try_running([this] { return invoke<GET_CONNECTIONS>(); }, "Failed to retrieve connection info");
   if (!maybe_conns)
@@ -645,7 +658,7 @@ bool rpc_command_executor::print_connections() {
     address += tools::int_to_string(info["port"].get<uint16_t>());
     tools::msg_writer() << fmt::format(row_fmt,
         address,
-        info["address_type"].get<epee::net_utils::address_type>(),
+        get_address_type_name(info["address_type"].get<epee::net_utils::address_type>()),
         info["peer_id"].get<std::string_view>(),
         fmt::format("{}({}/{})", info["recv_count"].get<uint64_t>(),
           tools::friendly_duration(1ms * info["recv_idle_ms"].get<int64_t>()),
@@ -1967,13 +1980,13 @@ static uint64_t get_amount_to_make_portions(uint64_t amount, uint64_t portions)
   return resultlo;
 }
 
-static uint64_t get_actual_amount(uint64_t amount, uint64_t portions)
-{
-  uint64_t lo, hi, resulthi, resultlo;
-  lo = mul128(amount, portions, &hi);
-  div128_64(hi, lo, cryptonote::old::STAKING_PORTIONS, &resulthi, &resultlo);
-  return resultlo;
-}
+// static uint64_t get_actual_amount(uint64_t amount, uint64_t portions)
+// {
+//   uint64_t lo, hi, resulthi, resultlo;
+//   lo = mul128(amount, portions, &hi);
+//   div128_64(hi, lo, cryptonote::old::STAKING_PORTIONS, &resulthi, &resultlo);
+//   return resultlo;
+// }
 
 bool rpc_command_executor::prepare_registration(bool force_registration)
 {
@@ -2018,7 +2031,7 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
   }
 
   uint64_t block_height = std::max(info["height"].get<uint64_t>(), info["target_height"].get<uint64_t>());
-  uint8_t hf_version = hfinfo["version"].get<uint8_t>();
+  auto hf_version = hfinfo["version"].get<cryptonote::hf>();
 #if defined(BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
   cryptonote::network_type const nettype = cryptonote::FAKECHAIN;
 #else
@@ -2038,18 +2051,18 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
     uint64_t const now = time(nullptr);
 
     auto const& header = *maybe_header;
-    if (now >= header.timestamp)
+
+    const auto now = std::chrono::system_clock::now();
+    const auto block_ts = std::chrono::system_clock::from_time_t(header.timestamp);
+
+    if (now - block_ts >= 10min)
     {
-      uint64_t delta = now - header.timestamp;
-      if (delta > (60 * 60))
-      {
-        tools::fail_msg_writer() << "The last block this Master Node knows about was at least " << get_human_time_ago(header.timestamp, now)
-                                 << "\nYour node is possibly desynced from the network or still syncing to the network."
-                                 << "\n\nRegistering this node may result in a deregistration due to being out of date with the network\n";
-      }
+      tools::fail_msg_writer() << "The last block this Master Node knows about was at least " << get_human_time_ago(now - block_ts)
+                               << "\nYour node is possibly desynced from the network or still syncing to the network."
+                               << "\n\nRegistering this node may result in a deregistration due to being out of date with the network\n";
     }
 
-    if (block_height >= header.height)
+    if (auto synced_height = header.height; block_height >= synced_height)
     {
       uint64_t delta = block_height - header.height;
       if (delta > 15)
@@ -2066,7 +2079,7 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
 
   // anything less than DUST will be added to operator stake
   const uint64_t DUST = beldex::MAX_NUMBER_OF_CONTRIBUTORS;
-  std::cout << "\n BELDEX MASTER NODE REGISTRATION "<< std::endl;
+  std::cout << "\n BELDEX MASTER NODE REGISTRATION "<< std::endl; //check
     std::cout << "Current staking requirement: " << cryptonote::print_money(staking_requirement) << " " << cryptonote::get_unit() << std::endl;
 
     enum struct register_step

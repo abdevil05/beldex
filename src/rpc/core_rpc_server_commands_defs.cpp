@@ -76,17 +76,18 @@ void to_json(nlohmann::json& j, const block_header_response& h)
     {"difficulty", h.difficulty},
     {"cumulative_difficulty", h.cumulative_difficulty},
     {"reward", h.reward},
-    {"miner_reward", h.miner_reward},
+    {"coinbase_payouts", h.coinbase_payouts},
     {"block_size", h.block_size},
     {"block_weight", h.block_weight},
     {"num_txes", h.num_txes},
-    {"pow_hash", h.pow_hash ? *h.pow_hash : nullptr},
     {"long_term_weight", h.long_term_weight},
     {"miner_tx_hash", h.miner_tx_hash},
     {"miner_tx_hash", h.miner_tx_hash},
     {"tx_hashes", h.tx_hashes},
     {"master_node_winner", h.master_node_winner},
   };
+  if (h.pow_hash)
+    j["pow_hash"] = *h.pow_hash;
 };
 
 void from_json(const nlohmann::json& j, block_header_response& h)
@@ -103,7 +104,7 @@ void from_json(const nlohmann::json& j, block_header_response& h)
   j.at("difficulty").get_to(h.difficulty);
   j.at("cumulative_difficulty").get_to(h.cumulative_difficulty);
   j.at("reward").get_to(h.reward);
-  j.at("miner_reward").get_to(h.miner_reward);
+  j.at("coinbase_payouts").get_to(h.coinbase_payouts);
   j.at("block_size").get_to(h.block_size);
   j.at("block_weight").get_to(h.block_weight);
   j.at("num_txes").get_to(h.num_txes);

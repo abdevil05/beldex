@@ -33,6 +33,8 @@ add_library(blockchain_db
   )
 
 target_link_libraries(blockchain_db
+  PUBLIC
+    nlohmann_json::nlohmann_json
   PRIVATE
     common
     ringct
