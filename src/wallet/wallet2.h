@@ -818,10 +818,11 @@ private:
     auto get_all_master_nodes()                                    const { return m_node_rpc_proxy.get_all_master_nodes(); }
     auto get_master_nodes(std::vector<std::string> const &pubkeys) const { return m_node_rpc_proxy.get_master_nodes(pubkeys); }
     auto get_master_node_blacklisted_key_images()                  const { return m_node_rpc_proxy.get_master_node_blacklisted_key_images(); }
+    // List of service nodes this wallet has a stake in:
+    nlohmann::json get_staked_master_nodes();
     auto bns_owners_to_names(nlohmann::json const &request) const { return m_node_rpc_proxy.bns_owners_to_names(request); }
     auto bns_names_to_owners(nlohmann::json const &request) const { return m_node_rpc_proxy.bns_names_to_owners(request); }
     auto resolve(nlohmann::json const &request) const { return m_node_rpc_proxy.bns_resolve(request); }
-    nlohmann::json list_current_stakes();
     struct bns_detail
     {
       std::string name;

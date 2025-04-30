@@ -56,10 +56,12 @@ public:
   bool get_dynamic_base_fee_estimate(uint64_t grace_blocks, cryptonote::byte_and_output_fees &fees) const;
   bool get_fee_quantization_mask(uint64_t &fee_quantization_mask) const;
   std::optional<cryptonote::hf> get_hardfork_version() const;
-
-  std::pair<bool, nlohmann::json>             get_master_nodes(std::vector<std::string> pubkeys) const;
-  std::pair<bool, nlohmann::json>             get_all_master_nodes() const;
-  std::pair<bool, nlohmann::json>             get_contributed_master_nodes(const std::string& contributor) const;
+  
+  // Note that this master node responses only fills out fields that are used in wallet code, not
+  // the full master node records.  (see node_rpc_proxy.cpp for the precise list).
+  std::pair<bool, nlohmann::json> get_master_nodes(std::vector<std::string> pubkeys) const;
+  std::pair<bool, nlohmann::json> get_all_master_nodes() const;
+  std::pair<bool, nlohmann::json> get_contributed_master_nodes(const std::string& contributor) const;
   std::pair<bool, nlohmann::json> get_master_node_blacklisted_key_images() const;
   std::pair<bool, nlohmann::json> bns_owners_to_names(nlohmann::json const &request) const;
   std::pair<bool, nlohmann::json> bns_names_to_owners(nlohmann::json const &request) const;

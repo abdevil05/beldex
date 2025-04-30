@@ -33,6 +33,7 @@
 #include <chrono>
 #include <cstdio>
 #include <oxenc/endian.h>
+#include <fmt/core.h>
 
 #include "common/rules.h"
 #include "common/hex.h"
@@ -302,7 +303,7 @@ uint64_t Blockchain::get_current_blockchain_height(bool lock) const
 bool Blockchain::load_missing_blocks_into_beldex_subsystems()
 {
   uint64_t const mnl_height   = std::max(hard_fork_begins(m_nettype, hf::hf9_master_nodes).value_or(0), m_master_node_list.height() + 1);
-  uint64_t const bns_height   = std::max(hard_fork_begins(m_nettype, hf::hf18_bns).value_or(0),          m_bns_db.height() + 1);
+  uint64_t const bns_height   = std::max(hard_fork_begins(m_nettype, hf::hf18_bns).value_or(0), m_bns_db.height() + 1);
   uint64_t const end_height   = m_db->height();
   uint64_t const start_height = std::min(end_height, std::min(bns_height, mnl_height));
   
@@ -312,22 +313,26 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
     MGINFO("Loading blocks into beldex subsystems, scanning blockchain from height: " << start_height << " to: " << end_height << " (mnl: " << mnl_height << ", bns: " << bns_height << ")");
 
   using clock                   = std::chrono::steady_clock;
-  using work_time               = std::chrono::duration<float>;
-  constexpr int64_t BLOCK_COUNT = 1000;
+  using dseconds                = std::chrono::duration<double>;
+  int64_t constexpr BLOCK_COUNT = 1000;
   auto work_start               = clock::now();
   auto scan_start               = work_start;
-  work_time bns_duration{}, mnl_duration{}, bns_iteration_duration{}, mnl_iteration_duration{};
+  dseconds bns_duration{}, mnl_duration{}, bns_iteration_duration{}, mnl_iteration_duration{};
 
   for (int64_t block_count = total_blocks,
                index       = 0;
        block_count > 0;
        block_count -= BLOCK_COUNT, index++)
   {
-    if (index > 0 && (index % 10 == 0))
+    auto duration = dseconds{clock::now() - work_start};
+    if (duration >= 10s)
     {
       m_master_node_list.store();
-      auto duration = work_time{clock::now() - work_start};
-      MGINFO("... scanning height " << start_height + (index * BLOCK_COUNT) << " (" << duration.count() << "s) (mnl: " << mnl_iteration_duration.count() << "s; bns: " << bns_iteration_duration.count() << "s)");
+      MGINFO(fmt::format("... scanning height {} ({:.3f}s) (mnl: {:.3f}s, bns: {:.3f}s)",
+            start_height + (index * BLOCK_COUNT),
+            duration.count(),
+            mnl_iteration_duration.count(),
+            bns_iteration_duration.count()));
 #ifdef ENABLE_SYSTEMD
       // Tell systemd that we're doing something so that it should let us continue starting up
       // (giving us 120s until we have to send the next notification):
@@ -392,8 +397,8 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
 
   if (total_blocks > 1)
   {
-    auto duration = work_time{clock::now() - scan_start};
-    MGINFO("Done recalculating beldex subsystems (" << duration.count() << "s) (mnl: " << mnl_duration.count() << "s; bns: " << bns_duration.count() << "s)");
+    MGINFO(fmt::format("Done recalculating beldex subsystems in {:.2f}s ({:.2f}s mnl; {:.2f}s bns)",
+          dseconds{clock::now() - scan_start}.count(), mnl_duration.count(), bns_duration.count()));
   }
 
   if (total_blocks > 0)

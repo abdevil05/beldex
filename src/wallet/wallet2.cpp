@@ -13324,10 +13324,10 @@ uint64_t wallet2::get_approximate_blockchain_height() const
   return approx_blockchain_height;
 }
 
-nlohmann::json wallet2::list_current_stakes()
+nlohmann::json wallet2::get_staked_master_nodes()
 {
-  auto [success, master_node_states] = this->get_all_master_nodes();
-  return master_node_states;
+  auto [success, contributed_nodes] = m_node_rpc_proxy.get_contributed_master_nodes(get_address_as_str());
+  return std::move(contributed_nodes);
 }
 
 void wallet2::set_bns_cache_record(wallet2::bns_detail detail)

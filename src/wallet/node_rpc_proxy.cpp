@@ -257,8 +257,18 @@ bool NodeRPCProxy::update_all_master_nodes_cache(uint64_t height) const {
   if (m_offline)
     return false;
 
+  nlohmann::json req{};
+  req["fields"] = nlohmann::json{};
+  req["fields"]["active"] = true;
+  req["fields"]["contributors"] = true;
+  req["fields"]["funded"] = true;
+  req["fields"]["registration_height"] = true;
+  req["fields"]["requested_unlock_height"] = true;
+  req["fields"]["master_node_pubkey"] = true;
+  req["fields"]["staking_requirement"] = true;
+  req["fields"]["total_reserved"] = true;
   try {
-    auto res = m_http_client.json_rpc("get_master_nodes", {});
+    auto res = m_http_client.json_rpc("get_master_nodes", req);
     m_all_master_nodes_cached_height = height;
     m_all_master_nodes = std::move(res["master_node_states"]);
   } catch (...) { return false; }

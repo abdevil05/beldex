@@ -37,6 +37,7 @@
 
 #include "common/string_util.h"
 #include "beldex_economy.h"
+#include <algorithm>
 #include <chrono>
 #ifdef _WIN32
  #define __STDC_FORMAT_MACROS // NOTE(beldex): Explicitly define the PRIu64 macro on Mingw
@@ -5083,6 +5084,22 @@ bool simple_wallet::show_balance_unlocked(bool detailed)
     << tr("unlocked balance: ") << print_money(unlocked_balance) << unlock_time_message << extra;
   std::map<uint32_t, uint64_t> balance_per_subaddress = m_wallet->balance_per_subaddress(m_current_subaddress_account, false);
   std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> unlocked_balance_per_subaddress = m_wallet->unlocked_balance_per_subaddress(m_current_subaddress_account, false);
+  
+  if (m_current_subaddress_account == 0) { // Only the primary account can stake and earn rewards, currently
+    if (auto stakes = m_wallet->get_staked_master_nodes(); !stakes.empty()) {
+      auto my_addr = m_wallet->get_address_as_str();
+      uint64_t total_staked = 0, stakes_unlocking = 0;
+      for (auto& stake : stakes)
+        for (auto& contr : stake["contributors"])
+          if (contr["address"].get<std::string>() == my_addr)
+          {
+            total_staked += contr["amount"].get<uint64_t>();
+            if (stake["requested_unlock_height"].get<uint64_t>() > 0)
+              stakes_unlocking += contr["amount"].get<uint64_t>();
+          }
+      success_msg_writer() << fmt::format(tr("Total staked: {}, {} unlocking"), print_money(total_staked), print_money(stakes_unlocking));
+    }
+  }  
   if (!detailed || balance_per_subaddress.empty())
     return true;
   success_msg_writer() << tr("Balance per address:");
@@ -9570,17 +9587,18 @@ void simple_wallet::print_accounts(const std::string& tag)
     success_msg_writer() << tr("Accounts with tag: ") << tag;
     success_msg_writer() << tr("Tag's description: ") << account_tags.first.find(tag)->second;
   }
-  success_msg_writer() << fmt::format(tr(" {:>15} {:>21} {:>21} {:>21}"), "Account", "Balance", "Unlocked balance", "Label");
+  success_msg_writer() << fmt::format(tr(" {:>15} {:>21} {:>21} {:>21}"), "Address", "Balance", "Unlocked balance", "Label");
   uint64_t total_balance = 0, total_unlocked_balance = 0;
 
   for (uint32_t account_index = 0; account_index < m_wallet->get_num_subaddress_accounts(); ++account_index)
   {
+    std::string address_str = m_wallet->get_subaddress_as_str({account_index, 0}).substr(0, 6);
     if (account_tags.second[account_index] != tag)
       continue;
     success_msg_writer() << boost::format(tr(" %c%8u %6s %21s %21s %21s"))
       % (m_current_subaddress_account == account_index ? '*' : ' ')
       % account_index
-      % m_wallet->get_subaddress_as_str({account_index, 0}).substr(0, 6)
+      % address_str
       % print_money(m_wallet->balance(account_index, false))
       % print_money(m_wallet->unlocked_balance(account_index, false,NULL,NULL))
       % m_wallet->get_subaddress_label({account_index, 0});
