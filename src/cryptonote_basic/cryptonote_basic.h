@@ -36,7 +36,6 @@
 #include "serialization/variant.h"
 #include "serialization/vector.h"
 #include "serialization/binary_archive.h"
-#include "serialization/json_archive.h"
 #include "serialization/crypto.h"
 #include "epee/serialization/keyvalue_serialization.h" // eepe named serialization
 #include "cryptonote_config.h"
@@ -275,16 +274,18 @@ namespace cryptonote
         set_blob_size_valid(false);
       }
 
-      const unsigned int start_pos = Binary ? ar.streampos() : 0;
+      unsigned int start_pos = 0;
+      if constexpr (Binary)
+        start_pos = ar.streampos();
 
       serialization::value(ar, static_cast<transaction_prefix&>(*this));
 
-      if (Binary)
+      if constexpr (Binary)
         prefix_size = ar.streampos() - start_pos;
 
       if (version == txversion::v1)
       {
-        if (Binary)
+        if constexpr (Binary)
           unprunable_size = ar.streampos() - start_pos;
 
         ar.tag("signatures");
@@ -311,7 +312,7 @@ namespace cryptonote
           else if (signature_size != signatures[i].size())
             throw std::invalid_argument{"Invalid signature size (expected " + std::to_string(signature_size) + ", have " + std::to_string(signatures[i].size()) + ")"};
 
-          value(arr.element(), signatures[i]);
+          value(ar, signatures[i]);
         }
       }
       else
@@ -324,7 +325,7 @@ namespace cryptonote
             rct_signatures.serialize_rctsig_base(ar, vin.size(), vout.size());
           }
 
-          if (Binary)
+          if constexpr (Binary)
             unprunable_size = ar.streampos() - start_pos;
 
           if (!pruned && rct_signatures.type != rct::RCTType::Null)

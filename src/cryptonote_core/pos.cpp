@@ -762,13 +762,13 @@ bool POS::get_round_timings(cryptonote::Blockchain const &blockchain, uint64_t b
 
 /*
   POS progresses via a state-machine that is iterated through job submissions
-  to 1 dedicated POS thread, started by LMQ.
+  to 1 dedicated POS thread, started by OMQ.
 
   Iterating the state-machine is done by a periodic invocation of
   POS::main(...) and messages received via Quorumnet for POS, which are
   queued in the thread's job queue.
 
-  Using 1 dedicated thread via LMQ avoids any synchronization required in the
+  Using 1 dedicated thread via OMQ avoids any synchronization required in the
   user code when implementing POS.
 
   Skip control flow graph for textual description of stages.

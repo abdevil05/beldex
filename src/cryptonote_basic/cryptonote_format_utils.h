@@ -39,6 +39,7 @@
 #include "common/meta.h"
 #include "common/string_util.h"
 #include "serialization/binary_utils.h"
+#include "serialization/json_archive.h"
 #include <unordered_map>
 
 namespace epee
@@ -319,15 +320,12 @@ namespace cryptonote
   template <typename T>
   std::string obj_to_json_str(T&& obj, bool indent = false)
   {
-    std::ostringstream ss;
-    serialization::json_archiver ar{ss, indent};
     try {
-      serialize(ar, obj);
+      return serialization::dump_json(obj, indent ? 2 : -1);
     } catch (const std::exception& e) {
       LOG_ERROR("obj_to_json_str failed: serialization failed: " << e.what());
-      return ""s;
     }
-    return ss.str();
+    return ""s;
   }
   //---------------------------------------------------------------
   blobdata block_to_blob(const block& b);

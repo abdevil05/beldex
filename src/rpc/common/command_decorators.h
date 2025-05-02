@@ -1,6 +1,6 @@
 #pragma once
 
-#include "rpc_binary.h"
+#include "common/json_binary_proxy.h"
 
 #include <nlohmann/json.hpp>
 
@@ -17,7 +17,7 @@ namespace cryptonote::rpc {
 
   /// Base class that all RPC commands must inherit from (either directly or via one or more of the
   /// below tags).  Inheriting from this (and no others) gives you a private, json, non-legacy RPC
-  /// command.  For LMQ RPC the command will be available at `admin.whatever`; for HTTP RPC it'll be
+  /// command.  For OMQ RPC the command will be available at `admin.whatever`; for HTTP RPC it'll be
   /// at `whatever`.  This base class is also where response objects are stored.
   struct RPC_COMMAND {
     private:
@@ -58,7 +58,7 @@ namespace cryptonote::rpc {
       /// Usage:
       ///   std::string data = "abc";
       ///   rpc.response_hex["foo"]["bar"] = data; // json: "616263", bt: "abc"
-      json_binary_proxy response_hex{response, json_binary_proxy::fmt::hex};
+      tools::json_binary_proxy response_hex{response, tools::json_binary_proxy::fmt::hex};
 
       /// Proxy object that encodes binary data as base64 for json, leaving it as binary for
       /// bt-encoded responses.
@@ -66,13 +66,13 @@ namespace cryptonote::rpc {
       /// Usage:
       ///   std::string data = "abc";
       ///   rpc.response_b64["foo"]["bar"] = data; // json: "YWJj", bt: "abc"
-      json_binary_proxy response_b64{response, json_binary_proxy::fmt::base64};
+      tools::json_binary_proxy response_b64{response, tools::json_binary_proxy::fmt::base64};
   };
 
   /// Tag types that are used (via inheritance) to set rpc endpoint properties
 
   /// Specifies that the RPC call is public (i.e. available through restricted rpc).  If this is
-  /// *not* inherited from then the command is restricted (i.e. only available to admins).  For LMQ,
+  /// *not* inherited from then the command is restricted (i.e. only available to admins).  For OMQ,
   /// PUBLIC commands are available at `rpc.command` (versus non-PUBLIC ones at `admin.command`).
   struct PUBLIC : virtual RPC_COMMAND {};
 

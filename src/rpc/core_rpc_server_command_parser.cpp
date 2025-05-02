@@ -114,19 +114,14 @@ namespace cryptonote::rpc {
       if (auto it = json_in->find("txs_hashes"); it != json_in->end())
         (*json_in)["tx_hashes"] = std::move(*it);
 
-    std::optional<bool> data;
     get_values(in,
-        "data", data,
+        "data", get.request.data,
         "memory_pool", get.request.memory_pool,
         "prune", get.request.prune,
         "split", get.request.split,
         "tx_extra", get.request.tx_extra,
+        "tx_extra_raw", get.request.tx_extra_raw,
         "tx_hashes", get.request.tx_hashes);
-
-    if (data)
-        get.request.data = *data;
-    else
-        get.request.data = !(get.request.prune || get.request.split);
 
     if (get.request.memory_pool && !get.request.tx_hashes.empty())
       throw std::runtime_error{"Error: 'memory_pool' and 'tx_hashes' are mutually exclusive"};
