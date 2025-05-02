@@ -1132,7 +1132,7 @@ namespace cryptonote::rpc {
   ///
   /// - \p status General RPC status string. `"OK"` means everything looks good.
   /// - \p bans List of banned nodes
-  struct GETBANS : RPC_COMMAND
+  struct GET_BANS : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("get_bans"); }
   };
@@ -1156,7 +1156,7 @@ namespace cryptonote::rpc {
   /// Output values available from a restricted/admin RPC endpoint:
   ///
   /// - \p status General RPC status string. `"OK"` means everything looks good.
-  struct SETBANS : RPC_COMMAND
+  struct SET_BANS : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("set_bans"); }
 
@@ -1335,7 +1335,7 @@ namespace cryptonote::rpc {
   ///   - \p difficulty The cumulative difficulty of all blocks in the alternative chain.
   ///   - \p block_hashes List containing hex block hashes
   ///   - \p main_chain_parent_block
-  struct GET_ALTERNATE_CHAINS : RPC_COMMAND
+  struct GET_ALTERNATE_CHAINS : NO_ARGS
   {
     static constexpr auto names() { return NAMES("get_alternative_chains"); }
 
@@ -1992,14 +1992,15 @@ namespace cryptonote::rpc {
     } request;
   };
 
-  /// Query hardcoded/master node checkpoints stored for the blockchain. Omit all arguments to retrieve the latest "count" checkpoints.
+  /// Query recent master node state changes processed on the blockchain.
   ///
   /// Inputs:
   /// 
-  /// - \p start_height The starting block's height.
-  /// - \p end_height The ending block's height.
+  /// - \p start_height Returns counts starting from this block height.  Required.
+  /// - \p end_height Optional: returns count ending at this block height; if omitted, counts to the
+  ///   current height.
   ///
-  /// Output values available from a public RPC endpoint:
+  /// Output values available from a private/admin RPC endpoint:
   ///
   /// - \p status Generic RPC error code. "OK" is the success value.
   /// - \p untrusted If the result is obtained using bootstrap mode then this will be set to true, otherwise will be omitted.
@@ -2010,15 +2011,14 @@ namespace cryptonote::rpc {
   /// - \p total_unlock
   /// - \p start_height
   /// - \p end_height
-  struct GET_MN_STATE_CHANGES : PUBLIC
+  struct GET_MN_STATE_CHANGES : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("get_master_nodes_state_changes"); }
 
-    static constexpr uint64_t HEIGHT_SENTINEL_VALUE = std::numeric_limits<uint64_t>::max() - 1;
     struct request_parameters
     {
       uint64_t start_height;
-      uint64_t end_height;   // Optional: If omitted, the tally runs until the current block
+      std::optional<uint64_t> end_height;
     } request;
   };
 
@@ -2287,22 +2287,35 @@ namespace cryptonote::rpc {
     BANNED,
     FLUSH_CACHE,
     FLUSH_TRANSACTION_POOL,
+    GET_ALTERNATE_CHAINS,
+    GET_BANS,
     GET_BASE_FEE_ESTIMATE,
+    GET_BLOCK,
     GET_BLOCK_COUNT,
     GET_BLOCK_HASH,
+    GET_BLOCK_HEADERS_RANGE,
+    GET_BLOCK_HEADER_BY_HASH,
+    GET_BLOCK_HEADER_BY_HEIGHT,
+    GET_CHECKPOINTS,
     GET_COINBASE_TX_SUM,
     GET_CONNECTIONS,
     GET_HEIGHT,
     GET_INFO,
+    GET_LAST_BLOCK_HEADER,
     GET_LIMIT,
+    GET_NET_STATS,
     GET_OUTPUTS,
+    GET_OUTPUT_HISTOGRAM,
     GET_PEER_LIST,
+    GET_QUORUM_STATE,
     GET_MASTER_KEYS,
     GET_MASTER_NODES,
     GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES,
+    GET_MASTER_NODE_REGISTRATION_CMD_RAW,
     GET_MASTER_NODE_STATUS,
     GET_MASTER_PRIVKEYS,
     GET_MN_STATE_CHANGES,
+    GET_STAKING_REQUIREMENT,
     GET_TRANSACTIONS,
     GET_TRANSACTION_POOL_HASHES,
     GET_TRANSACTION_POOL_STATS,
@@ -2319,6 +2332,7 @@ namespace cryptonote::rpc {
     PRUNE_BLOCKCHAIN,
     REPORT_PEER_STATUS,
     SAVE_BC,
+    SET_BANS,
     SET_LIMIT,
     SET_LOG_CATEGORIES,
     SET_LOG_LEVEL,
@@ -2332,23 +2346,9 @@ namespace cryptonote::rpc {
     TEST_TRIGGER_UPTIME_PROOF
   >;
   using FIXME_old_rpc_types = tools::type_list<
-    GET_NET_STATS,
-    GET_LAST_BLOCK_HEADER,
-    GET_BLOCK_HEADER_BY_HASH,
-    GET_BLOCK_HEADER_BY_HEIGHT,
-    GET_BLOCK,
-    GET_BLOCK_HEADERS_RANGE,
-    GETBANS,
-    SETBANS,
-    GET_OUTPUT_HISTOGRAM,
-    GET_ALTERNATE_CHAINS,
     RELAY_TX,
     GET_OUTPUT_DISTRIBUTION,
-    GET_QUORUM_STATE,
-    GET_MASTER_NODE_REGISTRATION_CMD_RAW,
     GET_MASTER_NODE_REGISTRATION_CMD,
-    GET_STAKING_REQUIREMENT,
-    GET_CHECKPOINTS,
     BNS_NAMES_TO_OWNERS,
     BNS_LOOKUP,
     BNS_VALUE_DECRYPT

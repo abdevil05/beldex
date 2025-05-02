@@ -42,13 +42,23 @@
 
 namespace daemonize {
 
+template <typename T>
+constexpr bool is_std_optional = false;
+template <typename T>
+inline constexpr bool is_std_optional<std::optional<T>> = true;
+
 // Consumes an argument from the given list, if present, parsing it into `var`.
 // Returns false upon parse failure, true otherwise.
 template <typename T>
-static bool parse_if_present(std::forward_list<std::string> &list, T &var, const char *name)
+static bool parse_if_present(std::forward_list<std::string>& list, T& var, const char* name)
 {
   if (list.empty()) return true;
-  if (epee::string_tools::get_xtype_from_string(var, list.front()))
+  bool good = false;
+  if constexpr (is_std_optional<T>)
+    good = epee::string_tools::get_xtype_from_string(var.emplace(), list.front());
+  else
+    good = epee::string_tools::get_xtype_from_string(var, list.front());
+  if (good)
   {
     list.pop_front();
     return true;

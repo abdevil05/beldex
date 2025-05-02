@@ -26,7 +26,7 @@ namespace cryptonote::rpc {
   void parse_request(GET_PEER_LIST& bh, rpc_input in);
   void parse_request(GET_MASTER_NODES& sns, rpc_input in);
   // void parse_request(GET_MASTER_NODE_REGISTRATION_CMD& cmd, rpc_input in);
-  // void parse_request(GET_MASTER_NODE_REGISTRATION_CMD_RAW& cmd, rpc_input in);
+  void parse_request(GET_MASTER_NODE_REGISTRATION_CMD_RAW& cmd, rpc_input in);
   void parse_request(GET_MN_STATE_CHANGES& get_mn_state_changes, rpc_input in);
   void parse_request(GET_STAKING_REQUIREMENT& get_staking_requirement, rpc_input in);
   void parse_request(GET_TRANSACTIONS& get, rpc_input in);
@@ -41,7 +41,7 @@ namespace cryptonote::rpc {
   void parse_request(POP_BLOCKS& pop_blocks, rpc_input in);
   void parse_request(PRUNE_BLOCKCHAIN& prune_blockchain, rpc_input in);
   void parse_request(REPORT_PEER_STATUS& report_peer_status, rpc_input in);
-  void parse_request(SETBANS& set_bans, rpc_input in);
+  void parse_request(SET_BANS& set_bans, rpc_input in);
   void parse_request(SET_LIMIT& limit, rpc_input in);
   void parse_request(SET_LOG_CATEGORIES& set_log_categories, rpc_input in);
   void parse_request(SET_LOG_LEVEL& set_log_level, rpc_input in);

@@ -1838,7 +1838,7 @@ namespace cryptonote::rpc {
     hfinfo.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  void core_rpc_server::invoke(GETBANS& get_bans, rpc_context context)
+  void core_rpc_server::invoke(GET_BANS& get_bans, rpc_context context)
   {
     PERF_TIMER(on_get_bans);
 
@@ -1897,7 +1897,7 @@ namespace cryptonote::rpc {
     banned.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  void core_rpc_server::invoke(SETBANS& set_bans, rpc_context context)
+  void core_rpc_server::invoke(SET_BANS& set_bans, rpc_context context)
   {
     PERF_TIMER(on_set_bans);
 
@@ -3076,16 +3076,8 @@ namespace cryptonote::rpc {
     std::vector<block_pair_t> blocks;
 
     const auto& db = m_core.get_blockchain_storage();
-    const uint64_t current_height = db.get_current_blockchain_height();
-
-    uint64_t end_height;
-    uint64_t start_height = get_mn_state_changes.request.start_height;
-    if (get_mn_state_changes.request.end_height == GET_MN_STATE_CHANGES::HEIGHT_SENTINEL_VALUE) {
-      // current height is the block being mined, so exclude it from the results
-      end_height = current_height - 1;
-    } else {
-      end_height = get_mn_state_changes.request.end_height;
-    }
+    auto start_height = get_mn_state_changes.request.start_height;
+    auto end_height = get_mn_state_changes.request.end_height.value_or(db.get_current_blockchain_height() - 1);
 
     if (end_height < start_height)
       throw rpc_error{ERROR_WRONG_PARAM, "The provided end_height needs to be higher than start_height"};

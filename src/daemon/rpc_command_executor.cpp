@@ -1175,7 +1175,7 @@ bool rpc_command_executor::in_peers(bool set, uint32_t limit)
 
 bool rpc_command_executor::print_bans()
 {
-    auto maybe_bans = try_running([this] { return invoke<GETBANS>(); }, "Failed to retrieve ban list");
+    auto maybe_bans = try_running([this] { return invoke<GET_BANS>(); }, "Failed to retrieve ban list");
     if (!maybe_bans)
       return false;
     auto bans = *maybe_bans;
@@ -1195,7 +1195,7 @@ bool rpc_command_executor::print_bans()
 
 bool rpc_command_executor::ban(const std::string &address, time_t seconds, bool clear_ban)
 {
-    auto maybe_banned = try_running([this, &address, seconds, clear_ban] { return invoke<SETBANS>(json{{"host", std::move(address)}, {"ip", 0}, {"seconds", seconds}, {"ban", !clear_ban}}); }, clear_ban ? "Failed to clear ban" : "Failed to set ban");
+    auto maybe_banned = try_running([this, &address, seconds, clear_ban] { return invoke<SET_BANS>(json{{"host", std::move(address)}, {"ip", 0}, {"seconds", seconds}, {"ban", !clear_ban}}); }, clear_ban ? "Failed to clear ban" : "Failed to set ban");
     if (!maybe_banned)
       return false;
 
