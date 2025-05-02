@@ -330,11 +330,11 @@ bool rpc_command_executor::print_checkpoints(std::optional<uint64_t> start_heigh
 
 bool rpc_command_executor::print_mn_state_changes(uint64_t start_height, std::optional<uint64_t> end_height)
 {
-  auto maybe_sn_state = try_running([&] {
+  auto maybe_mn_state = try_running([&] {
     json params{{"start_height", start_height}};
     if (end_height)
       params["end_height"] = *end_height;
-    return invoke<GET_SN_STATE_CHANGES>(std::move(params)); }, "Failed to query service node state changes");
+    return invoke<GET_MN_STATE_CHANGES>(std::move(params)); }, "Failed to query service node state changes");
   if (!maybe_mn_state)
     return false;
 

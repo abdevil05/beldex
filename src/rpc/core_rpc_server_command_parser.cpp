@@ -389,9 +389,9 @@ namespace cryptonote::rpc {
     if (qs.request.quorum_type) {
       if (*qs.request.quorum_type == 255) // backwards-compat magic value
         qs.request.quorum_type = std::nullopt;
-      else if (*qs.request.quorum_type > tools::enum_count<service_nodes::quorum_type>)
+      else if (*qs.request.quorum_type > tools::enum_count<master_nodes::quorum_type>)
         throw std::domain_error{
-          "Quorum type specifies an invalid value: "_format(*qs.request.quorum_type)};
+          "Quorum type specifies an invalid value: " + *qs.request.quorum_type};
     }
   }
 
@@ -414,13 +414,6 @@ namespace cryptonote::rpc {
         "contributor_addresses", cmd.request.contributor_addresses,
         "contributor_amounts", cmd.request.contributor_amounts,
         "operator_cut", cmd.request.operator_cut,
-        "staking_requirement", cmd.request.staking_requirement);
-  }
-
-  void parse_request(GET_MASTER_NODE_REGISTRATION_CMD_RAW& cmd, rpc_input in) {
-    get_values(in,
-        "args", cmd.request.args,
-        "make_friendly", cmd.request.make_friendly,
         "staking_requirement", cmd.request.staking_requirement);
   }
 }

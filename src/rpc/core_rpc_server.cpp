@@ -47,7 +47,7 @@
 #include "cryptonote_config.h"
 #include "cryptonote_core/beldex_name_system.h"
 #include "cryptonote_core/pos.h"
-#include "cryptonote_core/service_node_rules.h"
+#include "cryptonote_core/master_node_rules.h"
 #include "beldex_economy.h"
 #include "epee/string_tools.h"
 #include "core_rpc_server.h"
@@ -1544,10 +1544,7 @@ namespace cryptonote::rpc {
           0));
     response.long_term_weight = m_core.get_blockchain_storage().get_db().get_block_long_term_weight(height);
     response.miner_tx_hash = tools::type_to_hex(cryptonote::get_transaction_hash(blk.miner_tx));
-    response.master_node_winner =
-      tools::type_to_hex(blk.service_node_winner_key) == ""
-        ? tools::type_to_hex(cryptonote::get_service_node_winner_from_tx_extra(blk.miner_tx.extra))
-        : tools::type_to_hex(blk.service_node_winner_key);
+    response.master_node_winner = tools::type_to_hex(cryptonote::get_master_node_winner_from_tx_extra(blk.miner_tx.extra));
     if (get_tx_hashes)
     {
       response.tx_hashes.reserve(blk.tx_hashes.size());
@@ -2486,10 +2483,10 @@ namespace cryptonote::rpc {
       uint64_t top_height = curr_height - 1;
       latest_ob = top_height;
       latest_cp = top_height - top_height % master_nodes::CHECKPOINT_INTERVAL;
-      latest_bl = top_height - top_height % master_nodes::BLINK_QUORUM_INTERVAL;
+      latest_bl = top_height - top_height % master_nodes::FLASH_QUORUM_INTERVAL;
       if (is_requested_type(master_nodes::quorum_type::checkpointing))
         start = latest_cp;
-      if (is_requested_type(master_nodes::quorum_type::blink))
+      if (is_requested_type(master_nodes::quorum_type::flash))
         start = start ? std::min(*start, latest_bl) : latest_bl;
       end = curr_height;
     }
@@ -2541,8 +2538,8 @@ namespace cryptonote::rpc {
         { // Latest quorum requested, so skip if this is isn't the latest height for *this* quorum type
           if (type == master_nodes::quorum_type::obligations && height != latest_ob) continue;
           if (type == master_nodes::quorum_type::checkpointing && height != latest_cp) continue;
-          if (type == master_nodes::quorum_type::blink && height != latest_bl) continue;
-          if (type == master_nodes::quorum_type::pulse) continue;
+          if (type == master_nodes::quorum_type::flash && height != latest_bl) continue;
+          if (type == master_nodes::quorum_type::POS) continue;
         }
         if (std::shared_ptr<const master_nodes::quorum> quorum = m_core.get_quorum(type, height, true /*include_old*/))
         {
@@ -3031,9 +3028,13 @@ namespace cryptonote::rpc {
   static void check_quantity_limit(T count, T max, const char* container_name = "input")
   {
     if (count > max)
-      throw rpc_error{ERROR_WRONG_PARAM,
-        "Number of requested entries ({}) in {} is greater than the allowed limit ({})"_format(
-          count, container_name, max)};
+    {
+      std::ostringstream err;
+      err << "Number of requested entries";
+      if (container_name) err << " in " << container_name;
+      err << " greater than the allowed limit: " << max << ", requested: " << count;
+      throw rpc_error{ERROR_WRONG_PARAM, err.str()};
+    }
   }
 
   template <typename T>
