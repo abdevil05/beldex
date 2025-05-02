@@ -8599,7 +8599,6 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
       return result;
     }
 
-    auto version = m_node_rpc_proxy.get_hardfork_version();
     std::string error_msg;
     uint64_t cur_height = get_daemon_blockchain_height(error_msg);
 

@@ -2223,7 +2223,7 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
         }
 
         long additional_contributors = strtol(input.c_str(), NULL, 10 /*base 10*/);
-        if (additional_contributors < 1 || additional_contributors > (beldex::MAX_NUMBER_OF_CONTRIBUTORS - 1))
+        if (additional_contributors < 1 || additional_contributors > static_cast<long>(beldex::MAX_NUMBER_OF_CONTRIBUTORS - 1))
         {
           std::cout << "Invalid value. Should be between [1-" << (beldex::MAX_NUMBER_OF_CONTRIBUTORS - 1) << "]" << std::endl;
           continue;
