@@ -987,7 +987,7 @@ namespace cryptonote
 
      /// Time point at which the storage server and belnet last pinged us
      std::atomic<time_t> m_last_storage_server_ping, m_last_belnet_ping;
-     std::atomic<uint16_t> m_storage_https_port, m_storage_omq_port;
+     std::atomic<uint16_t> m_storage_https_port{0}, m_storage_omq_port{0};
 
      uint32_t mn_public_ip() const { return m_mn_public_ip; }
      uint16_t storage_https_port() const { return m_storage_https_port; }

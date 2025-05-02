@@ -41,7 +41,10 @@ namespace tools
     return (pruning_seed >> PRUNING_SEED_LOG_STRIPES_SHIFT) & PRUNING_SEED_LOG_STRIPES_MASK;
   }
   inline uint32_t get_pruning_stripe(uint32_t pruning_seed) {
-    if (pruning_seed == 0) return 0; return 1 + ((pruning_seed >> PRUNING_SEED_STRIPE_SHIFT) & PRUNING_SEED_STRIPE_MASK);
+    if (pruning_seed == 0)
+     return 0;
+   
+    return 1 + ((pruning_seed >> PRUNING_SEED_STRIPE_SHIFT) & PRUNING_SEED_STRIPE_MASK);
   }
 
   uint32_t make_pruning_seed(uint32_t stripe, uint32_t log_stripes);

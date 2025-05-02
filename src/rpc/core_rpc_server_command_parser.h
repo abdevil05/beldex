@@ -8,7 +8,7 @@ namespace cryptonote::rpc {
 
   using rpc_input = std::variant<std::monostate, nlohmann::json, oxenc::bt_dict_consumer>;
 
-  inline void parse_request(NO_ARGS&, rpc_input) {}
+  inline void parse_request(NO_ARGS&, rpc_input) {};
 
   void parse_request(BNS_RESOLVE& bns, rpc_input in);
   void parse_request(GET_MASTER_NODES& mns, rpc_input in);
@@ -21,7 +21,6 @@ namespace cryptonote::rpc {
   void parse_request(STOP_DAEMON& stop_daemon, rpc_input in);
   void parse_request(SAVE_BC& save_bc, rpc_input in);
   void parse_request(GET_OUTPUTS& get_outputs, rpc_input in);
-  void parse_request(GET_TRANSACTION_POOL_STATS& pstats, rpc_input in);
   void parse_request(GET_TRANSACTIONS& get, rpc_input in);
   void parse_request(HARD_FORK_INFO& hfinfo, rpc_input in);
   void parse_request(SET_LIMIT& limit, rpc_input in);
@@ -43,6 +42,7 @@ namespace cryptonote::rpc {
   void parse_request(PRUNE_BLOCKCHAIN& prune_blockchain, rpc_input in);
   void parse_request(REPORT_PEER_STATUS& report_peer_status, rpc_input in);
   void parse_request(GET_MASTER_NODE_REGISTRATION_CMD& cmd, rpc_input in);
+  void parse_request(GET_MASTER_NODE_REGISTRATION_CMD_RAW& cmd, rpc_input in);
   void parse_request(GET_MN_STATE_CHANGES& get_mn_state_changes, rpc_input in);
   void parse_request(FLUSH_CACHE& flush_cache, rpc_input in);
   void parse_request(GET_LAST_BLOCK_HEADER& get_last_block_header, rpc_input in);

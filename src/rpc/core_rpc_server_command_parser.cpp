@@ -337,4 +337,10 @@ namespace cryptonote::rpc {
     get_values(in, "operator_cut", cmd.request.operator_cut);
     get_values(in, "staking_requirement", cmd.request.staking_requirement);
   }
+
+  void parse_request(GET_MASTER_NODE_REGISTRATION_CMD_RAW& cmd, rpc_input in) {
+    get_values(in, "args", cmd.request.args);
+    get_values(in, "make_friendly", cmd.request.make_friendly);
+    get_values(in, "staking_requirement", cmd.request.staking_requirement);
+}
 }

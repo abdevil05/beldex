@@ -1116,6 +1116,14 @@ namespace cryptonote
     return s;
   }
   //---------------------------------------------------------------
+  std::string format_money(uint64_t amount, bool strip_zeros)
+  {
+    auto value = print_money(amount, strip_zeros);
+    value += ' ';
+    value += get_unit();
+    return value;
+  }
+  //---------------------------------------------------------------
   std::string print_tx_verification_context(tx_verification_context const &tvc, transaction const *tx)
   {
     std::ostringstream os;

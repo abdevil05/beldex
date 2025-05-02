@@ -687,7 +687,7 @@ namespace cryptonote::rpc {
       void operator()(const tx_extra_burn& x) { set("burn_amount", x.amount); }
       void operator()(const tx_extra_master_node_winner& x) { set("mn_winner", x.m_master_node_key); }
       void operator()(const tx_extra_master_node_pubkey& x) { set("mn_pubkey", x.m_master_node_key); }
-      void operator()(const tx_extra_security_signature& x) { set("security_sig", x.m_security_signature); }
+      void operator()(const tx_extra_security_signature& x) { set("security_sig", tools::type_to_hex(x.m_security_signature)); }
       void operator()(const tx_extra_master_node_register& x) {
         json reservations{};
         for (size_t i = 0; i < x.m_portions.size(); i++)
@@ -2669,7 +2669,6 @@ namespace cryptonote::rpc {
     invoke(req_old, context);
     get_master_node_registration_cmd.response["status"] = req_old.response["status"];
     get_master_node_registration_cmd.response["registration_cmd"] = req_old.response["registration_cmd"];
-    return res;
   }
 
   //------------------------------------------------------------------------------------------------------------------------------
@@ -2966,7 +2965,7 @@ namespace cryptonote::rpc {
         success(significant);
         status = STATUS_OK;
       }
-      return res;
+      return status;
     }
   }
 

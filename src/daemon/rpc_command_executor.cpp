@@ -154,9 +154,11 @@ namespace {
       << "miner tx hash: " << header.miner_tx_hash;
   }
 
-  std::string get_human_time_ago(std::chrono::seconds ago, bool abbreviate = false)
+  template <typename Rep, typename Period>
+  std::string get_human_time_ago(std::chrono::duration<Rep, Period> ago_dur, bool abbreviate = false)
   {
-    if (ago == 0s)
+    auto ago = std::chrono::duration_cast<std::chrono::seconds>(ago_dur);
+        if (ago == 0s)
       return "now";
     auto dt = ago > 0s ? ago : -ago;
     std::string s;
@@ -170,17 +172,19 @@ namespace {
       s = fmt::format("{:.1f} days", static_cast<float>(dt.count()) / 86400);
     if (abbreviate) {
         if (ago < 0s)
-            return s + " (in fut.)";
-        return s;
+            s += " (in fut.)";
+    } else {
+        s += ' ';
+        s += (ago < 0s ? "in the future" : "ago");
     }
-    return s + " " + (ago < 0s ? "in the future" : "ago");
+    return s;
   }
 
   std::string get_human_time_ago(std::time_t t, std::time_t now, bool abbreviate = false) {
     return get_human_time_ago(std::chrono::seconds{now - t}, abbreviate);
   }
 
-  bool print_peer(std::string_view prefix, const json& peer, bool pruned_only, bool publicrpc_only)
+  bool print_peer(std::string_view prefix, const json& peer, bool pruned_only)
   {
     auto pruning_seed = peer.value<uint64_t>("pruning_seed", 0);
     if (pruned_only && pruning_seed == 0)
@@ -212,7 +216,6 @@ rpc_command_executor::rpc_command_executor(
   std::string http_url,
   const std::optional<tools::login>& login): m_rpc{std::in_place_type<cryptonote::rpc::http_client>, http_url}
 {
-  m_rpc_client.emplace(remote_url);
   if (login)
     std::get<cryptonote::rpc::http_client>(m_rpc).set_auth(login->username, std::string{login->password.password().view()});
 }
@@ -491,7 +494,6 @@ bool rpc_command_executor::show_status() {
     auto maybe_mns = try_running([&] { return invoke<GET_MASTER_NODES>(json{{"master_node_pubkeys", json::array({my_mn_key})}}); }, "Failed to retrieve master node info");
 
     if (maybe_mns) {
-    {
       if (auto it = maybe_mns->find("master_node_states"); it != maybe_mns->end() && it->is_array() && it->size() > 0) {
         auto& state = it->front();
         my_mn_registered = true;
@@ -518,7 +520,7 @@ bool rpc_command_executor::show_status() {
   if (net == "testnet")     str << " ON TESTNET";
   else if (net == "devnet") str << " ON DEVNET";
 
-  if (ires.height < net_height)
+  if (height < net_height)
     str << ", syncing";
 
   // if (info.value("was_bootstrap_ever_used", false))
@@ -542,7 +544,7 @@ bool rpc_command_executor::show_status() {
     str << ", net hash " << get_mining_speed(info["difficulty"].get<uint64_t>() / info["target"].get<uint64_t>());
 
   str << ", v" << info["version"].get<std::string_view>();
-  str << "(net v" << +hf_version << ')';
+  str << "(net v" << static_cast<int>(hf_version) << ')';
   auto earliest = hfinfo.value("earliest_height", uint64_t{0});
   if (earliest)
     print_fork_extra_info(str, earliest, net_height, 1s * info["target"].get<uint64_t>());
@@ -802,7 +804,7 @@ bool rpc_command_executor::print_height() {
   return false;
 }
 
-bool rpc_command_executor::print_block_by_hash(const crypto::hash& block_hash, bool include_hex) {  req.fill_pow_hash = true;
+bool rpc_command_executor::print_block_by_hash(const crypto::hash& block_hash, bool include_hex) {
   auto maybe_block = try_running([this, &block_hash] {
     return invoke<GET_BLOCK>(json{
       {"hash", tools::type_to_hex(block_hash)},
@@ -874,11 +876,11 @@ bool rpc_command_executor::print_transaction(const crypto::hash& transaction_has
   std::optional<cryptonote::transaction> t;
   if (include_metadata || include_json)
   {
-    if (oxenmq::is_hex(pruned_hex) && oxenmq::is_hex(prunable_hex))
+    if (oxenc::is_hex(pruned_hex) && oxenc::is_hex(prunable_hex))
     {
-      std::string blob = oxenmq::from_hex(pruned_hex);
+      std::string blob = oxenc::from_hex(pruned_hex);
       if (!prunable_hex.empty())
-        blob += oxenmq::from_hex(prunable_hex);
+        blob += oxenc::from_hex(prunable_hex);
 
       bool parsed = pruned
         ? cryptonote::parse_and_validate_tx_base_from_blob(blob, t.emplace())
@@ -1117,7 +1119,7 @@ bool rpc_command_executor::stop_daemon()
   return invoke_simple<STOP_DAEMON>("Couldn't stop daemon", "Stop signal sent");
 }
 
-bool rpc_command_executor::get_limit(bool up, bool down)
+bool rpc_command_executor::get_limit()
 {
   auto maybe_limit = try_running([this] { return invoke<GET_LIMIT>(); }, "Failed to retrieve current traffic limits");
   if (!maybe_limit)
@@ -1582,7 +1584,7 @@ void print_votes(std::ostream& o, const json& elem, const std::string& key, EPri
   }
 }
 
-static void append_printable_master_node_list_entry(cryptonote::network_type nettype, bool detailed_view, uint64_t blockchain_height, uint64_t entry_index, GET_MASTER_NODES::response::entry const &entry, std::string &buffer)
+static void append_printable_master_node_list_entry(cryptonote::network_type nettype, bool detailed_view, uint64_t blockchain_height, uint64_t entry_index, const json& entry, std::string& buffer)
 {
   const char indent1[] = "  ";
   const char indent2[] = "    ";
@@ -1663,7 +1665,7 @@ static void append_printable_master_node_list_entry(cryptonote::network_type net
       auto ed_pk = entry.value("pubkey_ed25519", ""sv);
       stream << indent2 << "Auxiliary Public Keys:\n"
              << indent3 << (ed_pk.empty() ? "(not yet received)"sv : ed_pk) << " (Ed25519)\n"
-             << indent3 << (ed_pk.empty() ? "(not yet received)"s : oxenmq::to_base32z(oxenmq::from_hex(ed_pk)) + ".mnode") << " (Belnet)\n"
+             << indent3 << (ed_pk.empty() ? "(not yet received)"s : oxenc::to_base32z(oxenc::from_hex(ed_pk)) + ".mnode") << " (Belnet)\n"
              << indent3 << entry.value("pubkey_x25519", "(not yet received)"sv) << " (X25519)\n";
     }
     //
@@ -1980,13 +1982,13 @@ static uint64_t get_amount_to_make_portions(uint64_t amount, uint64_t portions)
   return resultlo;
 }
 
-// static uint64_t get_actual_amount(uint64_t amount, uint64_t portions)
-// {
-//   uint64_t lo, hi, resulthi, resultlo;
-//   lo = mul128(amount, portions, &hi);
-//   div128_64(hi, lo, cryptonote::old::STAKING_PORTIONS, &resulthi, &resultlo);
-//   return resultlo;
-// }
+static uint64_t get_actual_amount(uint64_t amount, uint64_t portions)
+{
+  uint64_t lo, hi, resulthi, resultlo;
+  lo = mul128(amount, portions, &hi);
+  div128_64(hi, lo, cryptonote::old::STAKING_PORTIONS, &resulthi, &resultlo);
+  return resultlo;
+}
 
 bool rpc_command_executor::prepare_registration(bool force_registration)
 {
@@ -2047,8 +2049,6 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
     auto const& maybe_header = try_running([this] { return invoke<GET_LAST_BLOCK_HEADER>().at("block_header").get<block_header_response>();}, "Get latest block failed, unable to check sync status");
     if (!maybe_header)
       return false;
-
-    uint64_t const now = time(nullptr);
 
     auto const& header = *maybe_header;
 

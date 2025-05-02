@@ -42,6 +42,12 @@ class command_parser_executor final
 private:
   rpc_command_executor m_executor;
 public:
+  
+  /// Creators a command parser; arguments are forwarded to the rpc_command_executor constructor
+  template <typename... T>
+  command_parser_executor(T&&... args)
+    : m_executor{std::forward<T>(args)...}
+  {}
 
   bool print_checkpoints(const std::vector<std::string>& args);
 

@@ -8143,7 +8143,7 @@ wallet2::stake_result wallet2::check_stake_allowed(const crypto::public_key& mn_
   }
 
   uint64_t max_contrib_total = mnode_info["staking_requirement"].get<uint64_t>() - mnode_info["total_reserved"].get<uint64_t>();
-  uint64_t min_contrib_total = master_nodes::get_min_node_contribution(hf_version, mnode_info["staking_requirement"], mnode_info["total_reserved"], total_existing_contributions);
+  uint64_t min_contrib_total = master_nodes::get_min_node_contribution(*hf_version, mnode_info["staking_requirement"], mnode_info["total_reserved"], total_existing_contributions);
 
   bool is_preexisting_contributor = false;
   for (const auto& contributor : mnode_info["contributors"])
@@ -8577,7 +8577,6 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
     }
 
     cryptonote::account_public_address const primary_address = get_address();
-    rpc::master_node_contributor const *p_contributor =  nullptr;
     nlohmann::json contributions{};
     bool found = false;
     auto const& node_info = response[0];
@@ -8591,7 +8590,7 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
 
       found = true;
       contributions = contributor["locked_contributions"];
-      p_contributor = &contributor;
+      break;
     }
 
     if (!found)
@@ -8604,15 +8603,6 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
     std::string error_msg;
     uint64_t cur_height = get_daemon_blockchain_height(error_msg);
 
-    if(version  >= hf::hf18_bns)
-    {
-      if(((p_contributor->amount) < master_nodes::SMALL_CONTRIBUTOR_THRESHOLD * beldex::COIN ) && ((cur_height - node_info.registration_height) <  master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER))
-      {
-        result.msg = tr("you can't give the unlock command! you have to wait upto ") + std::to_string(node_info.registration_height + master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER - cur_height) + " Blocks or "+ std::to_string((node_info.registration_height + master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER - cur_height)/ (master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER / 30)) + " days approx";
-        result.success = false;
-        return result;
-      }
-    }
     cryptonote::tx_extra_tx_key_image_unlock unlock = {};
     {
       uint64_t curr_height = 0;
@@ -8640,6 +8630,13 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
         return result;
       }
 
+      if((contribution["amount"] < master_nodes::SMALL_CONTRIBUTOR_THRESHOLD * beldex::COIN ) && ((cur_height - node_info["registration_height"].get<uint64_t>()) <  master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER))
+      {
+        result.msg = tr("you can't give the unlock command! you have to wait upto ") + std::to_string(node_info["registration_height"].get<uint64_t>() + master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER - cur_height) + " Blocks or "+ std::to_string((node_info["registration_height"].get<uint64_t>() + master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER - cur_height)/ (master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER / 30)) + " days approx";
+        result.success = false;
+        return result;
+      }
+
       result.msg.append("You are requesting to unlock a stake of: ");
       result.msg.append(cryptonote::print_money(contribution["amount"]));
       result.msg.append(" Beldex from the master node network.\nThis will schedule the master node: ");
@@ -8657,7 +8654,7 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
         result.msg    = ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
         return result;
       }
-      uint64_t unlock_height = master_nodes::get_locked_key_image_unlock_height(nettype(), node_info["registration_height"].get<uint64_t>(), curr_height);
+      uint64_t unlock_height = master_nodes::get_locked_key_image_unlock_height(nettype(), curr_height, *hf_version);
       result.msg.append("You will continue receiving rewards until the master node expires at the estimated height: ");
       result.msg.append(std::to_string(unlock_height));
       result.msg.append(" (about ");
@@ -12372,6 +12369,7 @@ bool wallet2::get_tx_key(const crypto::hash &txid, crypto::secret_key &tx_key, s
 
     cryptonote::transaction tx;
     crypto::hash tx_hash{};
+    std::string tx_data;
     crypto::hash tx_prefix_hash{};
     const auto& res_tx = res["txs"].front();
 

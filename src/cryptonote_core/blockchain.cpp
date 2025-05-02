@@ -1342,7 +1342,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     }
   }
 
-  if (already_generated_coins != 0 && block_has_governance_output(nettype(), b) && version < hf::hf20_bulletproof_plusplus)
+  if (already_generated_coins != 0 && block_has_governance_output(nettype(), b) && version > hf::hf20_bulletproof_plusplus)
   {
     if (version >= hf::hf17_POS && reward_parts.governance_paid == 0)
     {
@@ -1372,7 +1372,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
   // TODO(beldex): eliminate all floating point math in reward calculations.
   uint64_t max_base_reward = reward_parts.base_miner + reward_parts.governance_paid + reward_parts.master_node_total + 1;
   uint64_t max_money_in_use = max_base_reward + reward_parts.miner_fee;
-  if (money_in_use > max_money_in_use && version < hf::hf20_bulletproof_plusplus)
+  if (money_in_use > max_money_in_use && version > hf::hf20_bulletproof_plusplus)
   {
     MERROR_VER("coinbase transaction spends too much money (" << print_money(money_in_use) << "). Maximum block reward is "
             << print_money(max_money_in_use) << " (= " << print_money(max_base_reward) << " base + " << print_money(reward_parts.miner_fee) << " fees)");

@@ -6390,7 +6390,7 @@ bool simple_wallet::query_locked_stakes(bool print_result, bool print_key_images
       if (entry["amount"] > 0)
       {
         // version >= master_nodes::key_image_blacklist_entry::version_1_serialize_amount
-        msg_buf.append(fmt::format("  Total Locked  : {}\n", cryptonote::print_money(entry["amount"])));
+        msg_buf.append(fmt::format("  Total Locked  : {}\n", cryptonote::format_money(entry["amount"])));
       }
       msg_buf.append("\n");
 

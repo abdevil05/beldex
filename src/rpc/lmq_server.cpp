@@ -208,7 +208,7 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
       try {
         auto result = std::visit([](auto&& v) -> std::string {
           using T = decltype(v);
-          if constexpr (std::is_same_v<oxenmq::bt_value&&, T>)
+          if constexpr (std::is_same_v<oxenc::bt_value&&, T>)
             return bt_serialize(std::move(v));
           else if constexpr (std::is_same_v<nlohmann::json&&, T>)
             return v.dump();
@@ -503,8 +503,8 @@ void omq_rpc::on_mempool_sub_request(oxenmq::Message& m)
   }
 
   mempool_sub_type sub_type;
-  if (m.data[0] == "blink"sv)
-    sub_type = mempool_sub_type::blink;
+  if (m.data[0] == "flash"sv)
+    sub_type = mempool_sub_type::flash;
   else if (m.data[0] == "all"sv)
     sub_type = mempool_sub_type::all;
   else {
@@ -525,7 +525,7 @@ void omq_rpc::on_mempool_sub_request(oxenmq::Message& m)
       }
       result.first->second.type = sub_type;
     }
-    MDEBUG("New " << (sub_type == mempool_sub_type::blink ? "blink" : "all") << " mempool subscription request from conn " << m.conn << " @ " << m.remote);
+    MDEBUG("New " << (sub_type == mempool_sub_type::flash ? "flash" : "all") << " mempool subscription request from conn " << m.conn << " @ " << m.remote);
     m.send_reply("OK");
   }
 }

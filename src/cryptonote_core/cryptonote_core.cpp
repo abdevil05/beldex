@@ -2294,8 +2294,10 @@ namespace cryptonote
   {
     std::vector<master_nodes::master_node_pubkey_info> const states = get_master_node_list_state({ m_master_keys.pub });
 
-    // wait one block before starting uptime proofs.
-    if (!states.empty() && (states[0].info->registration_height + 1) < get_current_blockchain_height())
+    // wait one block before starting uptime proofs (but not on testnet/devnet, where we sometimes
+    // have mass registrations/deregistrations where the waiting causes problems).
+    uint64_t delay_blocks = m_nettype == network_type::MAINNET ? 1 : 0;
+    if (!states.empty() && (states[0].info->registration_height + delay_blocks) < get_current_blockchain_height())
     {
       m_check_uptime_proof_interval.do_call([this]() {
         // This timer is not perfectly precise and can leak seconds slightly, so send the uptime

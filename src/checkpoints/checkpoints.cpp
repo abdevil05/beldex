@@ -322,7 +322,8 @@ namespace cryptonote
       for (size_t i = 0; i < beldex::array_count(HARDCODED_MAINNET_CHECKPOINTS); ++i)
       {
         height_to_hash const &checkpoint = HARDCODED_MAINNET_CHECKPOINTS[i];
-        ADD_CHECKPOINT(checkpoint.height, checkpoint.hash);
+        bool added = add_checkpoint(checkpoint.height, checkpoint.hash);
+        CHECK_AND_ASSERT(added, false);
       }
     }
 #endif

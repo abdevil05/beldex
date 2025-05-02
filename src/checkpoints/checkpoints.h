@@ -38,11 +38,10 @@
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "common/fs.h"
 
-#define ADD_CHECKPOINT(h, hash)  CHECK_AND_ASSERT(add_checkpoint(h,  hash), false);
-#define JSON_HASH_FILE_NAME "checkpoints.json"
-
 namespace cryptonote
 {
+  constexpr std::string_view JSON_HASH_FILE_NAME = "checkpoints.json"sv;
+  
   enum struct checkpoint_type
   {
     hardcoded,
