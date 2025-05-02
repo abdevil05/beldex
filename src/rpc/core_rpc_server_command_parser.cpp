@@ -132,6 +132,15 @@ namespace cryptonote::rpc {
       throw std::runtime_error{"Error: 'memory_pool' and 'tx_hashes' are mutually exclusive"};
   }
 
+  void parse_request(GET_TRANSACTION_POOL& get, rpc_input in) {
+    // Deprecated wrapper; GET_TRANSACTION_POOL is a no-member subclass of GET_TRANSACTIONS; it
+    // works identically, except that we force `memory_pool` to true.
+    parse_request(static_cast<GET_TRANSACTIONS&>(get), std::move(in));
+    if (!get.request.tx_hashes.empty())
+      throw std::runtime_error{"Error: 'get_transaction_pool' does not support specifying 'tx_hashes'"};
+    get.request.memory_pool = true;
+  }
+
   void parse_request(SET_LIMIT& limit, rpc_input in) {
     get_values(in,
         "limit_down", limit.request.limit_down,

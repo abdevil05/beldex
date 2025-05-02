@@ -605,6 +605,12 @@ else()
     add_cxx_flag_if_supported(-fstack-clash-protection CXX_SECURITY_FLAGS)
   endif()
 
+  # GCC 12's stringop-overflow warnings are really broken, with tons and tons of false positives all
+  # over the place (not just in our code, but also in its own stdlibc++ code).
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 12 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 13)
+    set(CXX_WARNINGS "${CXX_WARNINGS} -Wno-stringop-overflow")
+  endif()
+
   # Removed in GCC 9.1 (or before ?), but still accepted, so spams the output
   if (NOT CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)
     add_c_flag_if_supported(-mmitigate-rop C_SECURITY_FLAGS)
