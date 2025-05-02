@@ -560,7 +560,7 @@ else()
     endif()
   endif()
   set(C_WARNINGS "-Waggregate-return -Wnested-externs -Wold-style-definition -Wstrict-prototypes")
-  set(CXX_WARNINGS "-Wno-reorder -Wno-missing-field-initializers")
+  set(CXX_WARNINGS "-Wno-reorder -Wno-missing-field-initializers -Wno-stringop-overflow -Werror=sign-compare")
 
   option(COVERAGE "Enable profiling for test coverage report" 0)
 

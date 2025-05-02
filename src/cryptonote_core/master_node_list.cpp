@@ -2906,7 +2906,7 @@ namespace master_nodes
   bool master_node_list::handle_uptime_proof(cryptonote::NOTIFY_UPTIME_PROOF::request const &proof, bool &my_uptime_proof_confirmation, crypto::x25519_public_key &x25519_pkey)
   {
     auto vers = get_network_version_revision(m_blockchain.nettype(), m_blockchain.get_current_blockchain_height());
-    if (vers >= std::make_pair(hf::hf17_POS, 1))
+    if (vers >= std::make_pair(hf::hf17_POS, uint8_t{1}))
       REJECT_PROOF("Old format (non-bt) proofs are not acceptable from v17+1 onwards");
 
     auto& netconf = get_config(m_blockchain.nettype());

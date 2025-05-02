@@ -871,7 +871,7 @@ bool rpc_command_executor::print_transaction(const crypto::hash& transaction_has
   else
     tools::success_msg_writer() << "Found in blockchain at height " << tx["block_height"].get<uint64_t>() << (pruned ? " (pruned)" : "");
 
-    auto pruned_hex = tx["pruned"].get<std::string_view>(); // Always included with req.split=true
+  auto pruned_hex = tx["pruned"].get<std::string_view>(); // Always included with req.split=true
 
   std::optional<cryptonote::transaction> t;
   if (include_metadata || include_json)
@@ -1104,7 +1104,7 @@ bool rpc_command_executor::start_mining(const cryptonote::account_public_address
   if (!try_running([this, &args] { return invoke<START_MINING>(args); }, "Unable to start mining"))
     return false;
 
-    tools::success_msg_writer()
+  tools::success_msg_writer()
     << fmt::format("Mining started with {} thread(s).", std::max(num_threads, 1))
     << (num_blocks ? fmt::format(" Will stop after {} blocks", num_blocks) : "");
   return true;
