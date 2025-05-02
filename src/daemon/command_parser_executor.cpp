@@ -68,10 +68,9 @@ static bool parse_if_present(std::forward_list<std::string>& list, T& var, const
   return false;
 }
 
-bool command_parser_executor::print_checkpoints(const std::vector<std::string> &args)
+bool command_parser_executor::print_checkpoints(const std::vector<std::string>& args)
 {
-  uint64_t start_height = cryptonote::rpc::GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE;
-  uint64_t end_height   = cryptonote::rpc::GET_CHECKPOINTS::HEIGHT_SENTINEL_VALUE;
+  std::optional<uint64_t> start_height, end_height;
 
   std::forward_list<std::string> args_list(args.begin(), args.end());
   bool print_json = !args_list.empty() && args_list.front() == "+json";
@@ -99,7 +98,7 @@ bool command_parser_executor::print_checkpoints(const std::vector<std::string> &
 bool command_parser_executor::print_mn_state_changes(const std::vector<std::string> &args)
 {
   uint64_t start_height;
-  uint64_t end_height = cryptonote::rpc::GET_MN_STATE_CHANGES::HEIGHT_SENTINEL_VALUE;
+  std::optional<uint64_t> end_height;
 
   if (args.empty()) {
     std::cout << "Missing first argument start_height" << std::endl;
@@ -112,8 +111,6 @@ bool command_parser_executor::print_mn_state_changes(const std::vector<std::stri
     std::cout << "start_height should be a number" << std::endl;
     return false;
   }
-
-  args_list.pop_front();
 
   if (!parse_if_present(args_list, end_height, "end height"))
     return false;
@@ -233,8 +230,8 @@ bool command_parser_executor::print_blockchain_info(const std::vector<std::strin
 
 bool command_parser_executor::print_quorum_state(const std::vector<std::string>& args)
 {
-  uint64_t start_height = cryptonote::rpc::GET_QUORUM_STATE::HEIGHT_SENTINEL_VALUE;
-  uint64_t end_height   = cryptonote::rpc::GET_QUORUM_STATE::HEIGHT_SENTINEL_VALUE;
+  std::optional<uint64_t> start_height;
+  std::optional<uint64_t> end_height;
 
   std::forward_list<std::string> args_list(args.begin(), args.end());
   if (!parse_if_present(args_list, start_height, "start height"))

@@ -149,9 +149,9 @@ public:
         return invoke<Response>(params)["response"];
   }
 
-  bool print_checkpoints(uint64_t start_height, uint64_t end_height, bool print_json);
+  bool print_checkpoints(std::optional<uint64_t> start_height, std::optional<uint64_t> end_height, bool print_json);
 
-  bool print_mn_state_changes(uint64_t start_height, uint64_t end_height);
+  bool print_mn_state_changes(uint64_t start_height, std::optional<uint64_t> end_height);
 
   bool print_peer_list(bool white = true, bool gray = true, size_t limit = 0, bool pruned_only = false);
 
@@ -167,7 +167,7 @@ public:
 
   bool print_blockchain_info(int64_t start_block_index, uint64_t end_block_index);
 
-  bool print_quorum_state(uint64_t start_height, uint64_t end_height);
+  bool print_quorum_state(std::optional<uint64_t> start_height, std::optional<uint64_t> end_height);
 
   bool set_log_level(int8_t level);
 
