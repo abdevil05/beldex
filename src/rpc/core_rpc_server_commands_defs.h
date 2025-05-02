@@ -1596,7 +1596,7 @@ namespace cryptonote::rpc {
   /// - \p master_node_pubkey The queried daemon's master node public key.  Will be empty if not running as a master node.
   /// - \p master_node_ed25519_pubkey The daemon's ed25519 auxiliary public key.
   /// - \p master_node_x25519_pubkey The daemon's x25519 auxiliary public key.
-  struct GET_MASTER_KEYS : RPC_COMMAND
+  struct GET_MASTER_KEYS : NO_ARGS
   {
     static constexpr auto names() { return NAMES("get_master_keys", "get_master_node_key"); }
   };
@@ -1614,7 +1614,7 @@ namespace cryptonote::rpc {
   /// - \p master_node_privkey The queried daemon's master node private key.  Will be empty if not running as a master node.
   /// - \p master_node_ed25519_privkey The daemon's ed25519 private key (note that this is in sodium's format, which consists of the private and public keys concatenated together)
   /// - \p master_node_x25519_privkey The daemon's x25519 private key.
-  struct GET_MASTER_PRIVKEYS : RPC_COMMAND
+  struct GET_MASTER_PRIVKEYS : NO_ARGS
   {
     static constexpr auto names() { return NAMES("get_master_privkeys", "get_master_node_privkey"); }
   };
@@ -2284,52 +2284,52 @@ namespace cryptonote::rpc {
   /// <TYPE>::response.  The <TYPE>::request has to be unique (for overload resolution);
   /// <TYPE>::response does not.
   using core_rpc_types = tools::type_list<
+    BANNED,
+    FLUSH_CACHE,
+    FLUSH_TRANSACTION_POOL,
+    GET_BASE_FEE_ESTIMATE,
+    GET_BLOCK_COUNT,
+    GET_BLOCK_HASH,
+    GET_COINBASE_TX_SUM,
     GET_CONNECTIONS,
     GET_HEIGHT,
     GET_INFO,
-    BNS_RESOLVE,
-    GET_OUTPUTS,
     GET_LIMIT,
-    SET_LIMIT,
-    HARD_FORK_INFO,
-    START_MINING,
-    STOP_MINING,
-    SAVE_BC,
-    STOP_DAEMON,
-    SYNC_INFO,
-    GET_BLOCK_COUNT,
-    MINING_STATUS,
+    GET_OUTPUTS,
+    GET_PEER_LIST,
+    GET_MASTER_KEYS,
+    GET_MASTER_NODES,
+    GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES,
+    GET_MASTER_NODE_STATUS,
+    GET_MASTER_PRIVKEYS,
+    GET_MN_STATE_CHANGES,
+    GET_TRANSACTIONS,
     GET_TRANSACTION_POOL_HASHES,
     GET_TRANSACTION_POOL_STATS,
-    GET_TRANSACTIONS,
-    IS_KEY_IMAGE_SPENT,
-    GET_MASTER_NODES,
-    GET_MASTER_NODE_STATUS,
-    SUBMIT_TRANSACTION,
-    GET_BLOCK_HASH,
-    GET_PEER_LIST,
-    GET_MASTER_NODE_REGISTRATION_CMD_RAW,
-    GET_MASTER_NODE_REGISTRATION_CMD,
-    SET_LOG_LEVEL,
-    SET_LOG_CATEGORIES,
-    BANNED,
-    FLUSH_TRANSACTION_POOL,
     GET_VERSION,
-    GET_COINBASE_TX_SUM,
-    GET_BASE_FEE_ESTIMATE,
-    OUT_PEERS,
+    HARD_FORK_INFO,
     IN_PEERS,
-    POP_BLOCKS,
-    STORAGE_SERVER_PING,
+    IS_KEY_IMAGE_SPENT,
     BELNET_PING,
+    MINING_STATUS,
+    BNS_OWNERS_TO_NAMES,
+    BNS_RESOLVE,
+    OUT_PEERS,
+    POP_BLOCKS,
     PRUNE_BLOCKCHAIN,
-    TEST_TRIGGER_P2P_RESYNC,
-    TEST_TRIGGER_UPTIME_PROOF,
     REPORT_PEER_STATUS,
-    GET_MN_STATE_CHANGES,
-    FLUSH_CACHE,
-    GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES,
-    BNS_OWNERS_TO_NAMES
+    SAVE_BC,
+    SET_LIMIT,
+    SET_LOG_CATEGORIES,
+    SET_LOG_LEVEL,
+    START_MINING,
+    STOP_DAEMON,
+    STOP_MINING,
+    STORAGE_SERVER_PING,
+    SUBMIT_TRANSACTION,
+    SYNC_INFO,
+    TEST_TRIGGER_P2P_RESYNC,
+    TEST_TRIGGER_UPTIME_PROOF
   >;
   using FIXME_old_rpc_types = tools::type_list<
     GET_NET_STATS,
@@ -2338,7 +2338,6 @@ namespace cryptonote::rpc {
     GET_BLOCK_HEADER_BY_HEIGHT,
     GET_BLOCK,
     GET_BLOCK_HEADERS_RANGE,
-    // SET_BOOTSTRAP_DAEMON,
     GETBANS,
     SETBANS,
     GET_OUTPUT_HISTOGRAM,
@@ -2346,8 +2345,8 @@ namespace cryptonote::rpc {
     RELAY_TX,
     GET_OUTPUT_DISTRIBUTION,
     GET_QUORUM_STATE,
-    GET_MASTER_KEYS,
-    GET_MASTER_PRIVKEYS,
+    GET_MASTER_NODE_REGISTRATION_CMD_RAW,
+    GET_MASTER_NODE_REGISTRATION_CMD,
     GET_STAKING_REQUIREMENT,
     GET_CHECKPOINTS,
     BNS_NAMES_TO_OWNERS,

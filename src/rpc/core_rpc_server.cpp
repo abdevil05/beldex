@@ -2783,19 +2783,38 @@ namespace cryptonote::rpc {
     auto& netconf = m_core.get_net_config();
     // FIXME: accessing proofs one-by-one like this is kind of gross.
     m_core.get_master_node_list().access_proof(mn_info.pubkey, [&](const auto& proof) {
-      if (proof.proof->public_ip != 0)
+      if (m_core.master_node() && m_core.get_master_keys().pub == mn_info.pubkey) {
+        // When returning our own info we always want to return the most current data because the
+        // data from the MN list could be stale (it only gets updated when we get verification of
+        // acceptance of our proof from the network).  The rest of the network might not get the
+        // updated data until the next proof, but local callers like SS and Belnet want it updated
+        // immediately.
         set_if_requested(reqed, entry,
-            "master_node_version", proof.proof->version,
-            "belnet_version", proof.proof->belnet_version,
-            "storage_server_version", proof.proof->storage_server_version,
-            "public_ip", epee::string_tools::get_ip_string_from_int32(proof.proof->public_ip),
-            "storage_port", proof.proof->storage_https_port,
-            "storage_lmq_port", proof.proof->storage_omq_port,
-            "quorumnet_port", proof.proof->qnet_port);
-      if (proof.proof->pubkey_ed25519)
+            "master_node_version", BELDEX_VERSION,
+            "belnet_version", m_core.belnet_version,
+            "storage_server_version", m_core.ss_version,
+            "public_ip", epee::string_tools::get_ip_string_from_int32(m_core.mn_public_ip()),
+            "storage_port", m_core.storage_https_port(),
+            "storage_lmq_port", m_core.storage_omq_port(),
+            "quorumnet_port", m_core.quorumnet_port());
         set_if_requested(reqed, binary,
-            "pubkey_ed25519", proof.proof->pubkey_ed25519,
-            "pubkey_x25519", proof.pubkey_x25519);
+            "pubkey_ed25519", m_core.get_master_keys().pub_ed25519,
+            "pubkey_x25519", m_core.get_master_keys().pub_x25519);
+      } else {
+        if (proof.proof->public_ip != 0)
+          set_if_requested(reqed, entry,
+              "master_node_version", proof.proof->version,
+              "belnet_version", proof.proof->belnet_version,
+              "storage_server_version", proof.proof->storage_server_version,
+              "public_ip", epee::string_tools::get_ip_string_from_int32(proof.proof->public_ip),
+              "storage_port", proof.proof->storage_https_port,
+              "storage_lmq_port", proof.proof->storage_omq_port,
+              "quorumnet_port", proof.proof->qnet_port);
+        if (proof.proof->pubkey_ed25519)
+          set_if_requested(reqed, binary,
+              "pubkey_ed25519", proof.proof->pubkey_ed25519,
+              "pubkey_x25519", proof.pubkey_x25519);
+      }
 
       auto system_now = std::chrono::system_clock::now();
       auto steady_now = std::chrono::steady_clock::now();
