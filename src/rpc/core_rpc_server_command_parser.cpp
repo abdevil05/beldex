@@ -42,7 +42,7 @@ namespace cryptonote::rpc {
 
     get_values(in,
         "limit", mns.request.limit,
-        "poll_block_hash", mns.request.poll_block_hash,
+        "poll_block_hash", ignore_empty_string{mns.request.poll_block_hash},
         "master_node_pubkeys", mns.request.master_node_pubkeys);
   }
 
@@ -329,6 +329,11 @@ namespace cryptonote::rpc {
     get_values(in, "max_count", get_output_histogram.request.max_count);
     get_values(in, "unlocked", get_output_histogram.request.unlocked);
     get_values(in, "recent_cutoff", get_output_histogram.request.recent_cutoff);
+  }
+
+  void parse_request(BNS_OWNERS_TO_NAMES& bns_owners_to_names, rpc_input in) {
+    get_values(in, "entries", bns_owners_to_names.request.entries);
+    get_values(in, "include_expired", bns_owners_to_names.request.include_expired);
   }
 
   void parse_request(GET_MASTER_NODE_REGISTRATION_CMD& cmd, rpc_input in) {

@@ -79,7 +79,6 @@
 namespace cryptonote::rpc {
 
   using nlohmann::json;
-  using beldex::json_to_bt;
   namespace {
     
     template <typename RPC>

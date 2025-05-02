@@ -54,4 +54,5 @@ namespace cryptonote::rpc {
   void parse_request(GET_BLOCK_HEADER_BY_HEIGHT& get_block_header_by_height, rpc_input in);
   void parse_request(GET_BLOCK& get_block, rpc_input in);
   void parse_request(GET_OUTPUT_HISTOGRAM& get_output_histogram, rpc_input in);
+  void parse_request(BNS_OWNERS_TO_NAMES& bns_owners_to_names, rpc_input in);
 }

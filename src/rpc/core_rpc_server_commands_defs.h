@@ -1960,7 +1960,7 @@ namespace cryptonote::rpc {
   ///   - \p key_image The key image of the transaction that is blacklisted on the network.
   ///   - \p unlock_height The height at which the key image is removed from the blacklist and becomes spendable.
   ///   - \p amount The total amount of locked Beldex in atomic units in this blacklisted stake.
-  struct GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES : PUBLIC
+  struct GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES : NO_ARGS
   {
     static constexpr auto names() { return NAMES("get_master_node_blacklisted_key_images"); }
   };
@@ -2327,7 +2327,9 @@ namespace cryptonote::rpc {
     TEST_TRIGGER_UPTIME_PROOF,
     REPORT_PEER_STATUS,
     GET_MN_STATE_CHANGES,
-    FLUSH_CACHE
+    FLUSH_CACHE,
+    GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES,
+    BNS_OWNERS_TO_NAMES
   >;
   using FIXME_old_rpc_types = tools::type_list<
     GET_NET_STATS,
@@ -2347,11 +2349,9 @@ namespace cryptonote::rpc {
     GET_MASTER_KEYS,
     GET_MASTER_PRIVKEYS,
     GET_STAKING_REQUIREMENT,
-    GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES,
     GET_CHECKPOINTS,
     BNS_NAMES_TO_OWNERS,
     BNS_LOOKUP,
-    BNS_OWNERS_TO_NAMES,
     BNS_VALUE_DECRYPT
   >;
 
