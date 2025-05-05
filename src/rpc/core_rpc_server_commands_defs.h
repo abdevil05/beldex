@@ -45,7 +45,6 @@
 //     setlocal comments+=://
 
 #include "rpc/common/rpc_version.h"
-#include "rpc/common/rpc_binary.h"
 #include "rpc/common/command_decorators.h"
 
 #include "crypto/crypto.h"
@@ -194,7 +193,7 @@ namespace cryptonote::rpc {
   ///   - `double_spend_seen` -- set to true if one or more outputs in this mempool transaction
   ///     have already been spent (and thus the tx cannot currently be added to the blockchain).
   ///   - `data` -- Full, unpruned transaction data.  For a json request this is hex-encoded; for a
-  ///     bt-encoded request this is raw bytes.  This field is omitted if any of `decode_as_json`,
+  ///     bt-encoded request this is raw bytes.  This field is omitted if any of `tx_extra`,
   ///     `split`, or `prune` is requested; or if the transaction has been pruned in the database.
   ///   - `pruned` -- The non-prunable part of the transaction, encoded as hex (for json requests).
   ///     Always included if `split` or `prune` are specified; without those options it will be

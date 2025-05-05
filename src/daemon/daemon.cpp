@@ -43,7 +43,7 @@
 #endif
 #include "rpc/common/rpc_args.h"
 #include "rpc/http_server.h"
-#include "rpc/lmq_server.h"
+#include "rpc/omq_server.h"
 // #include "rpc/bootstrap_daemon.h"
 #include "cryptonote_protocol/quorumnet.h"
 #include "cryptonote_core/uptime_proof.h"

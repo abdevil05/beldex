@@ -981,7 +981,7 @@ namespace cryptonote
       MGINFO_YELLOW("-  x25519: " << tools::type_to_hex(keys.pub_x25519));
     } else {
       // Only print the x25519 version because it's the only thing useful for a non-MN (for
-      // encrypted LMQ RPC connections).
+      // encrypted OMQ RPC connections).
       MGINFO_YELLOW("x25519 public key: " << tools::type_to_hex(keys.pub_x25519));
     }
 
@@ -2334,7 +2334,7 @@ namespace cryptonote
             MGINFO_RED(
                 "Another master node (" << pk << ") is broadcasting the same public IP and ports as this master node (" <<
                 epee::string_tools::get_ip_string_from_int32(m_mn_public_ip) << ":" << proof.proof->qnet_port << "[qnet], :" <<
-                proof.proof->storage_https_port << "[SS-HTTP], :" << proof.proof->storage_omq_port << "[SS-LMQ]). "
+                proof.proof->storage_https_port << "[SS-HTTP], :" << proof.proof->storage_omq_port << "[SS-OMQ]). "
                 "This will lead to deregistration of one or both master nodes if not corrected. "
                 "(Do both master nodes have the correct IP for the master-node-public-ip setting?)");
           });

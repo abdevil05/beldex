@@ -1,8 +1,8 @@
-#include "rpc_binary.h"
+#include "json_binary_proxy.h"
 #include <oxenc/hex.h>
 #include <oxenc/base64.h>
 
-namespace cryptonote::rpc {
+namespace tools {
 
   void load_binary_parameter_impl(std::string_view bytes, size_t raw_size, bool allow_raw, uint8_t* val_data) {
     if (allow_raw && bytes.size() == raw_size) {
