@@ -113,10 +113,13 @@ bool NodeRPCProxy::get_info() const
         m_block_weight_limit = res.at("block_weight_limit");
       else
         m_block_weight_limit = res.at("block_size_limit");
-      m_immutable_height = res.at("immutable_height").get<uint64_t>();
-      m_get_info_time = now;
-      m_height_time = now;
-    } catch (...) {
+      auto it_immutable_height = res.find("immutable_height");
+        if (it_immutable_height != res.end())
+            m_immutable_height = res.at("immutable_height").get<uint64_t>();
+        m_get_info_time = now;
+        m_height_time = now;
+    } catch (const std::exception& e) {
+        // log::error(logcat, "Failed to get info message: {}", e.what()); //TODO
         return false; }
   }
   return true;
@@ -126,8 +129,10 @@ bool NodeRPCProxy::get_height(uint64_t &height) const
 {
   auto now = std::chrono::steady_clock::now();
   if (now >= m_height_time + 30s) // re-cache every 30 seconds
+  {  
     if (!get_info())
       return false;
+  }
   height = m_height;
   return true;
 }
@@ -169,7 +174,10 @@ bool NodeRPCProxy::get_earliest_height(uint8_t version, uint64_t &earliest_heigh
     try {
       auto res = m_http_client.json_rpc("hard_fork_info", req_params);
       m_earliest_height[version] = res.at("earliest_height").get<uint64_t>();
-    } catch (...) { return false; }
+    } catch (const std::exception& e) {
+      // log::error(logcat, "Failed to get earliest height: {}", e.what()); //TODO
+      return false;
+    }
   }
   earliest_height = m_earliest_height[version];
   return true;

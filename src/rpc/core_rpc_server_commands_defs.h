@@ -1931,7 +1931,6 @@ namespace cryptonote::rpc {
     } request;
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
   struct GET_MASTER_NODE_REGISTRATION_CMD : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("get_master_node_registration_cmd"); }
@@ -2718,6 +2717,7 @@ namespace cryptonote::rpc {
     GET_MASTER_KEYS,
     GET_MASTER_NODES,
     GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES,
+    GET_MASTER_NODE_REGISTRATION_CMD,
     GET_MASTER_NODE_REGISTRATION_CMD_RAW,
     GET_MASTER_NODE_STATUS,
     GET_MASTER_PRIVKEYS,
@@ -2757,7 +2757,6 @@ namespace cryptonote::rpc {
   using FIXME_old_rpc_types = tools::type_list<
     RELAY_TX,
     GET_OUTPUT_DISTRIBUTION,
-    GET_MASTER_NODE_REGISTRATION_CMD,
     BNS_LOOKUP,
     BNS_VALUE_DECRYPT
   >;

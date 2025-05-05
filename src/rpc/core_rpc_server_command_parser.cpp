@@ -417,9 +417,9 @@ namespace cryptonote::rpc {
 
   void parse_request(GET_MASTER_NODE_REGISTRATION_CMD& cmd, rpc_input in) {
     get_values(in,
-        "contributor_addresses", cmd.request.contributor_addresses,
-        "contributor_amounts", cmd.request.contributor_amounts,
-        "operator_cut", cmd.request.operator_cut,
-        "staking_requirement", cmd.request.staking_requirement);
+        "contributor_addresses",  required{cmd.request.contributor_addresses},
+        "contributor_amounts",  required{cmd.request.contributor_amounts},
+        "operator_cut", required{cmd.request.operator_cut},
+        "staking_requirement",  required{cmd.request.staking_requirement});
   }
 }
