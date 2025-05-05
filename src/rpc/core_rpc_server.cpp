@@ -3206,50 +3206,45 @@ namespace cryptonote::rpc {
     test_trigger_uptime_proof.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  BNS_NAMES_TO_OWNERS::response core_rpc_server::invoke(BNS_NAMES_TO_OWNERS::request&& req, rpc_context context)
+  void core_rpc_server::invoke(BNS_NAMES_TO_OWNERS& bns_names_to_owners, rpc_context context)
   {
-    BNS_NAMES_TO_OWNERS::response res{};
-
     if (!context.admin)
-      check_quantity_limit(req.entries.size(), BNS_NAMES_TO_OWNERS::MAX_REQUEST_ENTRIES);
+    {
+      check_quantity_limit(bns_names_to_owners.request.name_hash.size(), BNS_NAMES_TO_OWNERS::MAX_REQUEST_ENTRIES);
+    }
 
     std::optional<uint64_t> height = m_core.get_current_blockchain_height();
     auto hf_version = get_network_version(nettype(), *height);
-    if (req.include_expired) height = std::nullopt;
-
-    std::vector<bns::mapping_type> types;
+    if (bns_names_to_owners.request.include_expired) height = std::nullopt;
 
     bns::name_system_db &db = m_core.get_blockchain_storage().name_system_db();
-    for (size_t request_index = 0; request_index < req.entries.size(); request_index++)
+    for (size_t request_index = 0; request_index < bns_names_to_owners.request.name_hash.size(); request_index++)
     {
-      std::string const &req_name_hash = req.entries[request_index];
+      const auto& request = bns_names_to_owners.request.name_hash[request_index];
 
       // This also takes 32 raw bytes, but that is undocumented (because it is painful to pass
       // through json).
-      auto name_hash = bns::name_hash_input_to_base64(req_name_hash);
+      auto name_hash = bns::name_hash_input_to_base64(bns_names_to_owners.request.name_hash[request_index]);
       if (!name_hash)
         throw rpc_error{ERROR_WRONG_PARAM, "Invalid name_hash: expected hash as 64 hex digits or 43/44 base64 characters"};
 
       std::vector<bns::mapping_record> records = db.get_mappings(*name_hash, height);
       for (auto const &record : records)
       {
-        auto& entry = res.entries.emplace_back();
-        entry.entry_index                                      = request_index;
-        entry.name_hash                                        = record.name_hash;
-        entry.owner                                            = record.owner.to_string(nettype());
-        if (record.backup_owner) entry.backup_owner            = record.backup_owner.to_string(nettype());
-        entry.encrypted_bchat_value                            = oxenc::to_hex(record.encrypted_bchat_value.to_view());
-        entry.encrypted_wallet_value                           = oxenc::to_hex(record.encrypted_wallet_value.to_view());
-        entry.encrypted_belnet_value                           = oxenc::to_hex(record.encrypted_belnet_value.to_view());
-        entry.encrypted_eth_addr_value                         = oxenc::to_hex(record.encrypted_eth_addr_value.to_view());
-        entry.expiration_height                                = record.expiration_height;
-        entry.update_height                                    = record.update_height;
-        entry.txid                                             = tools::type_to_hex(record.txid);
+        auto& elem = bns_names_to_owners.response["result"].emplace_back();
+        elem["name_hash"]                                    = record.name_hash;
+        elem["owner"]                                        = record.owner.to_string(nettype());
+        if (record.backup_owner) elem["backup_owner"]        = record.backup_owner.to_string(nettype());
+        elem["encrypted_bchat_value"]                        = oxenc::to_hex(record.encrypted_bchat_value.to_view());
+        elem["encrypted_wallet_value"]                       = oxenc::to_hex(record.encrypted_wallet_value.to_view());
+        elem["encrypted_belnet_value"]                       = oxenc::to_hex(record.encrypted_belnet_value.to_view());
+        elem["encrypted_eth_addr_value"]                     = oxenc::to_hex(record.encrypted_eth_addr_value.to_view());
+        elem["expiration_height"]                            = record.expiration_height;
+        elem["update_height"]                                = record.update_height;
+        elem["txid"]                                         = tools::type_to_hex(record.txid);
       }
     }
-
-    res.status = STATUS_OK;
-    return res;
+    bns_names_to_owners.response["status"] = STATUS_OK;
   }
 
   //------------------------------------------------------------------------------------------------------------------------------
@@ -3259,40 +3254,40 @@ namespace cryptonote::rpc {
 
     std::string name = tools::lowercase_ascii_string(std::move(req.name));
     
-    BNS_NAMES_TO_OWNERS::request name_to_owner_req{};
-    name_to_owner_req.entries.push_back(bns::name_to_base64_hash(name));   
-    auto name_to_owner_res = invoke(std::move(name_to_owner_req), context);
+    BNS_NAMES_TO_OWNERS name_to_owner{};
+    name_to_owner.request.name_hash.push_back(bns::name_to_base64_hash(name));   
+    invoke(name_to_owner, context);
 
-    if(name_to_owner_res.entries.size() != 1){
+    if(name_to_owner.response["result"].size() != 1){
         throw rpc_error{ERROR_INVALID_RESULT, "Invalid data returned from BNS_NAMES_TO_OWNERS"};
     }
 
-    auto entries = name_to_owner_res.entries.back();
+    auto entries = name_to_owner.response["result"].back();
     {
-      res.name_hash                                         = entries.name_hash;
-      res.owner                                             = entries.owner;
-      if (entries.backup_owner) res.backup_owner            = entries.backup_owner;
-      res.expiration_height                                 = entries.expiration_height;
-      res.update_height                                     = entries.update_height;
-      res.txid                                              = entries.txid;
+      res.name_hash                                           = entries["name_hash"];
+      res.owner                                               = entries["owner"];
+      if (!entries["backup_owner"].empty()) res.backup_owner  = entries["backup_owner"];
+      res.expiration_height                                   = entries["expiration_height"];
+      res.update_height                                       = entries["update_height"];
+      res.txid                                                = entries["txid"];
 
-      if(!entries.encrypted_bchat_value.empty()){
-        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "bchat", entries.encrypted_bchat_value};
+      if(!entries["encrypted_bchat_value"].empty()){
+        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "bchat", entries["encrypted_bchat_value"]};
         auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
         res.bchat_value = bns_value_decrypt_res.value;
       }
-      if(!entries.encrypted_belnet_value.empty()){
-        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "belnet", entries.encrypted_belnet_value};
+      if(!entries["encrypted_belnet_value"].empty()){
+        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "belnet", entries["encrypted_belnet_value"]};
         auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
         res.belnet_value = bns_value_decrypt_res.value;
       }
-      if(!entries.encrypted_wallet_value.empty()){
-        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "wallet", entries.encrypted_wallet_value};
+      if(!entries["encrypted_wallet_value"].empty()){
+        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "wallet", entries["encrypted_wallet_value"]};
         auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
         res.wallet_value = bns_value_decrypt_res.value;
       }
-      if(!entries.encrypted_eth_addr_value.empty()){
-        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "eth_addr", entries.encrypted_eth_addr_value};
+      if(!entries["encrypted_eth_addr_value"].empty()){
+        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "eth_addr", entries["encrypted_eth_addr_value"]};
         auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
         res.eth_addr_value = bns_value_decrypt_res.value;
       }

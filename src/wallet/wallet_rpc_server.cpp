@@ -3302,6 +3302,7 @@ namespace {
 
   BNS_KNOWN_NAMES::response wallet_rpc_server::invoke(BNS_KNOWN_NAMES::request&& req)
   {
+    //TODO sean this needs to fit the new request format
     require_open();
     BNS_KNOWN_NAMES::response res{};
 

@@ -192,6 +192,7 @@ namespace cryptonote::rpc {
     void invoke(GET_ALTERNATE_CHAINS& get_alternate_chains, rpc_context context);
     void invoke(GET_OUTPUT_HISTOGRAM& get_output_histogram, rpc_context context);
     void invoke(BNS_OWNERS_TO_NAMES& bns_owners_to_names, rpc_context context);
+    void invoke(BNS_NAMES_TO_OWNERS& bns_names_to_owners, rpc_context context);
 
     // Deprecated Monero NIH binary endpoints:
     GET_ALT_BLOCKS_HASHES_BIN::response         invoke(GET_ALT_BLOCKS_HASHES_BIN::request&& req, rpc_context context);
@@ -207,7 +208,6 @@ namespace cryptonote::rpc {
 
     // FIXME: unconverted JSON RPC endpoints:
     // SET_BOOTSTRAP_DAEMON::response                      invoke(SET_BOOTSTRAP_DAEMON::request&& req, rpc_context context);
-    BNS_NAMES_TO_OWNERS::response                       invoke(BNS_NAMES_TO_OWNERS::request&& req, rpc_context context);
     BNS_LOOKUP::response                                invoke(BNS_LOOKUP::request&& req, rpc_context context);
     BNS_VALUE_DECRYPT::response                         invoke(BNS_VALUE_DECRYPT::request&& req, rpc_context context);
 

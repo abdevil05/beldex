@@ -164,7 +164,7 @@ T make_from_guts(std::string_view s) {
     if (s.size() != sizeof(T))
         throw std::runtime_error("Cannot reconstitute type: wrong type content size");
     T x;
-    std::memcpy(&x, s.data(), sizeof(T));
+    std::memcpy(static_cast<void*>(&x), s.data(), sizeof(T));
     return x;
 }
 

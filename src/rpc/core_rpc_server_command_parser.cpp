@@ -381,8 +381,13 @@ namespace cryptonote::rpc {
        "include_expired", bns_owners_to_names.request.include_expired);
   }
 
-  void parse_request(GET_QUORUM_STATE& qs, rpc_input in) {
+  void parse_request(BNS_NAMES_TO_OWNERS& bns_names_to_owners, rpc_input in) {
+    get_values(in,
+        "name_hash", required{bns_names_to_owners.request.name_hash},
+        "include_expired", bns_names_to_owners.request.include_expired);
+  }
 
+  void parse_request(GET_QUORUM_STATE& qs, rpc_input in) {
     get_values(in,
         "end_height", qs.request.end_height,
         "quorum_type", qs.request.quorum_type,
