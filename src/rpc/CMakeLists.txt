@@ -53,7 +53,6 @@ target_link_libraries(rpc_commands
     rpc_common
     common
     cpr::cpr
-    nlohmann_json::nlohmann_json
   PRIVATE
     cryptonote_protocol
     extra)
@@ -83,6 +82,5 @@ target_link_libraries(rpc_http_client
   PUBLIC
     common
     cpr::cpr
-    nlohmann_json::nlohmann_json
   PRIVATE
     extra)

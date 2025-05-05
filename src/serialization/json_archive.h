@@ -44,8 +44,6 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "json_archieve"
 namespace serialization {
 
 using json_variant_tag_type = std::string_view;
@@ -73,7 +71,6 @@ struct json_archiver : public serializer
 
   // Sets the tag for the next object value we will write.
   void tag(std::string_view tag) {
-    MGINFO("tag : " << tag);
     tag_ = tag;
   }
 

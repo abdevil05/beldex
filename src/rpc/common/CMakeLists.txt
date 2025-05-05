@@ -9,7 +9,6 @@ target_link_libraries(rpc_common
   PUBLIC
     common
     uWebSockets
-    nlohmann_json::nlohmann_json
     oxenmq::oxenmq
   PRIVATE
     extra)

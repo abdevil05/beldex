@@ -655,8 +655,8 @@ namespace cryptonote::rpc {
       std::string hash;                       // The hash of this block.
       difficulty_type difficulty;             // The strength of the Beldex network based on mining power.
       difficulty_type cumulative_difficulty;  // The cumulative strength of the Beldex network based on mining power.
-      uint64_t reward;                        // The amount of new generated in this block and rewarded to the miner, foundation and master Nodes. Note: 1 BELDEX = 1e9 atomic units.
-      uint64_t coinbase_payouts;              // The amount of BDX paid out in this block. Note: 1 BELDEX = 1e9 atomic units.
+      uint64_t reward;                        // The amount of new BELDEX (in atomic units) generated in this block and allocated to master nodes and governance.  As of Bledex 10 (HF) this is the *earned* amount, but not the *paid* amount which occurs in batches.
+      uint64_t coinbase_payouts;              // The amount of BELDEX paid out in this block.  As of Beldex 10 (HF 19), this reflects the current batched amounts being paid from earnings batched over previous blocks, not the amounts *earned* in the current block.
       uint64_t block_size;                    // The block size in bytes.
       uint64_t block_weight;                  // The block weight in bytes.
       uint64_t num_txes;                      // Number of transactions in the block, not counting the coinbase tx.
@@ -1976,7 +1976,7 @@ namespace cryptonote::rpc {
   ///   - \p key_image The key image of the transaction that is blacklisted on the network.
   ///   - \p unlock_height The height at which the key image is removed from the blacklist and becomes spendable.
   ///   - \p amount The total amount of locked Beldex in atomic units in this blacklisted stake.
-  struct GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES : NO_ARGS
+  struct GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES : PUBLIC, NO_ARGS
   {
     static constexpr auto names() { return NAMES("get_master_node_blacklisted_key_images"); }
   };

@@ -108,10 +108,10 @@ void from_json(const nlohmann::json& j, block_header_response& h)
   j.at("block_size").get_to(h.block_size);
   j.at("block_weight").get_to(h.block_weight);
   j.at("num_txes").get_to(h.num_txes);
-  if (j.at("pow_hash").is_null())
+  if (auto it = j.find("pow_hash"); it == j.end() || it->is_null())
     h.pow_hash = std::nullopt;
   else
-    h.pow_hash = j["pow_hash"].get<std::string>();
+    h.pow_hash = it->get<std::string>();
   j.at("long_term_weight").get_to(h.long_term_weight);
   j.at("miner_tx_hash").get_to(h.miner_tx_hash);
   j.at("miner_tx_hash").get_to(h.miner_tx_hash);

@@ -1041,9 +1041,6 @@ namespace cryptonote::rpc {
 
         serialize(ja, tx);
         auto dumped = std::move(ja).json();
-        for (const auto& [k, v] : dumped.items()) {
-          LOG_PRINT_L0("tx details has k= " << k);
-        }
         e.update(dumped);
       }
 
@@ -1810,7 +1807,7 @@ namespace cryptonote::rpc {
     get_block.response["block_header"] = header;
     std::vector<std::string> tx_hashes;
     tx_hashes.reserve(blk.tx_hashes.size());
-    std::transform(blk.tx_hashes.begin(), blk.tx_hashes.end(), tx_hashes.begin(), [](const auto& x) { return tools::type_to_hex(x); });
+    std::transform(blk.tx_hashes.begin(), blk.tx_hashes.end(), std::back_inserter(tx_hashes), [](const auto& x) { return tools::type_to_hex(x); });
     get_block.response["tx_hashes"] = tx_hashes;
     get_block.response["blob"] = oxenc::to_hex(t_serializable_object_to_blob(blk));
     get_block.response["json"] = obj_to_json_str(blk);
