@@ -35,6 +35,8 @@
 
 namespace cryptonote::rpc {
 
+  struct EMPTY { KV_MAP_SERIALIZABLE };
+
   /// Specifies that the RPC call is legacy, deprecated Monero custom binary input/ouput.  If not
   /// given then the command is JSON/bt-encoded values.  For HTTP RPC this also means the command is
   /// *not* available via the HTTP JSON RPC.

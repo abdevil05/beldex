@@ -108,7 +108,7 @@ namespace cryptonote::rpc {
       cmd->is_binary = true;
 
       // Legacy binary request; these still use epee serialization, and should be considered
-      // deprecated (tentatively to be removed in Oxen 11).
+      // deprecated (tentatively to be removed in Beldex 11).
       cmd->invoke = [](rpc_request&& request, core_rpc_server& server) -> rpc_command::result_type {
         typename RPC::request req{};
         std::string_view data;
@@ -1494,6 +1494,7 @@ namespace cryptonote::rpc {
 
       getblockhash.response_hex[tools::int_to_string(h)] = m_core.get_block_id_by_height(h);
     }
+    getblockhash.response["height"] = curr_height;
     getblockhash.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -1863,10 +1864,6 @@ namespace cryptonote::rpc {
       if (i->second > now) {
         ban b;
         b.host = i->first;
-        b.ip = 0;
-        uint32_t ip;
-        if (epee::string_tools::get_ip_int32_from_string(ip, b.host))
-          b.ip = ip;
         b.seconds = i->second - now;
         get_bans.response["bans"].push_back(b);
       }
@@ -1877,7 +1874,6 @@ namespace cryptonote::rpc {
       if (i->second > now) {
         ban b;
         b.host = i->first.host_str();
-        b.ip = 0;
         b.seconds = i->second - now;
         get_bans.response["bans"].push_back(b);
       }
@@ -1918,32 +1914,22 @@ namespace cryptonote::rpc {
     epee::net_utils::network_address na;
 
     // try subnet first
-    if (!set_bans.request.host.empty())
+    auto ns_parsed = net::get_ipv4_subnet_address(set_bans.request.host);
+    if (ns_parsed)
     {
-      auto ns_parsed = net::get_ipv4_subnet_address(set_bans.request.host);
-      if (ns_parsed)
-      {
-        if (set_bans.request.ban)
-          m_p2p.block_subnet(*ns_parsed, set_bans.request.seconds);
-        else
-          m_p2p.unblock_subnet(*ns_parsed);
-        set_bans.response["status"] = STATUS_OK;
-        return;
-      }
+      if (set_bans.request.ban)
+        m_p2p.block_subnet(*ns_parsed, set_bans.request.seconds);
+      else
+        m_p2p.unblock_subnet(*ns_parsed);
+      set_bans.response["status"] = STATUS_OK;
+      return;
     }
 
     // then host
-    if (!set_bans.request.host.empty())
-    {
-      auto na_parsed = net::get_network_address(set_bans.request.host, 0);
-      if (!na_parsed)
-        throw rpc_error{ERROR_WRONG_PARAM, "Unsupported host/subnet type"};
-      na = std::move(*na_parsed);
-    }
-    else
-    {
-      na = epee::net_utils::ipv4_network_address{set_bans.request.ip, 0};
-    }
+    auto na_parsed = net::get_network_address(set_bans.request.host, 0);
+    if (!na_parsed)
+      throw rpc_error{ERROR_WRONG_PARAM, "Unsupported host/subnet type"};
+    na = std::move(*na_parsed);
     if (set_bans.request.ban)
       m_p2p.block_host(na, set_bans.request.seconds);
     else
@@ -2242,7 +2228,7 @@ namespace cryptonote::rpc {
     sync.response["height"] = top_height + 1; // turn top block height into blockchain height
     if (auto target_height = m_core.get_target_blockchain_height(); target_height > top_height + 1)
       sync.response["target_height"] = target_height;
-    // Don't put this into the response until it actually does something on Oxen:
+    // Don't put this into the response until it actually does something on Beldex:
     if (false)
       sync.response["next_needed_pruning_seed"] = m_p2p.get_payload_object().get_next_needed_pruning_stripe().second;
 
@@ -2975,8 +2961,7 @@ namespace cryptonote::rpc {
       } else if (cur_version < required) {
         status = fmt::format("Outdated {}. Current: {}.{}.{}, Required: {}.{}.{}",name, cur_version[0], cur_version[1], cur_version[2], required[0], required[1], required[2]);
         MERROR(status);
-      } else if (!pubkey_ed25519.empty() && !(pubkey_ed25519.find_first_not_of('0') == std::string_view::npos) // TODO: once belnet & ss are always sending this we can remove this empty bypass
-          && (pubkey_ed25519 != our_pubkey_ed25519)) {
+      } else if (pubkey_ed25519 != our_pubkey_ed25519) {
         status = fmt::format("Invalid {} pubkey: expected {}, received {}", name, our_pubkey_ed25519, pubkey_ed25519);
         MERROR(status);
       } else {

@@ -607,7 +607,7 @@ else()
 
   # GCC 12's stringop-overflow warnings are really broken, with tons and tons of false positives all
   # over the place (not just in our code, but also in its own stdlibc++ code).
-  if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 12 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 13)
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 12)
     set(CXX_WARNINGS "${CXX_WARNINGS} -Wno-stringop-overflow")
   endif()
 

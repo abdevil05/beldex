@@ -83,7 +83,7 @@ bool NodeRPCProxy::get_rpc_version(rpc::version_t &rpc_version) const
   {
     try {
       auto res = m_http_client.json_rpc("get_version", {});
-      m_rpc_version = rpc::make_version(res["version"].get<uint32_t>());
+      m_rpc_version = rpc::make_version(res.at("version").get<uint32_t>());
     } catch (...) { return false; }
   }
   rpc_version = m_rpc_version;
@@ -106,14 +106,14 @@ bool NodeRPCProxy::get_info() const
   {
     try {
       auto res = m_http_client.json_rpc("get_info", {});
-      m_height = res["height"].get<uint64_t>();
-      m_target_height = res["target_height"].get<uint64_t>();
+      m_height = res.at("height").get<uint64_t>();
+      m_target_height = res.at("target_height").get<uint64_t>();
       auto it_block_weight_limit = res.find("block_weight_limit");
       if (it_block_weight_limit != res.end())
-        m_block_weight_limit = res["block_weight_limit"];
+        m_block_weight_limit = res.at("block_weight_limit");
       else
-        m_block_weight_limit = res["block_size_limit"];
-      m_immutable_height = res["immutable_height"].get<uint64_t>();
+        m_block_weight_limit = res.at("block_size_limit");
+      m_immutable_height = res.at("immutable_height").get<uint64_t>();
       m_get_info_time = now;
       m_height_time = now;
     } catch (...) {
@@ -168,9 +168,7 @@ bool NodeRPCProxy::get_earliest_height(uint8_t version, uint64_t &earliest_heigh
     };
     try {
       auto res = m_http_client.json_rpc("hard_fork_info", req_params);
-      if (!res["earliest_height"])
-        return false;
-      m_earliest_height[version] = res["earliest_height"].get<uint64_t>();
+      m_earliest_height[version] = res.at("earliest_height").get<uint64_t>();
     } catch (...) { return false; }
   }
   earliest_height = m_earliest_height[version];
@@ -184,7 +182,7 @@ std::optional<cryptonote::hf> NodeRPCProxy::get_hardfork_version() const
 
   try {
     auto res = m_http_client.json_rpc("hard_fork_info", {});
-    return res["version"].get<cryptonote::hf>();
+    return res.at("version").get<cryptonote::hf>();
   }catch (...) {}
 
   return std::nullopt;
@@ -203,10 +201,10 @@ bool NodeRPCProxy::refresh_dynamic_base_fee_cache(uint64_t grace_blocks) const
     };
     try {
       auto res = m_http_client.json_rpc("get_base_fee_estimate", req_params);
-      m_dynamic_base_fee_estimate = {res["fee_per_byte"].get<uint64_t>(), res["fee_per_output"].get<uint64_t>()};
+      m_dynamic_base_fee_estimate = {res.at("fee_per_byte").get<uint64_t>(), res.at("fee_per_output").get<uint64_t>()};
       m_dynamic_base_fee_estimate_cached_height = height;
       m_dynamic_base_fee_estimate_grace_blocks = grace_blocks;
-      m_fee_quantization_mask = res["quantization_mask"].get<uint64_t>();
+      m_fee_quantization_mask = res.at("quantization_mask").get<uint64_t>();
     } catch (...) { return false; }
   }
   return true;
@@ -243,8 +241,8 @@ std::pair<bool, nlohmann::json> NodeRPCProxy::get_master_nodes(std::vector<std::
     {"master_node_pubkeys", pubkeys}
   };
   try {
-    auto res = m_http_client.json_rpc("get_master_nodes", pubkeys);
-    resolved = res["master_node_states"];
+    auto res = m_http_client.json_rpc("get_master_nodes", req_params);
+    resolved = res.at("master_node_states");
   } catch (...) {
     return result;
   }
@@ -262,6 +260,7 @@ bool NodeRPCProxy::update_all_master_nodes_cache(uint64_t height) const {
   req["fields"]["active"] = true;
   req["fields"]["contributors"] = true;
   req["fields"]["funded"] = true;
+  req["fields"]["locked_contributions"] = true;
   req["fields"]["registration_height"] = true;
   req["fields"]["requested_unlock_height"] = true;
   req["fields"]["master_node_pubkey"] = true;
@@ -270,7 +269,7 @@ bool NodeRPCProxy::update_all_master_nodes_cache(uint64_t height) const {
   try {
     auto res = m_http_client.json_rpc("get_master_nodes", req);
     m_all_master_nodes_cached_height = height;
-    m_all_master_nodes = std::move(res["master_node_states"]);
+    m_all_master_nodes = std::move(res.at("master_node_states"));
   } catch (...) { return false; }
 
   return true;
@@ -353,7 +352,7 @@ std::pair<bool, nlohmann::json> NodeRPCProxy::get_master_node_blacklisted_key_im
       try {
         auto res = m_http_client.json_rpc("get_master_node_blacklisted_key_images", {});
         m_master_node_blacklisted_key_images_cached_height = height;
-        m_master_node_blacklisted_key_images               = std::move(res["blacklist"]);
+        m_master_node_blacklisted_key_images               = std::move(res.at("blacklist"));
       } catch (...) {
         return result;
       }

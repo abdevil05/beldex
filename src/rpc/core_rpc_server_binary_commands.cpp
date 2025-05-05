@@ -2,6 +2,9 @@
 
 namespace cryptonote::rpc {
 
+  KV_SERIALIZE_MAP_CODE_BEGIN(EMPTY)
+  KV_SERIALIZE_MAP_CODE_END()
+
   void to_json(nlohmann::json& j, const GET_BLOCKS_BIN::tx_output_indices& toi)
   {
     j = nlohmann::json{{"indices", toi.indices}};

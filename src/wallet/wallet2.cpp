@@ -220,7 +220,7 @@ namespace {
       std::ostringstream os;
 
       const auto tvc = res["tvc"];
-      if (auto got = tvc.find("m_verbose_error"); got != tvc.end()) os << res["tvc"]["m_verbose_error"].get<std::string>() << "\n";
+      if (auto got = tvc.find("m_verbose_error"); got != tvc.end()) os << res["tvc"]["m_verbose_error"].get<std::string_view>() << "\n";
       if (auto got = tvc.find("m_verifivation_failed"); got != tvc.end()) os << "Verification failed, connection should be dropped, "; //bad tx, should drop connection
       if (auto got = tvc.find("m_verifivation_impossible"); got != tvc.end()) os << "Verification impossible, related to alt chain, "; //the transaction is related with an alternative blockchain
       if (auto got = tvc.find("m_should_be_relayed"); got == tvc.end()) os << "TX should NOT be relayed, ";
@@ -913,9 +913,9 @@ bool get_pruned_tx(const nlohmann::json& entry, cryptonote::transaction &tx, cry
   if (entry["pruned_as_hex"] && entry["prunable_hash"])
   {
     crypto::hash ph;
-    CHECK_AND_ASSERT_MES(tools::hex_to_type(entry["prunable_hash"].get<std::string>(), ph), false, "Failed to parse prunable hash");
-    CHECK_AND_ASSERT_MES(oxenc::is_hex(entry["pruned"].get<std::string>()), false, "Invalid pruned tx entry");
-    bd = oxenc::from_hex(entry["pruned"].get<std::string>());
+    CHECK_AND_ASSERT_MES(tools::hex_to_type(entry["prunable_hash"].get<std::string_view>(), ph), false, "Failed to parse prunable hash");
+    CHECK_AND_ASSERT_MES(oxenc::is_hex(entry["pruned"].get<std::string_view>()), false, "Invalid pruned tx entry");
+    bd = oxenc::from_hex(entry["pruned"].get<std::string_view>());
     CHECK_AND_ASSERT_MES(parse_and_validate_tx_base_from_blob(bd, tx), false, "Invalid base tx data");
     // only v2 txes can calculate their txid after pruned
     if (bd[0] > 1)
@@ -925,7 +925,7 @@ bool get_pruned_tx(const nlohmann::json& entry, cryptonote::transaction &tx, cry
     else
     {
       // for v1, we trust the dameon
-      CHECK_AND_ASSERT_MES(tools::hex_to_type(entry["tx_hash"].get<std::string>(), tx_hash), false, "Failed to parse tx hash");
+      CHECK_AND_ASSERT_MES(tools::hex_to_type(entry["tx_hash"].get<std::string_view>(), tx_hash), false, "Failed to parse tx hash");
     }
     return true;
   }
@@ -3744,26 +3744,15 @@ bool wallet2::get_rct_distribution(uint64_t &start_height, std::vector<uint64_t>
 //----------------------------------------------------------------------------------------------------
 bool wallet2::get_output_blacklist(std::vector<uint64_t> &blacklist)
 {
-  rpc::version_t rpc_version;
-  if (!m_node_rpc_proxy.get_rpc_version(rpc_version))
-  {
-    THROW_WALLET_EXCEPTION(tools::error::no_connection_to_daemon, "getversion");
-  }
-  if (rpc_version < rpc::version_t{2, 3})
-  {
-    MWARNING("Daemon is too old, not requesting output blacklist");
-    return false;
-  }
-  MDEBUG("Daemon is recent enough, requesting output blacklist");
+  cryptonote::rpc::GET_OUTPUT_BLACKLIST_BIN::response res{};
+  bool r = invoke_http<rpc::GET_OUTPUT_BLACKLIST_BIN>({}, res);
 
-  try {
-    auto res = m_http_client.json_rpc("get_output_blacklist", {});
-    blacklist = std::move(res["blacklist"].get<std::vector<uint64_t>>());
-  } catch (...) {
+  if (!r)
+  {
     MWARNING("Failed to request output blacklist: no connection to daemon");
     return false;
   }
-
+  blacklist = std::move(res.blacklist);
   return true;
 }
 //----------------------------------------------------------------------------------------------------
@@ -5868,7 +5857,7 @@ void wallet2::trim_hashchain()
       if (res["status"] == rpc::STATUS_OK)
       {
         crypto::hash hash;
-        tools::hex_to_type(res["block_header"]["hash"].get<std::string>(), hash);
+        tools::hex_to_type(res["block_header"]["hash"].get<std::string_view>(), hash);
         m_blockchain.refill(hash);
       }
       else
@@ -6659,7 +6648,6 @@ bool wallet2::is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height, 
     return true;
 
   {
-    std::optional<std::string> failed;
     // FIXME: can just check one here by adding a is_key_image_blacklisted
     auto [success, blacklist] = m_node_rpc_proxy.get_master_node_blacklisted_key_images();
     if (!success)
@@ -6672,7 +6660,7 @@ bool wallet2::is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height, 
     for (auto const& entry : blacklist)
     {
       crypto::key_image check_image;
-      if(!tools::hex_to_type(entry["key_image"].get<std::string>(), check_image))
+      if(!tools::hex_to_type(entry["key_image"].get<std::string_view>(), check_image))
       {
         MERROR("Failed to parse hex representation of key image: " << entry["key_image"]);
         break;
@@ -6685,7 +6673,6 @@ bool wallet2::is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height, 
 
   {
     const std::string primary_address = get_address_as_str();
-    std::optional<std::string> failed;
     auto [success, master_nodes_states] = m_node_rpc_proxy.get_contributed_master_nodes(primary_address);
     if (!success)
     {
@@ -6695,17 +6682,18 @@ bool wallet2::is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height, 
 
     for (auto const& entry : master_nodes_states)
     {
-      for (auto const& contributor : entry["contributors"])
+      for (auto const& contributor : entry.at("contributors"))
       {
-        if (primary_address != contributor["address"])
+        if (primary_address != contributor.at("address"))
           continue;
 
-        for (auto const &contribution : contributor["locked_contributions"])
+        for (auto const &contribution : contributor.at("locked_contributions"))
         {
+          auto input_ki = contribution.at("key_image").get<std::string_view>();
           crypto::key_image check_image;
-          if(!tools::hex_to_type(contribution["key_image"].get<std::string>(), check_image))
+          if(!tools::hex_to_type(input_ki, check_image))
           {
-            MERROR("Failed to parse hex representation of key image: " << contribution["key_image"]);
+            MERROR("Failed to parse hex representation of key image: " << input_ki);
             break;
           }
 
@@ -8111,7 +8099,7 @@ wallet2::stake_result wallet2::check_stake_allowed(const crypto::public_key& mn_
   if (!success)
   {
     result.status = stake_result_status::master_node_list_query_failed;
-    result.msg    = ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
+    result.msg    = ERR_MSG_MASTER_NODE_LIST_QUERY_FAILED;
     return result;
   }
 
@@ -8149,7 +8137,7 @@ wallet2::stake_result wallet2::check_stake_allowed(const crypto::public_key& mn_
   for (const auto& contributor : mnode_info["contributors"])
   {
     address_parse_info info;
-    if (!cryptonote::get_account_address_from_str(info, m_nettype, contributor["address"].get<std::string>()))
+    if (!cryptonote::get_account_address_from_str(info, m_nettype, contributor["address"].get<std::string_view>()))
       continue;
 
     if (info.address == addr_info.address)
@@ -8485,7 +8473,7 @@ wallet2::register_master_node_result wallet2::create_register_master_node_tx(con
     if (!success)
     {
       result.status = register_master_node_result_status::master_node_list_query_failed;
-      result.msg    = ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
+      result.msg    = ERR_MSG_MASTER_NODE_LIST_QUERY_FAILED;
       return result;
     }
 
@@ -8583,7 +8571,7 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
     for (auto const &contributor : node_info["contributors"])
     {
       address_parse_info address_info = {};
-      cryptonote::get_account_address_from_str(address_info, nettype(), contributor["address"].get<std::string>());
+      cryptonote::get_account_address_from_str(address_info, nettype(), contributor["address"].get<std::string_view>());
 
       if (address_info.address != primary_address)
         continue;
@@ -8622,7 +8610,7 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
         result.msg.append("Key image: ");
         result.msg.append(contribution["key_image"]);
         result.msg.append(" has already been requested to be unlocked, unlocking at height: ");
-        result.msg.append(node_info["requested_unlock_height"].get<std::string>());
+        result.msg.append(node_info["requested_unlock_height"].get<std::string_view>());
         result.msg.append(" (about ");
         result.msg.append(tools::get_human_readable_timespan(std::chrono::seconds((node_info["requested_unlock_height"].get<uint64_t>() - curr_height) * TARGET_BLOCK_TIME)));
         result.msg.append(")");
@@ -8660,7 +8648,7 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
       result.msg.append(tools::get_human_readable_timespan(std::chrono::seconds((unlock_height - curr_height) * TARGET_BLOCK_TIME)));
       result.msg.append(")");
 
-      if(!tools::hex_to_type(contribution["key_image"].get<std::string>(), unlock.key_image))
+      if(!tools::hex_to_type(contribution["key_image"].get<std::string_view>(), unlock.key_image))
       {
         result.msg = tr("Failed to parse hex representation of key image: ") + contribution["key_image"].get<std::string>();
         return result;
@@ -8837,7 +8825,7 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
 
     if ((*response)["entries"].size())
     {
-      if (!tools::hex_to_type((*response)["entries"][0]["txid"].get<std::string>(), result.prev_txid))
+      if (!tools::hex_to_type((*response)["entries"][0]["txid"].get<std::string_view>(), result.prev_txid))
       {
         if (reason) *reason = "Failed to convert response txid=" + (*response)["entries"][0]["txid"].get<std::string>() + " from the daemon into a 32 byte hash, it must be a 64 char hex string";
         return result;
@@ -8856,7 +8844,7 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
       cryptonote::address_parse_info curr_backup_owner_parsed = {};
       auto& rowner = (*response)["entries"].front()["owner"];
       std::string* rbackup_owner = (*response)["entries"].front().value("backup_owner", nullptr);
-      bool curr_owner        = cryptonote::get_account_address_from_str(curr_owner_parsed, wallet.nettype(), rowner.get<std::string>());
+      bool curr_owner        = cryptonote::get_account_address_from_str(curr_owner_parsed, wallet.nettype(), rowner.get<std::string_view>());
       bool curr_backup_owner = rbackup_owner && cryptonote::get_account_address_from_str(curr_backup_owner_parsed, wallet.nettype(), *rbackup_owner);
       if (!try_generate_bns_signature(wallet, rowner, owner, backup_owner, result))
       {
@@ -12371,8 +12359,10 @@ bool wallet2::get_tx_key(const crypto::hash &txid, crypto::secret_key &tx_key, s
     std::string tx_data;
     crypto::hash tx_prefix_hash{};
     const auto& res_tx = res["txs"].front();
+    std::string tx_blob_hex = res_tx["pruned"].get<std::string>();
+    if (res_tx["prunable"])
+      tx_blob_hex.append(res_tx["prunable"].get<std::string_view>());
 
-    std::string tx_blob_hex = res_tx["pruned"].get<std::string>() + (res_tx["prunable"] ? res_tx["prunable"].get<std::string>() : ""s);
     THROW_WALLET_EXCEPTION_IF(not oxenc::is_hex(tx_blob_hex), error::wallet_internal_error, "Failed to parse transaction from daemon");
     tx_data = oxenc::from_hex(tx_blob_hex);
     THROW_WALLET_EXCEPTION_IF(!cryptonote::parse_and_validate_tx_from_blob(tx_data, tx, tx_hash, tx_prefix_hash),

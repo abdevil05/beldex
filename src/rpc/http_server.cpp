@@ -2,6 +2,7 @@
 #include "http_server.h"
 #include <chrono>
 #include <exception>
+#include <variant>
 #include <oxenc/base64.h>
 #include <oxenc/variant.h>
 #include "common/command_line.h"
@@ -479,7 +480,7 @@ namespace cryptonote::rpc {
   {
     std::shared_ptr<call_data> data{new call_data{*this, m_server, res, std::string{req.getUrl()}, &call}};
     auto& request = data->request;
-    request.body = ""s;
+    request.body = std::monostate{};
     request.context.admin = !m_restricted;
     request.context.source = rpc_source::http;
     request.context.remote = get_remote_address(res);
@@ -488,7 +489,12 @@ namespace cryptonote::rpc {
 
     res.onAborted([data] { data->aborted = true; });
     res.onData([data=std::move(data)](std::string_view d, bool done) mutable {
-      var::get<std::string>(data->request.body) += d;
+      if (!d.empty()) {
+        if (std::holds_alternative<std::monostate>(data->request.body))
+          data->request.body = std::string{d};
+        else
+            var::get<std::string>(data->request.body) += d;
+      }
       if (!done)
         return;
 
