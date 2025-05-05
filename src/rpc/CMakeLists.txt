@@ -42,7 +42,7 @@ add_library(rpc
 
 add_library(daemon_rpc_server
   http_server.cpp
-  omq_server.cpp
+  lmq_server.cpp
   )
 
 add_library(rpc_http_client

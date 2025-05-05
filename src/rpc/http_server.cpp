@@ -89,7 +89,7 @@ namespace cryptonote::rpc {
     : m_server{server}, m_restricted{restricted}
   {
     // uWS is designed to work from a single thread, which is good (we pull off the requests and
-    // then stick them into the OMQ job queue to be scheduled along with other jobs).  But as a
+    // then stick them into the LMQ job queue to be scheduled along with other jobs).  But as a
     // consequence, we need to create everything inside that thread.  We *also* need to get the
     // (thread local) event loop pointer back from the thread so that we can shut it down later
     // (injecting a callback into it is one of the few thread-safe things we can do across threads).
@@ -270,7 +270,7 @@ namespace cryptonote::rpc {
 
   void invoke_txpool_hashes_bin(std::shared_ptr<call_data> data);
 
-  // Invokes the actual RPC request; this is called (via lokimq) from some random OMQ worker thread,
+  // Invokes the actual RPC request; this is called (via lokimq) from some random LMQ worker thread,
   // which means we can't just write our reply; instead we have to post it to the uWS loop.
   void invoke_rpc(std::shared_ptr<call_data> dataptr)
   {
@@ -494,7 +494,7 @@ namespace cryptonote::rpc {
 
       auto& omq = data->core_rpc.get_core().get_omq();
       std::string cat{data->call->is_public ? "rpc" : "admin"};
-      std::string cmd{"http:" + data->uri}; // Used for OMQ job logging; prefixed with http: so we can distinguish it
+      std::string cmd{"http:" + data->uri}; // Used for LMQ job logging; prefixed with http: so we can distinguish it
       std::string remote{data->request.context.remote};
       omq.inject_task(std::move(cat), std::move(cmd), std::move(remote), [data=std::move(data)] { invoke_rpc(std::move(data)); });
     });
@@ -560,7 +560,7 @@ namespace cryptonote::rpc {
 
       auto& omq = data->core_rpc.get_core().get_omq();
       std::string cat{data->call->is_public ? "rpc" : "admin"};
-      std::string cmd{"jsonrpc:" + *method}; // Used for OMQ job logging; prefixed with jsonrpc: so we can distinguish it
+      std::string cmd{"jsonrpc:" + *method}; // Used for LMQ job logging; prefixed with jsonrpc: so we can distinguish it
       std::string remote{data->request.context.remote};
       omq.inject_task(std::move(cat), std::move(cmd), std::move(remote), [data=std::move(data)] { invoke_rpc(std::move(data)); });
     });

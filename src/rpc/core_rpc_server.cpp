@@ -37,7 +37,6 @@
 #include <type_traits>
 #include <variant>
 #include <oxenc/base64.h>
-#include "common/json_binary_proxy.h"
 #include <oxenc/endian.h>
 #include "epee/net/network_throttle.hpp"
 #include "common/string_util.h"
@@ -71,7 +70,6 @@
 #include "net/parse.h"
 #include "crypto/hash.h"
 #include "p2p/net_node.h"
-#include "serialization/json_archive.h"
 #include "version.h"
 #include <fmt/core.h>
 
@@ -82,8 +80,6 @@
 namespace cryptonote::rpc {
 
   using nlohmann::json;
-  using tools::json_binary_proxy;
-
   namespace {
     
     template <typename RPC>
@@ -664,13 +660,13 @@ namespace cryptonote::rpc {
       // a single one we want just the value itself; this does that.  Returns a reference to the
       // assigned value (whether as a top-level value or array element).
       template <typename T>
-      json& set(const std::string& key, T&& value, bool binary = tools::json_is_binary_parameter<T> || tools::json_is_binary_container<T>) {
+      json& set(const std::string& key, T&& value, bool binary = is_binary_parameter<T> || is_binary_container<T>) {
         auto* x = &entry[key];
         if (!x->is_null() && !x->is_array())
           x = &(entry[key] = json::array({std::move(*x)}));
         if (x->is_array())
           x = &x->emplace_back();
-        if constexpr (tools::json_is_binary<T> || tools::json_is_binary_container<T> || std::is_convertible_v<T, std::string_view>) {
+        if constexpr (is_binary_parameter<T> || is_binary_container<T> || std::is_convertible_v<T, std::string_view>) {
           if (binary)
             return json_binary_proxy{*x, format} = std::forward<T>(value);
         }
@@ -1025,31 +1021,12 @@ namespace cryptonote::rpc {
           return;
         }
       }
-      std::optional<json> extra;
       if (get.request.tx_extra)
-        load_tx_extra_data(extra.emplace(), tx, nettype(), hf_version, get.is_bt());
-      if (get.request.tx_extra_raw)
-        e_bin["tx_extra_raw"] = std::string_view{reinterpret_cast<const char*>(tx.extra.data()), tx.extra.size()};
+        load_tx_extra_data(e["extra"], tx, nettype(), hf_version, get.is_bt());
 
-      // Clear it because we don't want/care about it in the RPC output (we already got it more
-      // usefully from the above).
-      tx.extra.clear();
-
-      {
-        serialization::json_archiver ja{
-          get.is_bt() ? json_binary_proxy::fmt::bt : json_binary_proxy::fmt::hex};
-
-        serialize(ja, tx);
-        auto dumped = std::move(ja).json();
-        e.update(dumped);
-      }
-
-      if (extra)
-        e["extra"] = std::move(*extra);
-      else
-        e.erase("extra");
       auto ptx_it = found_in_pool.find(tx_hash);
       bool in_pool = ptx_it != found_in_pool.end();
+      e["in_pool"] = in_pool;
       auto height = std::numeric_limits<uint64_t>::max();
 
       if (uint64_t fee, burned; get_tx_miner_fee(tx, fee, hf_version >= feature::FEE_BURNING, &burned)) {
@@ -1060,7 +1037,6 @@ namespace cryptonote::rpc {
       if (in_pool)
       {
         const auto& meta = ptx_it->second.meta;
-        e["in_pool"] = true;
         e["weight"] = meta.weight;
         e["relayed"] = (bool) ptx_it->second.meta.relayed;
         e["received_timestamp"] = ptx_it->second.meta.receive_time;
@@ -2996,7 +2972,7 @@ namespace cryptonote::rpc {
         update = 0; // Reset our last ping time to 0 so that we won't send a ping until we get
                     // success back again (even if we had an earlier acceptable ping within the
                     // cutoff time).
-      else if (cur_version < required) {
+      } else if (cur_version < required) {
         status = fmt::format("Outdated {}. Current: {}.{}.{}, Required: {}.{}.{}",name, cur_version[0], cur_version[1], cur_version[2], required[0], required[1], required[2]);
         MERROR(status);
       } else if (!pubkey_ed25519.empty() && !(pubkey_ed25519.find_first_not_of('0') == std::string_view::npos) // TODO: once belnet & ss are always sending this we can remove this empty bypass

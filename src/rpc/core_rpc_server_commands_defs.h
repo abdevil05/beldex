@@ -45,6 +45,7 @@
 //     setlocal comments+=://
 
 #include "rpc/common/rpc_version.h"
+#include "rpc/common/rpc_binary.h"
 #include "rpc/common/command_decorators.h"
 
 #include "crypto/crypto.h"
@@ -174,7 +175,7 @@ namespace cryptonote::rpc {
   ///   - \p double_spend_seen -- set to true if one or more outputs in this mempool transaction
   ///     have already been spent (and thus the tx cannot currently be added to the blockchain).
   ///   - \p data -- Full, unpruned transaction data.  For a json request this is hex-encoded; for a
-  ///     bt-encoded request this is raw bytes.  This field is omitted if any of `tx_extra`,
+  ///     bt-encoded request this is raw bytes.  This field is omitted if any of `decode_as_json`,
   ///     `split`, or `prune` is requested; or if the transaction has been pruned in the database.
   ///   - \p pruned -- The non-prunable part of the transaction, encoded as hex (for json requests).
   ///     Always included if `split` or `prune` are specified; without those options it will be
@@ -284,13 +285,10 @@ namespace cryptonote::rpc {
       bool memory_pool = false;
       /// If set to true then parse and return tx-extra information
       bool tx_extra = false;
-      /// If set to true then include the raw tx-extra information in the tx_extra_raw field.  This
-      /// will be hex-encoded for json, raw bytes for bt-encoded requests.
-      bool tx_extra_raw = false;
       /// Controls whether the `data` (or `pruned`, if pruned) field containing raw tx data is
-      /// included.  By default it is not included; you typically want `details` rather than this
-      /// field.
-      bool data = false;
+      /// included: if explicitly specified then the raw data will be included if true.  Otherwise
+      /// the raw data is included only when neither of `split` nor `prune` are set to true.
+      bool data = true;
       /// If set to true then always split transactions into non-prunable and prunable parts in the
       /// response.
       bool split = false;

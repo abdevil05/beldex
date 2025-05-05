@@ -303,7 +303,7 @@ namespace rct {
             {
                 auto arr = start_array(ar, "pseudoOuts", pseudoOuts, inputs);
                 for (auto& e : pseudoOuts)
-                    value(ar, e);
+                    value(arr.element(), e);
             }
 
             {
@@ -311,21 +311,21 @@ namespace rct {
                 if (tools::equals_any(type, RCTType::Bulletproof2, RCTType::CLSAG))
                 {
                     for (auto& e : ecdhInfo) {
-                        auto obj = ar.begin_object();
+                        auto obj = arr.element().begin_object();
                         if (Archive::is_deserializer)
                             memset(e.amount.bytes, 0, sizeof(e.amount.bytes));
                         field(ar, "amount", reinterpret_cast<crypto::hash8&>(e.amount));
                     }
                 } else {
                     for (auto& e : ecdhInfo)
-                        value(ar, e);
+                        value(arr.element(), e);
                 }
             }
 
             {
                 auto arr = start_array(ar, "outPk", outPk, outputs);
                 for (auto& e : outPk)
-                    value(ar, e.mask);
+                    value(arr.element(), e.mask);
             }
         }
     };
@@ -356,7 +356,7 @@ namespace rct {
 
                 auto arr = start_array(ar, "bp", bulletproofs, nbp);
                 for (auto& b : bulletproofs)
-                    value(ar, b);
+                    value(arr.element(), b);
 
                 if (auto n_max = n_bulletproof_max_amounts(bulletproofs); n_max < outputs)
                     throw std::invalid_argument{"invalid bulletproofs: n_max (" + std::to_string(n_max) + ") < outputs (" + std::to_string(outputs) + ")"};
@@ -365,7 +365,7 @@ namespace rct {
             {
                 auto arr = start_array(ar, "rangeSigs", rangeSigs, outputs);
                 for (auto& s : rangeSigs)
-                    value(ar, s);
+                    value(arr.element(), s);
             }
 
             if (type == RCTType::CLSAG)
@@ -377,11 +377,11 @@ namespace rct {
                     // we save the CLSAGs contents directly, because we want it to save its
                     // arrays without the size prefixes, and the load can't know what size
                     // to expect if it's not in the data
-                    auto obj = ar.begin_object();
+                    auto obj = arr.element().begin_object();
                     {
                         auto arr_s = start_array(ar, "s", clsag.s, mixin + 1);
                         for (auto& x : clsag.s)
-                            value(ar, x);
+                            value(arr_s.element(), x);
                     }
                     field(ar, "c1", clsag.c1);
                     field(ar, "D", clsag.D);
@@ -402,7 +402,7 @@ namespace rct {
                     auto arr = start_array(ar, "MGs", MGs, mg_elements);
                     for (auto& mg : MGs)
                     {
-                        auto obj = ar.begin_object();
+                        auto obj = arr.element().begin_object();
 
                         // we save the MGs contents directly, because we want it to save its
                         // arrays and matrices without the size prefixes, and the load can't
@@ -411,14 +411,14 @@ namespace rct {
                             auto arr_ss = start_array(ar, "ss", mg.ss, mixin + 1);
                             for (auto& ss : mg.ss)
                             {
-                                auto arr_ss2 = ar.begin_array();
+                                auto arr_ss2 = arr_ss.element().begin_array();
                                 if constexpr (Archive::is_deserializer)
                                     ss.resize(mg_ss2_elements);
                                 else if (ss.size() != mg_ss2_elements)
                                     throw std::invalid_argument{"invalid mg_ss2 size: have " + std::to_string(ss.size()) + ", expected " + std::to_string(mg_ss2_elements)};
 
                                 for (auto& x : ss)
-                                    value(ar, x);
+                                    value(arr_ss2.element(), x);
                             }
                         }
                         field(ar, "cc", mg.cc);
@@ -430,7 +430,7 @@ namespace rct {
             {
                 auto arr = start_array(ar, "pseudoOuts", pseudoOuts, inputs);
                 for (auto& o : pseudoOuts)
-                    value(ar, o);
+                    value(arr.element(), o);
             }
         }
 

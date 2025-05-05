@@ -8,37 +8,37 @@
 
 using namespace std::literals;
 
-namespace tools {
+namespace cryptonote::rpc {
 
   // Binary types that we support for rpc input/output.  For json, these must be specified as hex or
   // base64; for bt-encoded requests these can be accepted as binary, hex, or base64.
   template <typename T>
-  inline constexpr bool json_is_binary = false;
-  template <> inline constexpr bool json_is_binary<crypto::hash> = true;
-  template <> inline constexpr bool json_is_binary<crypto::public_key> = true;
-  template <> inline constexpr bool json_is_binary<crypto::ed25519_public_key> = true;
-  template <> inline constexpr bool json_is_binary<crypto::x25519_public_key> = true;
-  template <> inline constexpr bool json_is_binary<crypto::key_image> = true;
-  template <> inline constexpr bool json_is_binary<rct::key> = true;
+  inline constexpr bool is_binary_parameter = false;
+  template <> inline constexpr bool is_binary_parameter<crypto::hash> = true;
+  template <> inline constexpr bool is_binary_parameter<crypto::public_key> = true;
+  template <> inline constexpr bool is_binary_parameter<crypto::ed25519_public_key> = true;
+  template <> inline constexpr bool is_binary_parameter<crypto::x25519_public_key> = true;
+  template <> inline constexpr bool is_binary_parameter<crypto::key_image> = true;
+  template <> inline constexpr bool is_binary_parameter<rct::key> = true;
 
   template <typename T>
-  inline constexpr bool json_is_binary_container = false;
+  inline constexpr bool is_binary_container = false;
   template <typename T>
-  inline constexpr bool json_is_binary_container<std::vector<T>> = json_is_binary<T>;
+  inline constexpr bool is_binary_container<std::vector<T>> = is_binary_parameter<T>;
   template <typename T>
-  inline constexpr bool json_is_binary_container<std::unordered_set<T>> = json_is_binary<T>;
+  inline constexpr bool is_binary_container<std::unordered_set<T>> = is_binary_parameter<T>;
 
   // De-referencing wrappers around the above:
-  template <typename T> inline constexpr bool json_is_binary<const T&> = json_is_binary<T>;
-  template <typename T> inline constexpr bool json_is_binary<T&&> = json_is_binary<T>;
-  template <typename T> inline constexpr bool json_is_binary_container<const T&> = json_is_binary_container<T>;
-  template <typename T> inline constexpr bool json_is_binary_container<T&&> = json_is_binary_container<T>;
+  template <typename T> inline constexpr bool is_binary_parameter<const T&> = is_binary_parameter<T>;
+  template <typename T> inline constexpr bool is_binary_parameter<T&&> = is_binary_parameter<T>;
+  template <typename T> inline constexpr bool is_binary_container<const T&> = is_binary_container<T>;
+  template <typename T> inline constexpr bool is_binary_container<T&&> = is_binary_container<T>;
 
   void load_binary_parameter_impl(std::string_view bytes, size_t raw_size, bool allow_raw, uint8_t* val_data);
 
   // Loads a binary value from a string_view which may contain hex, base64, and (optionally) raw
   // bytes.
-  template <typename T, typename = std::enable_if_t<json_is_binary<T>>>
+  template <typename T, typename = std::enable_if_t<is_binary_parameter<T>>>
   void load_binary_parameter(std::string_view bytes, bool allow_raw, T& val) {
     load_binary_parameter_impl(bytes, sizeof(T), allow_raw, reinterpret_cast<uint8_t*>(&val));
   }
@@ -82,13 +82,13 @@ namespace tools {
 
     /// Takes a trivial, no-padding data structure (e.g. a crypto::hash) as the value and dumps its
     /// contents as the binary value.
-    template <typename T, std::enable_if_t<json_is_binary<T>, int> = 0>
+    template <typename T, std::enable_if_t<is_binary_parameter<T>, int> = 0>
     nlohmann::json& operator=(const T& val) {
       return *this = std::string_view{reinterpret_cast<const char*>(&val), sizeof(val)};
     }
     /// Takes a vector of some json_binary_proxy-assignable type and builds an array by assigning
     /// each one into a new array of binary values.
-    template <typename T, std::enable_if_t<json_is_binary_container<T>, int> = 0>
+    template <typename T, std::enable_if_t<is_binary_container<T>, int> = 0>
     nlohmann::json& operator=(const T& vals) {
       auto a = nlohmann::json::array();
       for (auto& val : vals)
@@ -122,14 +122,14 @@ namespace tools {
 // invoked; for serialization you need to use RPC_COMMAND::response_hex (or _b64) instead.
 namespace nlohmann {
   template <typename T>
-  struct adl_serializer<T, std::enable_if_t<tools::json_is_binary<T>>> {
+  struct adl_serializer<T, std::enable_if_t<cryptonote::rpc::is_binary_parameter<T>>> {
     static_assert(std::is_trivially_copyable_v<T> && std::has_unique_object_representations_v<T>);
 
     static void to_json(json& j, const T&) {
       throw std::logic_error{"Internal error: binary types are not directly serializable"};
     }
     static void from_json(const json& j, T& val) {
-      tools::load_binary_parameter(j.get<std::string_view>(), false /*no raw*/, val);
+      cryptonote::rpc::load_binary_parameter(j.get<std::string_view>(), false /*no raw*/, val);
     }
   };
 }

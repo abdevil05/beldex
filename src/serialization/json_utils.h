@@ -1,4 +1,3 @@
-// Copyright (c) 2018-2020, The Beldex Project
 // Copyright (c) 2014-2019, The Monero Project
 // 
 // All rights reserved.
@@ -30,38 +29,32 @@
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #pragma once
-#include <utility>
-#include "serialization.h"
 
-namespace serialization
-{
-namespace detail
-{
+#include <sstream>
+#include "json_archive.h"
 
-template <typename Archive, class T>
-void serialize_pair_element(Archive& ar, T& e)
+namespace serialization {
+
+/// Subclass of json_archiver that writes to a std::ostringstream and returns the string on
+/// demand.
+class json_string_archiver : public json_archiver {
+  std::ostringstream oss;
+public:
+  /// Constructor; takes no arguments.
+  json_string_archiver() : json_archiver{oss} {}
+
+  /// Returns the string from the std::ostringstream
+  std::string str() { return oss.str(); }
+};
+
+/*! serializes the data in v to a string.  Throws on error.
+*/
+template<class T>
+std::string dump_json(T& v)
 {
-  if constexpr (std::is_same_v<std::remove_cv_t<T>, uint64_t>)
-    return varint(ar, e);
-  else
-    return value(ar, e);
+  json_string_archiver oar;
+  serialize(oar, v);
+  return oar.str();
 }
 
-} // namespace detail
-
-
-template <class Archive, class F, class S>
-void serialize_value(Archive& ar, std::pair<F,S>& p)
-{
-  size_t cnt;
-  auto arr = ar.begin_array(cnt);
-  if (!Archive::is_serializer && cnt != 2)
-    throw std::runtime_error("Serialization failed: expected pair, found " + std::to_string(cnt) + " values");
-
-  detail::serialize_pair_element(arr.element(), p.first);
-  detail::serialize_pair_element(arr.element(), p.second);
-
-  ar.end_array();
-}
-
-}
+} // namespace serialization

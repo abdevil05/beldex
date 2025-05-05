@@ -57,6 +57,27 @@ static_assert(-1 == ~0, "Non 2s-complement architecture not supported!");
 
 using binary_variant_tag_type = uint8_t;
 
+// RAII class for `begin_array()`.  This particular implementation is a no-op.
+template <class Archive>
+struct binary_archive_nested_array {
+  Archive& ar;
+
+  // Call before writing an element to add a delimiter.  (For binary_archive this is a no-op).
+  // Returns the archive itself, allowing you to write:
+  // 
+  //     auto arr = ar.begin_array();
+  //     for (auto& val : whatever)
+  //       value(arr.element(), val);
+  //
+  Archive& element() { return ar; }
+  ~binary_archive_nested_array() {} // Explicitly empty constructor to silent unused variable warnings
+};
+
+// Do-nothing object for the RAII `begin_object` interface.
+struct binary_archive_nested_object {
+  ~binary_archive_nested_object() {} // As above.
+};
+
 /* \struct binary_unarchiver
  *
  * \brief the deserializer class for a binary archive
@@ -111,28 +132,23 @@ public:
       throw std::runtime_error{"deserialization of varint failed"};
   }
 
-  // RAII class for `begin_array()`/`begin_object()`.  This particular implementation is a no-op.
-  struct nested {
-    ~nested() {}; // Avoids unused variable warnings
-  };
-
   // Reads array size into s and returns an RAII object to help delimit and end it.
-  [[nodiscard]] nested begin_array(size_t& s)
+  [[nodiscard]] binary_archive_nested_array<binary_unarchiver> begin_array(size_t& s)
   {
     serialize_varint(s);
-    return {};
+    return {*this};
   }
 
   // Begins a sizeless array (this requires that the size is provided by some other means).
-  [[nodiscard]] nested begin_array()
+  [[nodiscard]] binary_archive_nested_array<binary_unarchiver> begin_array()
   {
-    return {};
+    return {*this};
   }
 
   // Does nothing. (This is used for tag annotations for archivers such as json)
   void tag(std::string_view) { }
 
-  [[nodiscard]] nested begin_object() { return {}; }
+  [[nodiscard]] binary_archive_nested_object begin_object() { return {}; }
 
   void read_variant_tag(binary_variant_tag_type &t) {
     serialize_int(t);
@@ -216,29 +232,24 @@ public:
     tools::write_varint(std::ostreambuf_iterator{stream_}, v);
   }
 
-  // RAII class for `begin_array()`/`begin_object()`.  This particular implementation is a no-op.
-  struct nested {
-    ~nested() {}; // Avoids unused variable warnings
-  };
-
   // Begins an array and returns an RAII object that is used to delimit array elements.  For
   // binary_archiver the size is written when the array begins, and the RAII is a no-op.
-  [[nodiscard]] nested begin_array(size_t& s)
+  [[nodiscard]] binary_archive_nested_array<binary_archiver> begin_array(size_t& s)
   {
     serialize_varint(s);
-    return {};
+    return {*this};
   }
 
   // Begins a sizeless array.  (Typically requires that size be stored some other way).
-  [[nodiscard]] nested begin_array()
+  [[nodiscard]] binary_archive_nested_array<binary_archiver> begin_array()
   {
-    return {};
+    return {*this};
   }
 
   // Does nothing. (This is used for tag annotations for archivers such as json)
   void tag(std::string_view) { }
 
-  [[nodiscard]] nested begin_object() { return {}; }
+  [[nodiscard]] binary_archive_nested_object begin_object() { return {}; }
 
   void write_variant_tag(binary_variant_tag_type t) { serialize_int(t); }
 

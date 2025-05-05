@@ -1,11 +1,12 @@
 
-#include "omq_server.h"
+#include "lmq_server.h"
 #include "rpc/common/param_parser.hpp"
 #include "cryptonote_config.h"
 #include "oxenmq/oxenmq.h"
 #include "oxenc/bt.h"
 #include <fmt/core.h>
 
+// FIXME: Rename this to omq_server.{h,cpp}
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "daemon.rpc"
 
@@ -51,7 +52,7 @@ const command_line::arg_descriptor<std::vector<std::string>> arg_omq_local_contr
 #ifndef _WIN32
 const command_line::arg_descriptor<std::string> arg_omq_umask{
   "lmq-umask",
-  "Sets the umask to apply to any listening ipc:///path/to/sock OMQ sockets, in octal.",
+  "Sets the umask to apply to any listening ipc:///path/to/sock LMQ sockets, in octal.",
   "0007"};
 #endif
 
@@ -69,20 +70,20 @@ auto as_x_pubkeys(const std::vector<std::string>& pk_strings) {
   pks.reserve(pk_strings.size());
   for (const auto& pkstr : pk_strings) {
     if (pkstr.size() != 64 || !oxenc::is_hex(pkstr))
-      throw std::runtime_error("Invalid OMQ login pubkey: '" + pkstr + "'; expected 64-char hex pubkey");
+      throw std::runtime_error("Invalid LMQ login pubkey: '" + pkstr + "'; expected 64-char hex pubkey");
     pks.emplace_back();
     oxenc::to_hex(pkstr.begin(), pkstr.end(), reinterpret_cast<char *>(&pks.back()));
   }
   return pks;
 }
 
-// OMQ RPC responses consist of [CODE, DATA] for code we (partially) mimic HTTP error codes: 200
+// LMQ RPC responses consist of [CODE, DATA] for code we (partially) mimic HTTP error codes: 200
 // means success, anything else means failure.  (We don't have codes for Forbidden or Not Found
-// because those happen at the OMQ protocol layer).
+// because those happen at the LMQ protocol layer).
 constexpr std::string_view
-  OMQ_OK{"200"sv},
-  OMQ_BAD_REQUEST{"400"sv},
-  OMQ_ERROR{"500"sv};
+  LMQ_OK{"200"sv},
+  LMQ_BAD_REQUEST{"400"sv},
+  LMQ_ERROR{"500"sv};
 
 } // end anonymous namespace
 
@@ -110,21 +111,21 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
   // the quorumnet listener set up in cryptonote_core).
   for (const auto &addr : command_line::get_arg(vm, arg_omq_public)) {
     check_omq_listen_addr(addr);
-    MGINFO("OMQ listening on " << addr << " (public unencrypted)");
+    MGINFO("LMQ listening on " << addr << " (public unencrypted)");
     omq.listen_plain(addr,
         [&core](std::string_view ip, std::string_view pk, bool /*mn*/) { return core.omq_allow(ip, pk, AuthLevel::basic); });
   }
 
   for (const auto &addr : command_line::get_arg(vm, arg_omq_curve_public)) {
     check_omq_listen_addr(addr);
-    MGINFO("OMQ listening on " << addr << " (public curve)");
+    MGINFO("LMQ listening on " << addr << " (public curve)");
     omq.listen_curve(addr,
         [&core](std::string_view ip, std::string_view pk, bool /*mn*/) { return core.omq_allow(ip, pk, AuthLevel::basic); });
   }
 
   for (const auto &addr : command_line::get_arg(vm, arg_omq_curve)) {
     check_omq_listen_addr(addr);
-    MGINFO("OMQ listening on " << addr << " (curve restricted)");
+    MGINFO("LMQ listening on " << addr << " (curve restricted)");
     omq.listen_curve(addr,
         [&core](std::string_view ip, std::string_view pk, bool /*mn*/) { return core.omq_allow(ip, pk, AuthLevel::denied); });
   }
@@ -146,7 +147,7 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
   }
   for (const auto &addr : locals) {
     check_omq_listen_addr(addr);
-    MGINFO("OMQ listening on " << addr << " (unauthenticated local admin)");
+    MGINFO("LMQ listening on " << addr << " (unauthenticated local admin)");
     omq.listen_plain(addr,
         [&core](std::string_view ip, std::string_view pk, bool /*mn*/) { return core.omq_allow(ip, pk, AuthLevel::admin); });
   }
@@ -194,7 +195,7 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
     omq.add_request_command(cmd.second->is_public ? "rpc" : "admin", cmd.first,
         [name=std::string_view{cmd.first}, &call=*cmd.second, this](oxenmq::Message& m) {
       if (m.data.size() > 1)
-        m.send_reply(OMQ_BAD_REQUEST, "Bad request: RPC commands must have at most one data part "
+        m.send_reply(LMQ_BAD_REQUEST, "Bad request: RPC commands must have at most one data part "
             "(received " + std::to_string(m.data.size()) + ")");
 
       rpc_request request{};
@@ -216,7 +217,7 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
             return std::move(v);
           }
         }, call.invoke(std::move(request), rpc_));
-        m.send_reply(OMQ_OK, std::move(result));
+        m.send_reply(LMQ_OK, std::move(result));
         return;
       } catch (const parse_error& e) {
         // This isn't really WARNable as it's the client fault; log at info level instead.
@@ -225,25 +226,25 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
         // warnings that get generated deep inside epee, for example when passing a string or
         // number instead of a JSON object.  If you want to find some, `grep number2 epee` (for
         // real).
-        MINFO("OMQ RPC request '" << (call.is_public ? "rpc." : "admin.") << name << "' called with invalid/unparseable data: " << e.what());
+        MINFO("LMQ RPC request '" << (call.is_public ? "rpc." : "admin.") << name << "' called with invalid/unparseable data: " << e.what());
         MDEBUG("Bad request body:" << m.data.empty() ? "(empty)" : m.data[0]);
-        m.send_reply(OMQ_BAD_REQUEST, "Unable to parse request: "s + e.what());
+        m.send_reply(LMQ_BAD_REQUEST, "Unable to parse request: "s + e.what());
         return;
       } catch (const rpc_error& e) {
-        MWARNING("OMQ RPC request '" << (call.is_public ? "rpc." : "admin.") << name << "' failed with: " << e.what());
-        m.send_reply(OMQ_ERROR, e.what());
+        MWARNING("LMQ RPC request '" << (call.is_public ? "rpc." : "admin.") << name << "' failed with: " << e.what());
+        m.send_reply(LMQ_ERROR, e.what());
         return;
       } catch (const std::exception& e) {
-        MWARNING("OMQ RPC request '" << (call.is_public ? "rpc." : "admin.") << name << "' "
+        MWARNING("LMQ RPC request '" << (call.is_public ? "rpc." : "admin.") << name << "' "
             "raised an exception: " << e.what());
       } catch (...) {
-        MWARNING("OMQ RPC request '" << (call.is_public ? "rpc." : "admin.") << name << "' "
+        MWARNING("LMQ RPC request '" << (call.is_public ? "rpc." : "admin.") << name << "' "
             "raised an unknown exception");
       }
       // Don't include the exception message in case it contains something that we don't want go
       // back to the user.  If we want to support it eventually we could add some sort of
       // `rpc::user_visible_exception` that carries a message to send back to the user.
-      m.send_reply(OMQ_ERROR, "An exception occured while processing your request");
+      m.send_reply(LMQ_ERROR, "An exception occured while processing your request");
     });
   }
 

@@ -1205,8 +1205,8 @@ namespace cryptonote
      // avoid linking issues (protocol does not link against core).
      void* m_quorumnet_state = nullptr;
 
-     /// Stores x25519 -> access level for OMQ authentication.
-     /// Not to be modified after the OMQ listener starts.
+     /// Stores x25519 -> access level for LMQ authentication.
+     /// Not to be modified after the LMQ listener starts.
      std::unordered_map<crypto::x25519_public_key, oxenmq::AuthLevel> m_omq_auth;
 
      size_t block_sync_size;

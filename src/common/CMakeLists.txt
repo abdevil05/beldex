@@ -36,7 +36,6 @@ add_library(common
   expect.cpp
   file.cpp
   i18n.cpp
-  json_binary_proxy.cpp
   beldex.cpp
   notify.cpp
   password.cpp
