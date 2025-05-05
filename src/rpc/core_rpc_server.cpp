@@ -1785,7 +1785,7 @@ namespace cryptonote::rpc {
     std::vector<std::string> tx_hashes;
     tx_hashes.reserve(blk.tx_hashes.size());
     std::transform(blk.tx_hashes.begin(), blk.tx_hashes.end(), std::back_inserter(tx_hashes), [](const auto& x) { return tools::type_to_hex(x); });
-    get_block.response["tx_hashes"] = tx_hashes;
+    get_block.response["tx_hashes"] = std::move(tx_hashes);
     get_block.response["blob"] = oxenc::to_hex(t_serializable_object_to_blob(blk));
     get_block.response["json"] = obj_to_json_str(blk);
     get_block.response["status"] = STATUS_OK;
@@ -2853,6 +2853,7 @@ namespace cryptonote::rpc {
     });
 
     if (requested(reqed, "contributors")) {
+      bool want_locked_c = requested(reqed, "locked_contributions");
       auto& contributors = (entry["contributors"] = json::array());
       for (const auto& contributor : info.contributors) {
         auto& c = contributors.emplace_back(json{
@@ -2860,7 +2861,7 @@ namespace cryptonote::rpc {
             {"address", cryptonote::get_account_address_as_str(m_core.get_nettype(), false/*subaddress*/, contributor.address)}});
         if (contributor.reserved != contributor.amount)
           c["reserved"] = contributor.reserved;
-        if (requested(reqed, "locked_contributions")) {
+        if (want_locked_c) {
           auto& locked = (c["locked_contributions"] = json::array());
           for (const auto& src : contributor.locked_contributions) {
             auto& lc = locked.emplace_back(json{{"amount", src.amount}});

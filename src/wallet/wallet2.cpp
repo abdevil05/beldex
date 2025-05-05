@@ -8119,30 +8119,38 @@ wallet2::stake_result wallet2::check_stake_allowed(const crypto::public_key& mn_
   }
 
   const auto& mnode_info  = response.front();
+  const auto staking_req = mnode_info.at("staking_requirement").get<uint64_t>();
+  const auto total_res = mnode_info.value<uint64_t>("total_reserved",
+    mnode_info.at("total_contributed").get<uint64_t>());
   if (amount == 0)
-    amount = mnode_info["staking_requirement"].get<uint64_t>() * fraction;
+    amount = staking_req * fraction;
 
   size_t total_existing_contributions = 0; // Count both contributions and reserved spots
-  for (auto const &contributor : mnode_info["contributors"])
+  const auto& contributors = mnode_info.at("contributors");
+  for (auto const &contributor : contributors)
   {
-    total_existing_contributions += contributor["locked_contributions"].size(); // contribution
-    if (contributor["reserved"].get<uint64_t>() > contributor["amount"].get<uint64_t>())
+    total_existing_contributions += contributor.at("locked_contributions").size(); // contribution
+    if (auto it = contributor.find("reserved"); it != contributor.end() && it->get<uint64_t>() > contributor.at("amount").get<uint64_t>())
         total_existing_contributions++; // reserved contributor spot
   }
 
-  uint64_t max_contrib_total = mnode_info["staking_requirement"].get<uint64_t>() - mnode_info["total_reserved"].get<uint64_t>();
-  uint64_t min_contrib_total = master_nodes::get_min_node_contribution(*hf_version, mnode_info["staking_requirement"], mnode_info["total_reserved"], total_existing_contributions);
+  uint64_t max_contrib_total = staking_req - total_res;
+  uint64_t min_contrib_total = master_nodes::get_min_node_contribution(*hf_version, staking_req, total_res, total_existing_contributions);
 
   bool is_preexisting_contributor = false;
-  for (const auto& contributor : mnode_info["contributors"])
+  for (const auto& contributor : contributors)
   {
     address_parse_info info;
-    if (!cryptonote::get_account_address_from_str(info, m_nettype, contributor["address"].get<std::string_view>()))
+    if (!cryptonote::get_account_address_from_str(info, m_nettype, contributor.at("address").get<std::string_view>()))
       continue;
 
     if (info.address == addr_info.address)
     {
-      uint64_t const reserved_amount_not_contributed_yet = contributor["reserved"].get<uint64_t>() - contributor["amount"].get<uint64_t>();
+      const auto amount = contributor.at("amount").get<uint64_t>();
+
+      uint64_t reserved_amount_not_contributed_yet = 0;
+      if (auto it = contributor.find("reserved"); it != contributor.end())
+        reserved_amount_not_contributed_yet = it->get<uint64_t>() - contributor.at("amount").get<uint64_t>();
       max_contrib_total  += reserved_amount_not_contributed_yet;
       is_preexisting_contributor = true;
 
@@ -8159,7 +8167,7 @@ wallet2::stake_result wallet2::check_stake_allowed(const crypto::public_key& mn_
     return result;
   }
 
-  const bool full = mnode_info["contributors"].size() >= beldex::MAX_NUMBER_OF_CONTRIBUTORS;
+  const bool full = contributors.size() >= beldex::MAX_NUMBER_OF_CONTRIBUTORS;
   if (full && !is_preexisting_contributor)
   {
     result.status = stake_result_status::master_node_contributors_maxed;
