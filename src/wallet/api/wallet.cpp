@@ -1066,28 +1066,24 @@ int WalletImpl::countBns()
 {  
     clearStatus();
     auto w = wallet();
-    std::vector<cryptonote::rpc::BNS_OWNERS_TO_NAMES::request> requests(1);
-    int count=0;
+
+    nlohmann::json req_params{
+        {"entries", {}}
+    };
         
     for (uint32_t index = 0; index < w->get_num_subaddresses(0); ++index)
     {
-        if (requests.back().entries.size() >= cryptonote::rpc::BNS_OWNERS_TO_NAMES::MAX_REQUEST_ENTRIES)
-            requests.emplace_back();
-         requests.back().entries.push_back(w->get_subaddress_as_str({0, index}));
+        req_params["entries"].push_back(w->get_subaddress_as_str({0, index}));
     }
 
-    for (auto const &request : requests)
+    auto [success, result] = w->bns_owners_to_names(req_params);
+    if (!success)
     {
-        auto [success, result] = w->bns_owners_to_names(request);
-        if (!success)
-        {
-            LOG_PRINT_L1(__FUNCTION__ << "Connection to daemon failed when requesting BNS names");
-            setStatusError(tr("Connection to daemon failed when requesting BNS names"));
-            break;
-        }
-        count += result.size();
-    }    
-    return count;
+        LOG_PRINT_L1(__FUNCTION__ << "Connection to daemon failed when requesting BNS names");
+        setStatusError(tr("Connection to daemon failed when requesting BNS names"));
+    }
+    
+    return result["entries"].size();
 }
 
 EXPORT
@@ -2285,89 +2281,79 @@ std::vector<bnsInfo>* WalletImpl::MyBns() const
 
     auto w = wallet();
 
-    std::vector<std::vector<cryptonote::rpc::BNS_OWNERS_TO_NAMES::response_entry>> rpc_results;
-    std::vector<cryptonote::rpc::BNS_OWNERS_TO_NAMES::request> requests(1);
+    nlohmann::json req_params{
+        {"entries", {}}
+    };
 
     std::unordered_map<std::string, tools::wallet2::bns_detail> cache = w->get_bns_cache();
 
     for (uint32_t index = 0; index < w->get_num_subaddresses(0); ++index)
     {
-        if (requests.back().entries.size() >= cryptonote::rpc::BNS_OWNERS_TO_NAMES::MAX_REQUEST_ENTRIES)
-            requests.emplace_back();
-        requests.back().entries.push_back(w->get_subaddress_as_str({0, index}));
+        req_params["entries"].push_back(w->get_subaddress_as_str({0, index}));
     }
 
-    rpc_results.reserve(requests.size());
-    for (auto const &request : requests)
+    auto [success, result] = w->bns_owners_to_names(req_params);
+    if (!success)
     {
-        auto [success, result] = w->bns_owners_to_names(request);
-        if (!success)
-        {
-            setStatusError(tr("Connection to daemon failed when requesting BNS names"));
-        }
-        rpc_results.emplace_back(std::move(result));
+        setStatusError(tr("Connection to daemon failed when requesting BNS names"));
     }
 
     auto nettype = w->nettype();
-    for (size_t i = 0; i < rpc_results.size(); i++)
+
+    for (auto const &entry : result["entries"])
     {
-        auto const &rpc = rpc_results[i];
-        for (auto const &entry : rpc)
+        std::string_view name;
+        std::string value_bchat, value_wallet, value_belnet, value_eth_addr;
+        if (auto got = cache.find(entry["name_hash"]); got != cache.end())
         {
-            std::string_view name;
-            std::string value_bchat, value_wallet, value_belnet, value_eth_addr;
-            if (auto got = cache.find(entry.name_hash); got != cache.end())
+            name = got->second.name;
+            // BCHAT
             {
-                name = got->second.name;
-                //BCHAT
-                {
-                  bns::mapping_value mv;
-                  const auto type = bns::mapping_type::bchat;
-                  if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_bchat_value), &mv)
-                      && mv.decrypt(name, type))
+                bns::mapping_value mv;
+                const auto type = bns::mapping_type::bchat;
+                if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry["encrypted_bchat_value"].get<std::string>()), &mv) && mv.decrypt(name, type))
                     value_bchat = mv.to_readable_value(nettype, type);
-                }
-                //ETH_ADDRESS
-                {
-                  bns::mapping_value mv;
-                  const auto type = bns::mapping_type::eth_addr;
-                  if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_eth_addr_value), &mv)
-                      && mv.decrypt(name, type))
-                    value_eth_addr = mv.to_readable_value(nettype, type);
-                }
-                //WALLET
-                {
-                  bns::mapping_value mv;
-                  const auto type = bns::mapping_type::wallet;
-                  if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_wallet_value), &mv)
-                      && mv.decrypt(name, type))
-                    value_wallet = mv.to_readable_value(nettype,type);
-                }
-                //BELNET
-                {
-                  bns::mapping_value mv;
-                  const auto type = bns::mapping_type::belnet;
-                  if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_belnet_value), &mv)
-                      && mv.decrypt(name, type))
-                    value_belnet = mv.to_readable_value(nettype, type);
-                }
             }
-            auto &info = my_bns->emplace_back();
-            info.name_hash = entry.name_hash;
-            info.name = name.empty() ? "(none)" : std::string(name);
-            info.value_bchat = value_bchat.empty() ? "(none)" : value_bchat;
-            info.value_wallet = value_wallet.empty() ? "(none)" : value_wallet;
-            info.value_belnet = value_belnet.empty() ? "(none)" : value_belnet;
-            info.value_eth_addr = value_eth_addr.empty() ? "(none)" : value_eth_addr;
-            info.owner = entry.owner;
-            info.backup_owner = entry.backup_owner? *entry.backup_owner : "(none)";
-            info.update_height = entry.update_height;
-            info.expiration_height = entry.expiration_height ? *entry.expiration_height : 0;
-            info.encrypted_bchat_value = entry.encrypted_bchat_value.empty() ? "(none)" : entry.encrypted_bchat_value;
-            info.encrypted_wallet_value = entry.encrypted_wallet_value.empty() ? "(none)" : entry.encrypted_wallet_value;
-            info.encrypted_belnet_value = entry.encrypted_belnet_value.empty() ? "(none)" : entry.encrypted_belnet_value;
-            info.encrypted_eth_addr_value = entry.encrypted_eth_addr_value.empty() ? "(none)" : entry.encrypted_eth_addr_value;
+            // ETH_ADDRESS
+            {
+                bns::mapping_value mv;
+                const auto type = bns::mapping_type::eth_addr;
+                if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry["encrypted_eth_addr_value"].get<std::string>()), &mv) && mv.decrypt(name, type))
+                    value_eth_addr = mv.to_readable_value(nettype, type);
+            }
+            // WALLET
+            {
+                bns::mapping_value mv;
+                const auto type = bns::mapping_type::wallet;
+                if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry["encrypted_wallet_value"].get<std::string>()), &mv) && mv.decrypt(name, type))
+                    value_wallet = mv.to_readable_value(nettype, type);
+            }
+            // BELNET
+            {
+                bns::mapping_value mv;
+                const auto type = bns::mapping_type::belnet;
+                if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry["encrypted_belnet_value"].get<std::string>()), &mv) && mv.decrypt(name, type))
+                    value_belnet = mv.to_readable_value(nettype, type);
+            }
         }
+        auto &info = my_bns->emplace_back();
+        info.name_hash = entry["name_hash"];
+        info.name = name.empty() ? "(none)" : std::string(name);
+        info.value_bchat = value_bchat.empty() ? "(none)" : value_bchat;
+        info.value_wallet = value_wallet.empty() ? "(none)" : value_wallet;
+        info.value_belnet = value_belnet.empty() ? "(none)" : value_belnet;
+        info.value_eth_addr = value_eth_addr.empty() ? "(none)" : value_eth_addr;
+        info.owner = entry["owner"];
+        if (auto got = entry.find("backup_owner"); got != entry.end())
+            info.backup_owner =  entry["backup_owner"];
+        else
+            info.backup_owner = "(none)";
+        info.update_height = entry["update_height"];
+        info.expiration_height = entry["expiration_height"];
+        info.encrypted_bchat_value = entry["encrypted_bchat_value"].empty() ? "(none)" : entry["encrypted_bchat_value"];
+        info.encrypted_wallet_value = entry["encrypted_wallet_value"].empty() ? "(none)" : entry["encrypted_wallet_value"];
+        info.encrypted_belnet_value = entry["encrypted_belnet_value"].empty() ? "(none)" : entry["encrypted_belnet_value"];
+        info.encrypted_eth_addr_value = entry["encrypted_eth_addr_value"].empty() ? "(none)" : entry["encrypted_eth_addr_value"];
     }
     return my_bns;
 }
