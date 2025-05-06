@@ -2507,39 +2507,6 @@ namespace cryptonote::rpc {
     } request;
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Get the name mapping for a Beldex Name Service entry. Beldex currently supports mappings
-  // for Bchat and Belnet and wallet.
-  struct BNS_LOOKUP : PUBLIC
-  {
-    static constexpr auto names() { return NAMES("bns_lookup"); }
-
-    static constexpr size_t MAX_REQUEST_ENTRIES      = 256;
-    struct request
-    {
-      std::string name; // Entries to look up
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response
-    {
-      std::string name_hash;                    // The hash of the name that was queried, in base64
-      std::string owner;                        // The public key that purchased the Beldex Name Service entry.
-      std::optional<std::string> backup_owner;  // The backup public key that the owner specified when purchasing the Beldex Name Service entry. Omitted if no backup owner.
-      std::optional<std::string> bchat_value;   // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
-      std::optional<std::string> wallet_value;  // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
-      std::optional<std::string> belnet_value;  // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
-      std::optional<std::string> eth_addr_value;  // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
-      uint64_t update_height;                   // The last height that this Beldex Name Service entry was updated on the Blockchain.
-      std::optional<uint64_t> expiration_height;// For records that expire, this will be set to the expiration block height.
-      std::string txid;                         // The txid of the mapping's most recent update or purchase.
-      
-      std::string status; // Generic RPC error code. "OK" is the success value.
-
-      KV_MAP_SERIALIZABLE
-    };
-  };
-
   /// RPC: bns/bns_owners_to_names
   ///
   /// Get all the name mappings for the queried owner. The owner can be either a ed25519 public key or Monero style
@@ -2638,27 +2605,57 @@ namespace cryptonote::rpc {
     } request;
   };
 
-  BELDEX_RPC_DOC_INTROSPECT
-  // Takes a BNS encrypted value and decrypts the mapping value using the BNS name.
+  /// Get the name mapping for a Beldex Name Service entry. Beldex currently supports mappings
+  /// for Bchat, Belnet, eth-address and wallet.
+  /// Inputs:
+  ///
+  /// - `name` -- bns-name for the lookup
+  ///
+  /// Output:
+  ///
+  /// - `status` -- Generic RPC error code. "OK" is the success value.
+  /// - `name_hash` -- The hash of the name that the owner purchased via Beldex Name Service in base64
+  /// - `owner` -- The backup public key specified by the owner that purchased the Beldex Name Service entry.
+  /// - `backup_owner` -- The backup public key specified by the owner that purchased the Beldex Name Service entry. Omitted if no backup owner.
+  /// - `bchat_value` -- The decrypted Bchat value that the name maps to, in string.
+  /// - `wallet_value` -- The decrypted Wallet value that the name maps to, in string.
+  /// - `belnet_value` -- The decrypted Belnet value that the name maps to, in string.
+  /// - `eth_addr_value` -- The decrypted Eth Address value that the name maps to, in string.
+  /// - `update_height` -- The last height that this Beldex Name Service entry was updated on the Blockchain.
+  /// - `expiration_height` -- For records that expire, this will be set to the expiration block height.
+  /// - `txid` -- The txid of the mapping's most recent update or purchase.
+  struct BNS_LOOKUP : PUBLIC
+  {
+    static constexpr auto names() { return NAMES("bns_lookup"); }
+
+    struct request_parameters
+    {
+      std::string name; // Entries to look up
+    }request;
+
+  };
+
+  /// Takes a BNS encrypted value and decrypts the mapping value using the BNS name.
+  /// Inputs:
+  ///
+  /// - `name` --  The BNS name of the given encrypted value.
+  /// - `type` -- The mapping type: "bchat" or "belnet" or "wallet" or "eth_addr".
+  /// - `encrypted_value` -- // The encrypted value represented in hex.
+  /// Output:
+  ///
+  /// - `status` -- Generic RPC error code. "OK" is the success value.
+  /// - `value` -- The decrypted value that the name maps to, in string.
+
   struct BNS_VALUE_DECRYPT : PUBLIC
   {
     static constexpr auto names() { return NAMES("bns_value_decrypt"); }
 
-    struct request
+    struct request_parameters
     {
       std::string name;            // The BNS name of the given encrypted value.
       std::string type;            // The mapping type: "bchat" or "belnet" or "wallet".
       std::string encrypted_value; // The encrypted value represented in hex.
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response
-    {
-      std::string value; // The value decrypted
-
-      KV_MAP_SERIALIZABLE
-    };
+    }request;
   };
 
   /// RPC: daemon/flush_cache
@@ -2735,6 +2732,8 @@ namespace cryptonote::rpc {
     BNS_OWNERS_TO_NAMES,
     BNS_NAMES_TO_OWNERS,
     BNS_RESOLVE,
+    BNS_LOOKUP,
+    BNS_VALUE_DECRYPT,
     OUT_PEERS,
     POP_BLOCKS,
     PRUNE_BLOCKCHAIN,
@@ -2755,9 +2754,7 @@ namespace cryptonote::rpc {
   >;
   using FIXME_old_rpc_types = tools::type_list<
     RELAY_TX,
-    GET_OUTPUT_DISTRIBUTION,
-    BNS_LOOKUP,
-    BNS_VALUE_DECRYPT
+    GET_OUTPUT_DISTRIBUTION
   >;
 
 } // namespace cryptonote::rpc

@@ -460,6 +460,7 @@ namespace cryptonote::rpc {
     res.status = STATUS_OK;
     return res;
   }
+  //------------------------------------------------------------------------------------------------------------------------------
   GET_ALT_BLOCKS_HASHES_BIN::response core_rpc_server::invoke(GET_ALT_BLOCKS_HASHES_BIN::request&& req, rpc_context context)
   {
     GET_ALT_BLOCKS_HASHES_BIN::response res{};
@@ -3221,32 +3222,32 @@ namespace cryptonote::rpc {
     test_trigger_uptime_proof.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  void core_rpc_server::invoke(BNS_NAMES_TO_OWNERS& bns_names_to_owners, rpc_context context)
+  void core_rpc_server::invoke(BNS_NAMES_TO_OWNERS& names_to_owners, rpc_context context)
   {
     if (!context.admin)
     {
-      check_quantity_limit(bns_names_to_owners.request.name_hash.size(), BNS_NAMES_TO_OWNERS::MAX_REQUEST_ENTRIES);
+      check_quantity_limit(names_to_owners.request.name_hash.size(), BNS_NAMES_TO_OWNERS::MAX_REQUEST_ENTRIES);
     }
 
     std::optional<uint64_t> height = m_core.get_current_blockchain_height();
     auto hf_version = get_network_version(nettype(), *height);
-    if (bns_names_to_owners.request.include_expired) height = std::nullopt;
+    if (names_to_owners.request.include_expired) height = std::nullopt;
 
     bns::name_system_db &db = m_core.get_blockchain_storage().name_system_db();
-    for (size_t request_index = 0; request_index < bns_names_to_owners.request.name_hash.size(); request_index++)
+    for (size_t request_index = 0; request_index < names_to_owners.request.name_hash.size(); request_index++)
     {
-      const auto& request = bns_names_to_owners.request.name_hash[request_index];
+      const auto& request = names_to_owners.request.name_hash[request_index];
 
       // This also takes 32 raw bytes, but that is undocumented (because it is painful to pass
       // through json).
-      auto name_hash = bns::name_hash_input_to_base64(bns_names_to_owners.request.name_hash[request_index]);
+      auto name_hash = bns::name_hash_input_to_base64(names_to_owners.request.name_hash[request_index]);
       if (!name_hash)
         throw rpc_error{ERROR_WRONG_PARAM, "Invalid name_hash: expected hash as 64 hex digits or 43/44 base64 characters"};
 
       std::vector<bns::mapping_record> records = db.get_mappings(*name_hash, height);
       for (auto const &record : records)
       {
-        auto& elem = bns_names_to_owners.response["result"].emplace_back();
+        auto& elem = names_to_owners.response["result"].emplace_back();
         elem["name_hash"]                                    = record.name_hash;
         elem["owner"]                                        = record.owner.to_string(nettype());
         if (record.backup_owner) elem["backup_owner"]        = record.backup_owner.to_string(nettype());
@@ -3259,72 +3260,22 @@ namespace cryptonote::rpc {
         elem["txid"]                                         = tools::type_to_hex(record.txid);
       }
     }
-    bns_names_to_owners.response["status"] = STATUS_OK;
+    names_to_owners.response["status"] = STATUS_OK;
   }
 
   //------------------------------------------------------------------------------------------------------------------------------
-  BNS_LOOKUP::response core_rpc_server::invoke(BNS_LOOKUP::request&& req, rpc_context context)
-  {
-    BNS_LOOKUP::response res{};
-
-    std::string name = tools::lowercase_ascii_string(std::move(req.name));
-    
-    BNS_NAMES_TO_OWNERS name_to_owner{};
-    name_to_owner.request.name_hash.push_back(bns::name_to_base64_hash(name));   
-    invoke(name_to_owner, context);
-
-    if(name_to_owner.response["result"].size() != 1){
-        throw rpc_error{ERROR_INVALID_RESULT, "Invalid data returned from BNS_NAMES_TO_OWNERS"};
-    }
-
-    auto entries = name_to_owner.response["result"].back();
-    {
-      res.name_hash                                           = entries["name_hash"];
-      res.owner                                               = entries["owner"];
-      if (!entries["backup_owner"].empty()) res.backup_owner  = entries["backup_owner"];
-      res.expiration_height                                   = entries["expiration_height"];
-      res.update_height                                       = entries["update_height"];
-      res.txid                                                = entries["txid"];
-
-      if(!entries["encrypted_bchat_value"].empty()){
-        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "bchat", entries["encrypted_bchat_value"]};
-        auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
-        res.bchat_value = bns_value_decrypt_res.value;
-      }
-      if(!entries["encrypted_belnet_value"].empty()){
-        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "belnet", entries["encrypted_belnet_value"]};
-        auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
-        res.belnet_value = bns_value_decrypt_res.value;
-      }
-      if(!entries["encrypted_wallet_value"].empty()){
-        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "wallet", entries["encrypted_wallet_value"]};
-        auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
-        res.wallet_value = bns_value_decrypt_res.value;
-      }
-      if(!entries["encrypted_eth_addr_value"].empty()){
-        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "eth_addr", entries["encrypted_eth_addr_value"]};
-        auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
-        res.eth_addr_value = bns_value_decrypt_res.value;
-      }
-    }
-
-    res.status = STATUS_OK;
-    return res;
-  }
-
-  //------------------------------------------------------------------------------------------------------------------------------
-  void core_rpc_server::invoke(BNS_OWNERS_TO_NAMES& bns_owners_to_names, rpc_context context)
+  void core_rpc_server::invoke(BNS_OWNERS_TO_NAMES& owners_to_names, rpc_context context)
   {
     if (!context.admin)
-      check_quantity_limit(bns_owners_to_names.request.entries.size(), BNS_OWNERS_TO_NAMES::MAX_REQUEST_ENTRIES);
+      check_quantity_limit(owners_to_names.request.entries.size(), BNS_OWNERS_TO_NAMES::MAX_REQUEST_ENTRIES);
 
     std::unordered_map<bns::generic_owner, size_t> owner_to_request_index;
     std::vector<bns::generic_owner> owners;
 
-    owners.reserve(bns_owners_to_names.request.entries.size());
-    for (size_t request_index = 0; request_index < bns_owners_to_names.request.entries.size(); request_index++)
+    owners.reserve(owners_to_names.request.entries.size());
+    for (size_t request_index = 0; request_index < owners_to_names.request.entries.size(); request_index++)
     {
-      std::string const &owner     = bns_owners_to_names.request.entries[request_index];
+      std::string const &owner     = owners_to_names.request.entries[request_index];
       bns::generic_owner bns_owner = {};
       std::string errmsg;
       if (!bns::parse_owner_to_generic_owner(m_core.get_nettype(), owner, bns_owner, &errmsg))
@@ -3340,7 +3291,7 @@ namespace cryptonote::rpc {
 
     bns::name_system_db &db = m_core.get_blockchain_storage().name_system_db();
     std::optional<uint64_t> height;
-    if (!bns_owners_to_names.request.include_expired) height = m_core.get_current_blockchain_height();
+    if (!owners_to_names.request.include_expired) height = m_core.get_current_blockchain_height();
 
     std::vector<BNS_OWNERS_TO_NAMES::response_entry> entries;
     std::vector<bns::mapping_record> records = db.get_mappings_by_owners(owners, height);
@@ -3371,8 +3322,8 @@ namespace cryptonote::rpc {
       entry.txid            = tools::type_to_hex(record.txid);
     }
 
-    bns_owners_to_names.response["entries"] = entries;
-    bns_owners_to_names.response["status"] = STATUS_OK;
+    owners_to_names.response["entries"] = entries;
+    owners_to_names.response["status"] = STATUS_OK;
     return;
   }
 
@@ -3400,11 +3351,53 @@ namespace cryptonote::rpc {
         resolve.response_hex["nonce"] = nonce;
     }
   }
-  //------------------------------------------------------------------------------------------------------------------------------
-  BNS_VALUE_DECRYPT::response core_rpc_server::invoke(BNS_VALUE_DECRYPT::request&& req, rpc_context context)
-  {
-    BNS_VALUE_DECRYPT::response res{};
 
+  //------------------------------------------------------------------------------------------------------------------------------
+  void core_rpc_server::invoke(BNS_LOOKUP& lookup, rpc_context context)
+  {
+
+    std::string name = tools::lowercase_ascii_string(std::move(lookup.request.name));
+    
+    BNS_NAMES_TO_OWNERS name_to_owner{};
+    name_to_owner.request.name_hash.push_back(bns::name_to_base64_hash(name));   
+    invoke(name_to_owner, context);
+
+    if(name_to_owner.response["result"].size() != 1){
+        throw rpc_error{ERROR_INVALID_RESULT, "Invalid data returned from BNS_NAMES_TO_OWNERS"};
+    }
+
+    auto entries = name_to_owner.response["result"].back();
+    {
+      lookup.response["name_hash"]                                           = entries["name_hash"];
+      lookup.response["owner"]                                               = entries["owner"];
+      if (!entries["backup_owner"].empty())
+        lookup.response["backup_owner"]  = entries["backup_owner"];
+      lookup.response["expiration_height"]                                   = entries["expiration_height"];
+      lookup.response["update_height"]                                       = entries["update_height"];
+      lookup.response["txid"]                                                = entries["txid"];
+
+      for (const auto& [type, key] : std::vector<std::pair<std::string, std::string>>{
+          {"bchat", "encrypted_bchat_value"},
+          {"belnet", "encrypted_belnet_value"},
+          {"wallet", "encrypted_wallet_value"},
+          {"eth_addr", "encrypted_eth_addr_value"}})
+      {
+        if (!entries[key].empty()) {
+          BNS_VALUE_DECRYPT value_decrypt;
+          value_decrypt.request = {name, type, entries[key]};
+          invoke(value_decrypt, context);
+          lookup.response[type + "_value"] = value_decrypt.response["value"];
+        }
+      }
+    }
+
+    lookup.response["status"] = STATUS_OK;
+  }
+
+  //------------------------------------------------------------------------------------------------------------------------------
+  void core_rpc_server::invoke(BNS_VALUE_DECRYPT& value_decrypt, rpc_context context)
+  {
+    auto& req = value_decrypt.request;
     // ---------------------------------------------------------------------------------------------
     //
     // Validate encrypted value
@@ -3447,7 +3440,7 @@ namespace cryptonote::rpc {
     if (!value.decrypt(req.name, type))
       throw rpc_error{ERROR_INTERNAL, "Value decryption failure"};
 
-    res.value = value.to_readable_value(nettype(), type);
-    return res;
+    value_decrypt.response["value"] = value.to_readable_value(nettype(), type);
+    value_decrypt.response["status"] = STATUS_OK;
   }
 }  // namespace cryptonote::rpc

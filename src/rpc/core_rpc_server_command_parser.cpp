@@ -5,12 +5,6 @@
 namespace cryptonote::rpc {
   using nlohmann::json;
 
-  void parse_request(BNS_RESOLVE& bns, rpc_input in) {
-    get_values(in,
-        "name_hash", required{bns.request.name_hash},
-        "type", required{bns.request.type});
-  }
-
   void parse_request(GET_MASTER_NODES& mns, rpc_input in) {
     // Remember: key access must be in sorted order (even across get_values() calls).
     get_values(in,
@@ -369,16 +363,34 @@ namespace cryptonote::rpc {
         "recent_cutoff", get_output_histogram.request.recent_cutoff);
   }
 
-  void parse_request(BNS_OWNERS_TO_NAMES& bns_owners_to_names, rpc_input in) {
+  void parse_request(BNS_OWNERS_TO_NAMES& owners_to_names, rpc_input in) {
     get_values(in,
-       "entries", required{bns_owners_to_names.request.entries},
-       "include_expired", bns_owners_to_names.request.include_expired);
+       "entries", required{owners_to_names.request.entries},
+       "include_expired", owners_to_names.request.include_expired);
   }
 
-  void parse_request(BNS_NAMES_TO_OWNERS& bns_names_to_owners, rpc_input in) {
+  void parse_request(BNS_NAMES_TO_OWNERS& names_to_owners, rpc_input in) {
     get_values(in,
-        "name_hash", required{bns_names_to_owners.request.name_hash},
-        "include_expired", bns_names_to_owners.request.include_expired);
+        "name_hash", required{names_to_owners.request.name_hash},
+        "include_expired", names_to_owners.request.include_expired);
+  }
+
+  void parse_request(BNS_RESOLVE& resolve, rpc_input in) {
+    get_values(in,
+        "name_hash", required{resolve.request.name_hash},
+        "type", required{resolve.request.type});
+  }
+  
+  void parse_request(BNS_LOOKUP& lookup, rpc_input in) {
+    get_values(in,
+        "name", required{lookup.request.name});
+  }
+
+  void parse_request(BNS_VALUE_DECRYPT& value_decrypt, rpc_input in) {
+    get_values(in,
+        "name", required{value_decrypt.request.name},
+        "type", required{value_decrypt.request.type},
+        "encrypted_value", required{value_decrypt.request.encrypted_value});
   }
 
   void parse_request(GET_QUORUM_STATE& qs, rpc_input in) {

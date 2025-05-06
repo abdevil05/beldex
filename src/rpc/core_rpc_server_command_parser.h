@@ -37,9 +37,11 @@ namespace cryptonote::rpc {
   void parse_request(IN_PEERS& in_peers, rpc_input in);
   void parse_request(IS_KEY_IMAGE_SPENT& spent, rpc_input in);
   void parse_request(BELNET_PING& belnet_ping, rpc_input in);
-  void parse_request(BNS_OWNERS_TO_NAMES& bns_owners_to_names, rpc_input in);
-  void parse_request(BNS_NAMES_TO_OWNERS& bns_names_to_owners, rpc_input in);
-  void parse_request(BNS_RESOLVE& bns, rpc_input in);
+  void parse_request(BNS_OWNERS_TO_NAMES& owners_to_names, rpc_input in);
+  void parse_request(BNS_NAMES_TO_OWNERS& names_to_owners, rpc_input in);
+  void parse_request(BNS_RESOLVE& resolve, rpc_input in);
+  void parse_request(BNS_LOOKUP& lookup, rpc_input in);
+  void parse_request(BNS_VALUE_DECRYPT& value_decrypt, rpc_input in);
   void parse_request(OUT_PEERS& out_peers, rpc_input in);
   void parse_request(POP_BLOCKS& pop_blocks, rpc_input in);
   void parse_request(PRUNE_BLOCKCHAIN& prune_blockchain, rpc_input in);

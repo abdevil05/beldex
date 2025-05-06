@@ -132,7 +132,6 @@ namespace cryptonote::rpc {
     // JSON & bt-encoded RPC endpoints
     void invoke(GET_HEIGHT& req, rpc_context context);
     void invoke(GET_INFO& info, rpc_context context);
-    void invoke(BNS_RESOLVE& resolve, rpc_context context);
     void invoke(GET_NET_STATS& get_net_stats, rpc_context context);
     void invoke(GET_OUTPUTS& get_outputs, rpc_context context);
     void invoke(HARD_FORK_INFO& hfinfo, rpc_context context);
@@ -193,6 +192,11 @@ namespace cryptonote::rpc {
     void invoke(GET_OUTPUT_HISTOGRAM& get_output_histogram, rpc_context context);
     void invoke(BNS_OWNERS_TO_NAMES& bns_owners_to_names, rpc_context context);
     void invoke(BNS_NAMES_TO_OWNERS& bns_names_to_owners, rpc_context context);
+    void invoke(BNS_RESOLVE& resolve, rpc_context context);
+    void invoke(BNS_LOOKUP& lookup, rpc_context context);
+    void invoke(BNS_VALUE_DECRYPT& value_decrypt, rpc_context context);
+
+
 
     // Deprecated Monero NIH binary endpoints:
     GET_ALT_BLOCKS_HASHES_BIN::response         invoke(GET_ALT_BLOCKS_HASHES_BIN::request&& req, rpc_context context);
@@ -208,8 +212,6 @@ namespace cryptonote::rpc {
 
     // FIXME: unconverted JSON RPC endpoints:
     // SET_BOOTSTRAP_DAEMON::response                      invoke(SET_BOOTSTRAP_DAEMON::request&& req, rpc_context context);
-    BNS_LOOKUP::response                                invoke(BNS_LOOKUP::request&& req, rpc_context context);
-    BNS_VALUE_DECRYPT::response                         invoke(BNS_VALUE_DECRYPT::request&& req, rpc_context context);
 
 #if defined(BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
     void on_relay_uptime_and_votes()
