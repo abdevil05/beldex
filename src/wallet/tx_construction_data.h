@@ -106,7 +106,7 @@ void serialize(Archive &a, wallet::tx_construction_data &x, const unsigned int v
     if (ver < 6)
     {
       x.tx_type    = cryptonote::txtype::standard;
-      x.hf_version = cryptonote::hf::hf14_enforce_checkpoints;
+      x.hf_version = cryptonote::hf::hf15_flash;
     }
   }
 

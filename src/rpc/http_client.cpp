@@ -140,6 +140,7 @@ nlohmann::json http_client::json_rpc(std::string_view method, std::optional<nloh
   if (params)
     shell["params"] = std::move(*params);
 
+  // std::cout << "shell.dump() : " << shell.dump() << std::endl; //TODO will remove
   cpr::Response res = post("json_rpc", shell.dump(), {{"Content-Type", "application/json; charset=utf-8"}});
 
   nlohmann::json result;
@@ -150,6 +151,7 @@ nlohmann::json http_client::json_rpc(std::string_view method, std::optional<nloh
       throw http_client_response_error{false, (*err)["code"].get<int>(),
         "JSON RPC returned an error response: " + (*err)["message"].get<std::string>()};
 
+    // std::cout << "response : " << response << std::endl; //TODO will remove
     if (auto res = response.find("result"); res != response.end())
       result = std::move(*res);
 

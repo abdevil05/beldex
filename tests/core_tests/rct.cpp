@@ -249,7 +249,7 @@ bool gen_rct_tx_validation_base::generate_with(std::vector<test_event_entry>& ev
     const std::function<void(transaction &tx)> &post_tx) const
 {
   const rct::RCTConfig rct_config { rct::RangeProofType::Borromean, 0 };
-  return generate_with_full(events, out_idx, mixin, amount_paid, cryptonote::old::DEFAULT_TX_SPENDABLE_AGE, hf::hf14_enforce_checkpoints, rct_config, valid, pre_tx, post_tx);
+  return generate_with_full(events, out_idx, mixin, amount_paid, cryptonote::old::DEFAULT_TX_SPENDABLE_AGE, hf::hf15_flash, rct_config, valid, pre_tx, post_tx);
 }
 
 bool gen_rct_tx_valid_from_pre_rct::generate(std::vector<test_event_entry>& events) const

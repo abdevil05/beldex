@@ -370,7 +370,7 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
 
         checkpoint_t *checkpoint_ptr = nullptr;
         checkpoint_t checkpoint;
-        if (blk.major_version >= hf::hf14_enforce_checkpoints && get_checkpoint(block_height, checkpoint))
+        if (blk.major_version >= hf::hf15_flash && get_checkpoint(block_height, checkpoint))
             checkpoint_ptr = &checkpoint;
 
         try {
@@ -2125,7 +2125,7 @@ bool Blockchain::handle_alternative_block(const block& b, const crypto::hash& id
     difficulty_type const main_chain_cumulative_difficulty = m_db->get_block_cumulative_difficulty(m_db->height() - 1);
     bool const alt_chain_has_greater_pow       = alt_data.cumulative_difficulty > main_chain_cumulative_difficulty;
 
-    if (b.major_version >= hf::hf14_enforce_checkpoints)
+    if (b.major_version >= hf::hf15_flash)
     {
       if (alt_chain_has_more_checkpoints || (alt_chain_has_greater_pow && alt_chain_has_equal_checkpoints))
       {
@@ -4207,7 +4207,7 @@ bool Blockchain::basic_block_checks(cryptonote::block const &blk, bool alt_block
       bool master_node_checkpoint = false;
       if(!m_checkpoints.check_block(chain_height, blk_hash, nullptr, &master_node_checkpoint))
       {
-        if (!master_node_checkpoint || (master_node_checkpoint && blk.major_version >= hf::hf14_enforce_checkpoints))
+        if (!master_node_checkpoint || (master_node_checkpoint && blk.major_version >= hf::hf15_flash))
         {
           MGINFO_RED("CHECKPOINT VALIDATION FAILED");
           return false;

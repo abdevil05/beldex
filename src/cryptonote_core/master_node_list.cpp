@@ -713,7 +713,7 @@ namespace master_nodes
         info.last_decommission_reason_consensus_any = state_change.reason_consensus_any;
         info.decommission_count++;
 
-        if (hf_version >= hf::hf14_enforce_checkpoints) {
+        if (hf_version >= hf::hf15_flash) {
           // Assigning invalid swarm id effectively kicks the node off
           // its current swarm; it will be assigned a new swarm id when it
           // gets recommissioned. Prior to HF13 this step was incorrectly
@@ -1487,7 +1487,7 @@ namespace master_nodes
     //
     // NOTE: Verify the checkpoint given on this height that locks in a block in the past.
     //
-    if (block.major_version >= hf::hf14_enforce_checkpoints && checkpoint)
+    if (block.major_version >= hf::hf15_flash && checkpoint)
     {
       std::vector<std::shared_ptr<const master_nodes::quorum>> alt_quorums;
       std::shared_ptr<const quorum> quorum = get_quorum(quorum_type::checkpointing, checkpoint->height, false, alt_block ? &alt_quorums : nullptr);
@@ -1550,7 +1550,7 @@ namespace master_nodes
     std::shared_ptr<const quorum>              POS_quorum;
     std::vector<std::shared_ptr<const quorum>> alt_POS_quorums;
     bool POS_hf = block.major_version >= hf::hf17_POS;
-
+    
     if (POS_hf)
     {
       POS_quorum = get_quorum(quorum_type::POS,
@@ -1588,6 +1588,7 @@ namespace master_nodes
       // NOTE: No POS quorums are generated when the network has insufficient nodes to generate quorums
       //       Or, block specifies time after all the rounds have timed out
       bool miner_block = !POS_hf || !POS_quorum;
+      // std::cout << "miner_block : " << miner_block << std::endl;
 
       result = verify_block_components(m_blockchain.nettype(),
                                        block,
@@ -3795,7 +3796,7 @@ namespace master_nodes
 
   bool master_node_info::can_transition_to_state(hf hf_version, uint64_t height, new_state proposed_state) const
   {
-    if (hf_version >= hf::hf14_enforce_checkpoints) {
+    if (hf_version >= hf::hf15_flash) {
       if (!can_be_voted_on(height)) {
         MDEBUG("MN state transition invalid: " << height << " is not a valid vote height");
         return false;

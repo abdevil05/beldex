@@ -219,8 +219,8 @@ namespace feature {
   constexpr auto PER_BYTE_FEE                 = hf::hf10_bulletproofs;
   constexpr auto SMALLER_BP                   = hf::hf11_infinite_staking;
   constexpr auto LONG_TERM_BLOCK_WEIGHT        = hf::hf11_infinite_staking;
-  constexpr auto PER_OUTPUT_FEE               = hf::hf14_enforce_checkpoints;
-  constexpr auto ED25519_KEY                  = hf::hf14_enforce_checkpoints;
+  constexpr auto PER_OUTPUT_FEE               = hf::hf15_flash;
+  constexpr auto ED25519_KEY                  = hf::hf15_flash;
   constexpr auto FEE_BURNING                  = hf::hf15_flash;
   constexpr auto FLASH                        = hf::hf15_flash;
   constexpr auto REDUCE_FEE                   = hf::hf17_POS;

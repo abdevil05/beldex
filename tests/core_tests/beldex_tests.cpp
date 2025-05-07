@@ -443,7 +443,7 @@ bool beldex_core_block_reward_unpenalized_pre_POS::generate(std::vector<test_eve
   gen.add_blocks_until_version(hard_forks.back().version);
 
   cryptonote::hf newest_hf = hard_forks.back().version;
-  assert(newest_hf >= cryptonote::hf::hf14_enforce_checkpoints);
+  assert(newest_hf >= cryptonote::hf::hf15_flash);
 
   gen.add_mined_money_unlock_blocks();
 
@@ -481,7 +481,7 @@ bool beldex_core_block_reward_unpenalized_post_POS::generate(std::vector<test_ev
   beldex_chain_generator gen(events, hard_forks);
 
   const cryptonote::hf newest_hf = hard_forks.back().version;
-  assert(newest_hf >= cryptonote::hf::hf14_enforce_checkpoints);
+  assert(newest_hf >= cryptonote::hf::hf15_flash);
 
   gen.add_blocks_until_version(hard_forks.back().version);
   gen.add_mined_money_unlock_blocks();

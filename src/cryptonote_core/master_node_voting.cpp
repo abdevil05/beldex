@@ -199,7 +199,7 @@ namespace master_nodes
     int validator_index_tracker                                            = -1;
     for (const auto &vote : state_change.votes)
     {
-      if (hf_version >= hf::hf14_enforce_checkpoints) // NOTE: After HF13, votes must be stored in ascending order
+      if (hf_version >= hf::hf15_flash) // NOTE: After HF13, votes must be stored in ascending order
       {
         if (validator_index_tracker >= static_cast<int>(vote.validator_index))
         {
@@ -267,7 +267,7 @@ namespace master_nodes
           return false;
         }
 
-        enforce_vote_ordering = hf_version >= hf::hf14_enforce_checkpoints;
+        enforce_vote_ordering = hf_version >= hf::hf15_flash;
       }
       break;
 

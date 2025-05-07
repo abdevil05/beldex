@@ -508,7 +508,7 @@ namespace cryptonote
     // We base governance fees and MN rewards based on the block reward formula.  (Prior to HF13,
     // however, they were accidentally based on the block reward formula *after* subtracting a
     // potential penalty if the block producer includes txes beyond the median size limit).
-    //result.original_base_reward = hard_fork_version >= hf::hf14_enforce_checkpoints ? base_reward_unpenalized : base_reward;
+    //result.original_base_reward = hard_fork_version >= hf::hf15_flash ? base_reward_unpenalized : base_reward;
     result.original_base_reward = base_reward;
 
     // There is a goverance fee due every block.  Beginning in hardfork 10 this is still subtracted
@@ -880,7 +880,7 @@ namespace cryptonote
       CHECK_AND_ASSERT_MES(key_image_proofs.proofs.size() >= 1, false, "No key image proofs were generated for staking tx");
       add_tx_key_image_proofs_to_tx_extra(tx.extra, key_image_proofs);
 
-      if (tx_params.hf_version <= hf::hf14_enforce_checkpoints)
+      if (tx_params.hf_version <= hf::hf15_flash)
         tx.type = txtype::standard;
     }
 
