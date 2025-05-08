@@ -8813,13 +8813,9 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
       return {};
 
   {
-    nlohmann::json req_params{
-      {"entries", {
-        {"name_hash", oxenc::to_base64(tools::view_guts(result.name_hash))},
-        }
-      },
-    };
-    auto [success, response_] = wallet.bns_names_to_owners(req_params);
+    std::vector<std::string> name_hash{};
+    name_hash.push_back(oxenc::to_base64(tools::view_guts(result.name_hash)));
+    auto [success, response_] = wallet.bns_names_to_owners({{"name_hash", name_hash}});
     if (!response)
       response = &response_;
     else

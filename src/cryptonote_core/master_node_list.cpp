@@ -3742,7 +3742,7 @@ namespace master_nodes
     crypto::generate_signature(hash, keys.pub, keys.key, signature);
 
     std::stringstream stream;
-    if (make_friendly)
+    if (make_friendly)  //TODO have to fix
     {
       stream << tr("Run this command in the operator wallet") << " (" <<
       cryptonote::get_account_address_as_str(nettype, false, contributor_args.addresses[0])

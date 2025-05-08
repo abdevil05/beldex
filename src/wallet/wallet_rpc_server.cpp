@@ -3316,106 +3316,80 @@ namespace {
     }
 
     auto nettype = m_wallet->nettype();
-    nlohmann::json req_params{
-      {"include_expired", req.include_expired },
-      {"entries", {}}
-    };
+    nlohmann::json req_params{{"include_expired", req.include_expired}};
+    auto& name_hash = (req_params["name_hash"] = nlohmann::json::array());
+    name_hash.get_ref<nlohmann::json::array_t&>().reserve(
+            std::min(rpc::BNS_NAMES_TO_OWNERS::MAX_REQUEST_ENTRIES, res.known_names.size()));
 
     uint64_t curr_height = req.include_expired ? m_wallet->get_blockchain_current_height() : 0;
 
     // Query beldexd for the full record info
     for (auto it = res.known_names.begin(); it != res.known_names.end(); )
     {
-      const size_t num_entries = std::distance(it, res.known_names.end());
-      const auto end = num_entries < rpc::BNS_NAMES_TO_OWNERS::MAX_REQUEST_ENTRIES
+      const size_t remaining = std::distance(it, res.known_names.end());
+      const auto batch_end = remaining < rpc::BNS_NAMES_TO_OWNERS::MAX_REQUEST_ENTRIES
           ? res.known_names.end()
           : it + rpc::BNS_NAMES_TO_OWNERS::MAX_REQUEST_ENTRIES;
-      for (auto it2 = it; it2 != end; it2++)
-      {
-        auto& name_hash = req_params["entries"].emplace_back(nlohmann::json{
-          {"name_hash", it2->hashed},
-        });
-      }
+
+      // Build name_hash list for the batch
+      name_hash.clear();
+      for (auto it2 = it; it2 != batch_end; ++it2)
+        name_hash.push_back(it2->hashed);
 
       if (auto [success, records] = m_wallet->bns_names_to_owners(req_params); success)
       {
-        size_t type_offset = std::distance(res.known_names.begin(), it);
-        for (auto& rec : records)
+        size_t base_index = std::distance(res.known_names.begin(), it);
+
+        auto decrypt_and_store = [&](const std::optional<std::string>& encrypted, bns::mapping_type type, std::optional<std::string>& out_value, const std::string& name)
         {
-          if (rec["entry_index"].get<size_t>() >= num_entries)
+          if (!req.decrypt || !encrypted || encrypted->empty() || !oxenc::is_hex(*encrypted))
+          return;
+
+          bns::mapping_value value;
+          std::string errmsg;
+          if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(*encrypted), &value, &errmsg) &&
+          value.decrypt(name, type))
+          out_value = value.to_readable_value(nettype, type);
+          else
+          MWARNING("Failed to decrypt BNS value for " << name << (errmsg.empty() ? ""s : ": " + errmsg));
+        };
+
+        for (const auto& rec : records["result"])
+        {
+          size_t index = rec["entry_index"].get<size_t>();
+          if (index >= remaining)
           {
-            MWARNING("Got back invalid entry_index " << rec["entry_index"] << " for a request for " << num_entries << " entries");
+            MWARNING("Invalid entry_index " << index << " for batch size " << remaining);
             continue;
           }
 
-          auto& res_e = *(it + rec["entry_index"]);
-          res_e.owner = std::move(rec["owner"]);
-          res_e.backup_owner = std::move(rec["backup_owner"]);
-          res_e.encrypted_bchat_value = std::move(rec["encrypted_bchat_value"]);
-          res_e.encrypted_wallet_value = std::move(rec["encrypted_wallet_value"]);
-          res_e.encrypted_belnet_value = std::move(rec["encrypted_belnet_value"]);
-          res_e.encrypted_eth_addr_value = std::move(rec["encrypted_eth_addr_value"]);
-          res_e.update_height = rec["update_height"];
-          res_e.expiration_height = rec["expiration_height"];
+          auto& res_e = *(it + index);
+          res_e.owner = rec["owner"];
+          if (rec.contains("backup_owner") && !rec["backup_owner"].is_null())
+            res_e.backup_owner = rec["backup_owner"].get<std::string>();
+          if (rec.contains("encrypted_bchat_value") && !rec["encrypted_bchat_value"].empty())
+            res_e.encrypted_bchat_value = rec["encrypted_bchat_value"];
+          if (rec.contains("encrypted_wallet_value") && !rec["encrypted_wallet_value"].empty())
+            res_e.encrypted_wallet_value = rec["encrypted_wallet_value"];
+          if (rec.contains("encrypted_belnet_value") && !rec["encrypted_belnet_value"].empty())
+            res_e.encrypted_belnet_value = rec["encrypted_belnet_value"];
+          if (rec.contains("encrypted_eth_addr_value") && !rec["encrypted_eth_addr_value"].empty())
+            res_e.encrypted_eth_addr_value = rec["encrypted_eth_addr_value"];
+          res_e.update_height = rec["update_height"].get<uint64_t>();
+          res_e.expiration_height = rec["expiration_height"].get<uint64_t>();
+          res_e.txid = rec["txid"];
+
           if (req.include_expired && res_e.expiration_height)
-            res_e.expired = *res_e.expiration_height < curr_height;
-          res_e.txid = std::move(rec["txid"]);
+            res_e.expired = res_e.expiration_height < curr_height;
 
-          //BCHAT
-          if (req.decrypt && !res_e.encrypted_bchat_value.empty() && oxenc::is_hex(res_e.encrypted_bchat_value))
-          {
-            bns::mapping_value value;
-            const auto type = bns::mapping_type::bchat;
-            std::string errmsg;
-            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_bchat_value), &value, &errmsg)
-                && value.decrypt(res_e.name, type))
-              res_e.value_bchat = value.to_readable_value(nettype, type);
-            else
-              MWARNING("Failed to decrypt BNS value for " << res_e.name << (errmsg.empty() ? ""s : ": " + errmsg));
-          }
-
-          //ETH_ADDR
-          if (req.decrypt && !res_e.encrypted_eth_addr_value.empty() && oxenc::is_hex(res_e.encrypted_eth_addr_value))
-          {
-            bns::mapping_value value;
-            const auto type = bns::mapping_type::eth_addr;
-            std::string errmsg;
-            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_eth_addr_value), &value, &errmsg)
-                && value.decrypt(res_e.name, type))
-              res_e.value_eth_addr = value.to_readable_value(nettype, type);
-            else
-              MWARNING("Failed to decrypt BNS value for " << res_e.name << (errmsg.empty() ? ""s : ": " + errmsg));
-          }
-
-          //WALLET
-          if (req.decrypt && !res_e.encrypted_wallet_value.empty() && oxenc::is_hex(res_e.encrypted_wallet_value))
-          {
-            bns::mapping_value value;
-            const auto type = bns::mapping_type::wallet;
-            std::string errmsg;
-            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_wallet_value), &value, &errmsg)
-                && value.decrypt(res_e.name, type))
-              res_e.value_wallet = value.to_readable_value(nettype, type);
-            else
-              MWARNING("Failed to decrypt BNS value for " << res_e.name << (errmsg.empty() ? ""s : ": " + errmsg));
-          }
-
-          //BELNET
-          if (req.decrypt && !res_e.encrypted_belnet_value.empty() && oxenc::is_hex(res_e.encrypted_belnet_value))
-          {
-            bns::mapping_value value;
-            const auto type = bns::mapping_type::belnet;
-            std::string errmsg;
-            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_belnet_value), &value, &errmsg)
-                && value.decrypt(res_e.name, type))
-              res_e.value_belnet = value.to_readable_value(nettype, type);
-            else
-              MWARNING("Failed to decrypt BNS value for " << res_e.name << (errmsg.empty() ? ""s : ": " + errmsg));
-          }
+          decrypt_and_store(res_e.encrypted_bchat_value, bns::mapping_type::bchat, res_e.value_bchat, res_e.name);
+          decrypt_and_store(res_e.encrypted_eth_addr_value, bns::mapping_type::eth_addr, res_e.value_eth_addr, res_e.name);
+          decrypt_and_store(res_e.encrypted_wallet_value, bns::mapping_type::wallet, res_e.value_wallet, res_e.name);
+          decrypt_and_store(res_e.encrypted_belnet_value, bns::mapping_type::belnet, res_e.value_belnet, res_e.name);
         }
       }
 
-      it = end;
+      it = batch_end;
     }
 
     // Erase anything we didn't get a response for (it will have update_height of 0)

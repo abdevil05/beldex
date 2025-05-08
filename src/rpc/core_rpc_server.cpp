@@ -3245,6 +3245,7 @@ namespace cryptonote::rpc {
       for (auto const &record : records)
       {
         auto& elem = names_to_owners.response["result"].emplace_back();
+        elem["entry_index"]                                  = request_index;
         elem["name_hash"]                                    = record.name_hash;
         elem["owner"]                                        = record.owner.to_string(nettype());
         if (record.backup_owner) elem["backup_owner"]        = record.backup_owner.to_string(nettype());
