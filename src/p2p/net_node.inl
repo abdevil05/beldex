@@ -33,7 +33,6 @@
 
 #include <algorithm>
 #include <optional>
-#include <boost/uuid/uuid_io.hpp>
 #include <atomic>
 #include <functional>
 #include <limits>
@@ -52,6 +51,7 @@
 #include "epee/misc_log_ex.h"
 #include "p2p_protocol_defs.h"
 #include "epee/net/local_ip.h"
+#include "epee/net/net_utils_base.h"
 #include "crypto/crypto.h"
 #include "epee/storages/levin_abstract_invoke2.h"
 #include "cryptonote_core/cryptonote_core.h"
@@ -68,6 +68,9 @@
 
 namespace nodetool
 {
+
+  using epee::connection_id_t;
+
   template<class t_payload_net_handler>
   node_server<t_payload_net_handler>::~node_server()
   {
@@ -139,7 +142,7 @@ namespace nodetool
   }
   //-----------------------------------------------------------------------------------
   template<class t_payload_net_handler>
-  bool node_server<t_payload_net_handler>::for_connection(const boost::uuids::uuid &connection_id, std::function<bool(typename t_payload_net_handler::connection_context&, peerid_type)> f)
+  bool node_server<t_payload_net_handler>::for_connection(const connection_id_t& connection_id, std::function<bool(typename t_payload_net_handler::connection_context&, peerid_type)> f)
   {
     for(auto& zone : m_network_zones)
     {
@@ -223,7 +226,7 @@ namespace nodetool
     // drop any connection to that address. This should only have to look into
     // the zone related to the connection, but really make sure everything is
     // swept ...
-    std::vector<boost::uuids::uuid> conns;
+    std::vector<connection_id_t> conns;
     for(auto& zone : m_network_zones)
     {
       zone.second.m_net_server.get_config_object().foreach_connection([&](const p2p_connection_context& cntxt)
@@ -272,7 +275,7 @@ namespace nodetool
     // drop any connection to that subnet. This should only have to look into
     // the zone related to the connection, but really make sure everything is
     // swept ...
-    std::vector<boost::uuids::uuid> conns;
+    std::vector<connection_id_t> conns;
     for(auto& zone : m_network_zones)
     {
       zone.second.m_net_server.get_config_object().foreach_connection([&](const p2p_connection_context& cntxt)
@@ -635,11 +638,7 @@ namespace nodetool
     bool res = handle_command_line(vm);
     CHECK_AND_ASSERT_MES(res, false, "Failed to handle command line");
 
-    memcpy(&m_network_id,
-      m_nettype == cryptonote::network_type::TESTNET ? &cryptonote::config::testnet::NETWORK_ID :
-      m_nettype == cryptonote::network_type::DEVNET ? &cryptonote::config::devnet::NETWORK_ID :
-      &cryptonote::config::NETWORK_ID,
-      16);
+    static_cast<std::array<unsigned char, 16>&>(m_network_id) = get_config(m_nettype).NETWORK_ID;
 
     m_config_folder = fs::u8path(command_line::get_arg(vm, cryptonote::arg_data_dir));
     network_zone& public_zone = m_network_zones.at(epee::net_utils::zone::public_);
@@ -850,7 +849,7 @@ namespace nodetool
 
     for (auto& zone : m_network_zones)
     {
-      std::list<boost::uuids::uuid> connection_ids;
+      std::list<connection_id_t> connection_ids;
       zone.second.m_net_server.get_config_object().foreach_connection([&](const p2p_connection_context& cntxt) {
         connection_ids.push_back(cntxt.m_connection_id);
         return true;
@@ -992,15 +991,25 @@ namespace nodetool
   }
   //-----------------------------------------------------------------------------------
   template<class t_payload_net_handler>
-  size_t node_server<t_payload_net_handler>::get_random_index_with_fixed_probability(size_t max_index)
+  size_t node_server<t_payload_net_handler>::get_random_exp_index(
+    const size_t size, const double rate) 
   {
-    //divide by zero workaround
-    if(!max_index)
+    if (size <= 1)
       return 0;
 
-    size_t x = crypto::rand<size_t>()%(max_index+1);
-    size_t res = (x*x*x)/(max_index*max_index); //parabola \/
-    MDEBUG("Random connection index=" << res << "(x="<< x << ", max_index=" << max_index << ")");
+    // (See net_node.h)
+
+    crypto::random_device rng;
+    const double u = std::uniform_real_distribution{}(rng);
+    // For non-truncated exponential we could use: -1/rate * log(1-u), (or
+    // std::exponential_distribution) but then we'd have to repeat until we got a value < size,
+    // which is technically unbounded computational time.  Instead we mutate the calculation like
+    // this, which gives us exponential, but truncated to [0, size), without loop
+
+    const size_t res =
+             static_cast<size_t>(-1.0 / rate * std::log(1.0 - u * (1.0 - std::exp(-rate * size))));
+
+             MDEBUG("Random connection index= "<<res<<" ,(size="<< size<<")");
     return res;
   }
   //-----------------------------------------------------------------------------------
@@ -1336,7 +1345,7 @@ namespace nodetool
       if (use_white_list)
       {
         // if using the white list, we first pick in the set of peers we've already been using earlier
-        random_index = get_random_index_with_fixed_probability(std::min<uint64_t>(filtered.size() - 1, 20));
+        random_index = get_random_exp_index(std::min<uint64_t>(filtered.size() - 1, 20));
         std::lock_guard lock{m_used_stripe_peers_mutex};
         if (next_needed_pruning_stripe > 0 && next_needed_pruning_stripe <= (1ul << cryptonote::PRUNING_LOG_STRIPES) && !m_used_stripe_peers[next_needed_pruning_stripe-1].empty())
         {
@@ -1345,7 +1354,8 @@ namespace nodetool
           for (size_t i = 0; i < filtered.size(); ++i)
           {
             peerlist_entry pe;
-            if (zone.m_peerlist.get_white_peer_by_index(pe, filtered[i]) && pe.adr == na)
+            if (zone.m_peerlist.get_white_peer_by_index(pe, filtered[i]) && 
+                pe.adr == na)
             {
               MDEBUG("Reusing stripe " << next_needed_pruning_stripe << " peer " << pe.adr.str());
               random_index = i;
@@ -1830,7 +1840,7 @@ namespace nodetool
   }
   //-----------------------------------------------------------------------------------
   template<class t_payload_net_handler>
-  bool node_server<t_payload_net_handler>::relay_notify_to_list(int command, const epee::span<const uint8_t> data_buff, std::vector<std::pair<epee::net_utils::zone, boost::uuids::uuid>> connections)
+  bool node_server<t_payload_net_handler>::relay_notify_to_list(int command, const epee::span<const uint8_t> data_buff, std::vector<std::pair<epee::net_utils::zone, connection_id_t>> connections)
   {
     std::sort(connections.begin(), connections.end());
     auto zone = m_network_zones.begin();
@@ -1855,7 +1865,7 @@ namespace nodetool
   }
   //-----------------------------------------------------------------------------------
   template<class t_payload_net_handler>
-  epee::net_utils::zone node_server<t_payload_net_handler>::send_txs(std::vector<cryptonote::blobdata> txs, const epee::net_utils::zone origin, const boost::uuids::uuid& source, const bool pad_txs)
+  epee::net_utils::zone node_server<t_payload_net_handler>::send_txs(std::vector<cryptonote::blobdata> txs, const epee::net_utils::zone origin, const connection_id_t& source, const bool pad_txs)
   {
     namespace enet = epee::net_utils;
 

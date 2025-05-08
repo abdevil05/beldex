@@ -30,16 +30,16 @@
 
 #pragma once
 
-#include <cstdint>
+
 #include <cstddef>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <boost/uuid/uuid.hpp>
 #include <stdexcept>
 #include <chrono>
 #include <array>
 #include <ratio>
+#include <array>
 
 using namespace std::literals;
 namespace cryptonote {
@@ -314,7 +314,7 @@ namespace config
   inline constexpr uint16_t RPC_DEFAULT_PORT = 19091;
   inline constexpr uint16_t ZMQ_RPC_DEFAULT_PORT = 19092;
   inline constexpr uint16_t QNET_DEFAULT_PORT = 19095;
-  inline constexpr boost::uuids::uuid const NETWORK_ID = { {
+  inline constexpr std::array<unsigned char, 16> const NETWORK_ID = { {
         0x12 ,0x30, 0xF1, 0x71 , 0x61, 0x04 , 0x41, 0x61, 0x17, 0x31, 0x00, 0x82, 0x17, 0xA1, 0xB5, 0x90
     } }; // Bender's nightmare
   inline constexpr std::string_view GENESIS_TX = "013c01ff0005978c390224a302c019c844f7141f35bf7f0fc5b02ada055e4ba897557b17ac6ccf88f0a2c09fab030276d443549feee11fe325048eeea083fcb7535312572d255ede1ecb58f84253b480e89226023b7d7c5e6eff4da699393abf12b6e3d04eae7909ae21932520fb3166b8575bb180cab5ee0102e93beb645ce7d5574d6a5ed5d9b8aadec7368342d08a7ca7b342a428353a10df80e497d01202b6e6844c1e9a478d0e4f7f34e455b26077a51f0005357aa19a49ca16eb373f622101f7c2a3a2ed7011b61998b1cd4f45b4d3c1daaa82908a10ca191342297eef1cf8"sv;
@@ -346,7 +346,7 @@ namespace config
     inline constexpr uint16_t RPC_DEFAULT_PORT = 29091;
     inline constexpr uint16_t ZMQ_RPC_DEFAULT_PORT = 29092;
     inline constexpr uint16_t QNET_DEFAULT_PORT = 29095;
-    inline constexpr boost::uuids::uuid const NETWORK_ID = { {
+    inline constexpr std::array<unsigned char, 16> const NETWORK_ID = { {
         0x12 ,0x30, 0xF1, 0x71 , 0x61, 0x04 , 0x41, 0x61, 0x17, 0x31, 0x00, 0x82, 0x17, 0xA1, 0xB6, 0x91
       } }; // Bender's daydream
     inline constexpr std::string_view GENESIS_TX = "023c01ff0001d7c1c4e81402a4b3be74714906edf0d798d22083d36983e80086d62436302684ca5bea0f312b420195937f9cb7005504052c96bf73d65d55f611c141876e5e519cef59fcb041d90872000000000000000000000000000000000000000000000000000000000000000000"sv;
@@ -375,7 +375,7 @@ namespace config
     inline constexpr uint16_t RPC_DEFAULT_PORT = 39091;
     inline constexpr uint16_t ZMQ_RPC_DEFAULT_PORT = 39092;
     inline constexpr uint16_t QNET_DEFAULT_PORT = 39095;
-    inline constexpr boost::uuids::uuid const NETWORK_ID = { {
+    inline constexpr std::array<unsigned char, 16>  const NETWORK_ID = { {
         0x12 ,0x30, 0xF1, 0x71 , 0x61, 0x04 , 0x41, 0x61, 0x17, 0x31, 0x00, 0x82, 0x17, 0xA1, 0xB7, 0x92
       } };
     inline constexpr std::string_view GENESIS_TX = "023c01ff0001d7c1c4e81402a25ba172ed7bca3b35e0be2f097b743973cf3c26777342032bed1036b19ab7a4420145706ec71eec5d57962c225b0615c172f8429984ec4954ba8b05bdad3f454f0472000000000000000000000000000000000000000000000000000000000000000000"sv;
@@ -412,7 +412,7 @@ namespace config
     uint16_t RPC_DEFAULT_PORT;
     uint16_t ZMQ_RPC_DEFAULT_PORT;
     uint16_t QNET_DEFAULT_PORT;
-    boost::uuids::uuid NETWORK_ID;
+    const std::array<unsigned char, 16> NETWORK_ID;
     std::string_view GENESIS_TX;
     uint32_t GENESIS_NONCE;
     uint64_t GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS;

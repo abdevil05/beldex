@@ -33,7 +33,6 @@
 
 
 #include <boost/bind/bind.hpp>
-#include <boost/uuid/random_generator.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include "../warnings.h"
 #include "../string_tools.h"
@@ -170,11 +169,9 @@ PRAGMA_WARNING_DISABLE_VS(4355)
     m_is_multithreaded = is_multithreaded;
     m_local = real_remote.is_loopback() || real_remote.is_local();
 
-    // create a random uuid, we don't need crypto strength here
-    const boost::uuids::uuid random_uuid = boost::uuids::random_generator()();
-
+    // create a random id, we don't need crypto strength here
     context = t_connection_context{};
-    context.set_details(random_uuid, std::move(real_remote), is_income);
+    context.set_details(connection_id_t::random(), std::move(real_remote), is_income);
 
     boost::system::error_code ec;
     auto local_ep = socket().local_endpoint(ec);

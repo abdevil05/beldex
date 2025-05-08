@@ -48,6 +48,7 @@
 
 namespace cryptonote::levin
 {
+  using epee::connection_id_t;
   namespace
   {
     constexpr std::size_t connection_id_reserve_size = 100;
@@ -66,20 +67,20 @@ namespace cryptonote::levin
     }
 
     //! \return All outgoing connections supporting fragments in `connections`.
-    std::vector<boost::uuids::uuid> get_out_connections(connections& p2p)
+
+    std::vector<connection_id_t> get_out_connections(connections &p2p)
     {
-      std::vector<boost::uuids::uuid> outs;
-      outs.reserve(connection_id_reserve_size);
+      std::vector<connection_id_t> outs;
 
       /* The foreach call is serialized with a lock, but should be quick due to
          the reserve call so a strand is not used. Investigate if there is lots
          of waiting in here. */
 
-      p2p.foreach_connection([&outs] (detail::p2p_context& context) {
+      p2p.foreach_connection([&outs](detail::p2p_context &context)
+                             {
         if (!context.m_is_income)
           outs.emplace_back(context.m_connection_id);
-        return true;
-      });
+        return true; });
 
       return outs;
     }
@@ -160,7 +161,7 @@ namespace cryptonote::levin
         : queue(),
           strand(io_service),
           next_noise(io_service),
-          connection(boost::uuids::nil_uuid())
+          connection{}
       {}
 
       // `asio::io_service::strand` cannot be copied or moved
@@ -173,7 +174,7 @@ namespace cryptonote::levin
       std::deque<epee::shared_sv> queue;
       boost::asio::io_service::strand strand;
       boost::asio::steady_timer next_noise;
-      boost::uuids::uuid connection;
+      connection_id_t connection;
     };
   } // anonymous
 
@@ -246,10 +247,10 @@ namespace cryptonote::levin
     {
       std::shared_ptr<detail::zone> zone_;
       epee::shared_sv message_; // Requires manual copy
-      boost::uuids::uuid source_;
+      connection_id_t source_;
 
     public:
-      explicit flood_notify(std::shared_ptr<detail::zone> zone, epee::shared_sv message, const boost::uuids::uuid& source)
+      explicit flood_notify(std::shared_ptr<detail::zone> zone, epee::shared_sv message, const connection_id_t& source)
         : zone_(std::move(zone)), message_(message), source_(source)
       {}
 
@@ -271,7 +272,7 @@ namespace cryptonote::levin
            algorithm changes or the locking strategy within the levin config
            class changes. */
 
-        std::vector<boost::uuids::uuid> connections;
+        std::vector<connection_id_t> connections;
         connections.reserve(connection_id_reserve_size);
         zone_->p2p->foreach_connection([this, &connections] (detail::p2p_context& context) {
           /* Only send to outgoing connections when "flooding" over i2p/tor.
@@ -282,7 +283,7 @@ namespace cryptonote::levin
           return true;
         });
 
-        for (const boost::uuids::uuid& connection : connections)
+        for (const connection_id_t& connection : connections)
           zone_->p2p->send(message_, connection);
       }
     };
@@ -292,7 +293,7 @@ namespace cryptonote::levin
     {
       std::shared_ptr<detail::zone> zone_;
       const std::size_t channel_;
-      const boost::uuids::uuid connection_;
+      const connection_id_t connection_;
 
       //! \pre Called within `stem_.strand`.
       void operator()() const
@@ -324,7 +325,7 @@ namespace cryptonote::levin
     struct update_channels
     {
       std::shared_ptr<detail::zone> zone_;
-      std::vector<boost::uuids::uuid> out_connections_;
+      std::vector<connection_id_t> out_connections_;
 
       //! \pre Called within `zone->strand`.
       static void post(std::shared_ptr<detail::zone> zone)
@@ -436,7 +437,7 @@ namespace cryptonote::levin
           else
           {
             channel.active = {};
-            channel.connection = boost::uuids::nil_uuid();
+            channel.connection = {};
 
             auto connections = get_out_connections(*zone_->p2p);
             if (connections.empty())
@@ -532,7 +533,7 @@ namespace cryptonote::levin
       channel.next_noise.cancel();
   }
 
-  bool notify::send_txs(std::vector<blobdata> txs, const boost::uuids::uuid& source, const bool pad_txs)
+  bool notify::send_txs(std::vector<blobdata> txs, const connection_id_t& source, const bool pad_txs)
   {
 
 
