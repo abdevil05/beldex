@@ -1044,9 +1044,6 @@ namespace cryptonote::rpc {
 
         serialize(ja, tx);
         auto dumped = std::move(ja).json();
-        for (const auto& [k, v] : dumped.items()) {
-          LOG_PRINT_L0("tx details has k= " << k);
-        }
         e.update(dumped);
       }
 

@@ -40,8 +40,8 @@ namespace cryptonote::rpc {
 
     get_values(in,
         "limit", mns.request.limit,
-        "poll_block_hash", ignore_empty_string{mns.request.poll_block_hash},
-        "master_node_pubkeys", mns.request.master_node_pubkeys);
+        "master_node_pubkeys", mns.request.master_node_pubkeys,
+        "poll_block_hash", ignore_empty_string{mns.request.poll_block_hash});
   }
 
   void parse_request(START_MINING& start_mining, rpc_input in) {
@@ -51,18 +51,7 @@ namespace cryptonote::rpc {
       "slow_mining", start_mining.request.slow_mining,
       "threads_count", start_mining.request.threads_count);
   }
-  void parse_request(STOP_MINING& stop_mining, rpc_input in) {
-  }
-  void parse_request(MINING_STATUS& mining_status, rpc_input in) {
-  }
-  void parse_request(GET_TRANSACTION_POOL_HASHES& get_transaction_pool_hashes, rpc_input in) {
-  }
-  void parse_request(GET_BLOCK_COUNT& getblockcount, rpc_input in) {
-  }
-  void parse_request(STOP_DAEMON& stop_daemon, rpc_input in) {
-  }
-  void parse_request(SAVE_BC& save_bc, rpc_input in) {
-  }
+
   void parse_request(GET_OUTPUTS& get_outputs, rpc_input in) {
     get_values(in,
         "as_tuple", get_outputs.request.as_tuple,
@@ -234,8 +223,8 @@ namespace cryptonote::rpc {
 
   void parse_request(GET_COINBASE_TX_SUM& get_coinbase_tx_sum, rpc_input in) {
     get_values(in,
-        "height", get_coinbase_tx_sum.request.height,
-        "count", get_coinbase_tx_sum.request.count);
+        "count", get_coinbase_tx_sum.request.count,
+        "height", get_coinbase_tx_sum.request.height);
   }
 
   void parse_request(GET_BASE_FEE_ESTIMATE& get_base_fee_estimate, rpc_input in) {
@@ -244,15 +233,15 @@ namespace cryptonote::rpc {
   }
 
   void parse_request(OUT_PEERS& out_peers, rpc_input in){
-    get_values(in, 
-        "set", out_peers.request.set,
-        "out_peers", out_peers.request.out_peers);
+    get_values(in,
+        "out_peers", out_peers.request.out_peers,
+        "set", out_peers.request.set);
   }
 
   void parse_request(IN_PEERS& in_peers, rpc_input in){
     get_values(in,
-        "set", in_peers.request.set,
-        "in_peers", in_peers.request.in_peers);
+        "in_peers", in_peers.request.in_peers,
+        "set", in_peers.request.set);
   }
 
   void parse_request(POP_BLOCKS& pop_blocks, rpc_input in){
@@ -269,10 +258,10 @@ namespace cryptonote::rpc {
 
   void parse_request(STORAGE_SERVER_PING& storage_server_ping, rpc_input in){
     get_values(in,
+        "ed25519_pubkey", required{storage_server_ping.request.pubkey_ed25519},
         "error", storage_server_ping.request.error,
         "https_port", required{storage_server_ping.request.https_port},
         "omq_port", required{storage_server_ping.request.omq_port},
-        "ed25519_pubkey", required{storage_server_ping.request.pubkey_ed25519},
         "version", required{storage_server_ping.request.version});
   }
 
@@ -283,21 +272,21 @@ namespace cryptonote::rpc {
 
   void parse_request(REPORT_PEER_STATUS& report_peer_status, rpc_input in) {
     get_values(in,
-        "type", report_peer_status.request.type,
+        "passed", report_peer_status.request.passed,
         "pubkey", report_peer_status.request.pubkey,
-        "passed", report_peer_status.request.passed);
+        "type", report_peer_status.request.type);
   }
 
   void parse_request(GET_MN_STATE_CHANGES& get_mn_state_changes, rpc_input in) {
     get_values(in,
-        "start_height", get_mn_state_changes.request.start_height,
-        "end_height", required{get_mn_state_changes.request.end_height});
+        "end_height", get_mn_state_changes.request.end_height,
+        "start_height", required{get_mn_state_changes.request.start_height});
   }
 
   void parse_request(FLUSH_CACHE& flush_cache, rpc_input in) {
     get_values(in,
-        "bad_txs", flush_cache.request.bad_txs,
-        "bad_blocks", flush_cache.request.bad_blocks);
+        "bad_blocks", flush_cache.request.bad_blocks,
+        "bad_txs", flush_cache.request.bad_txs);
   }
 
   void parse_request(GET_LAST_BLOCK_HEADER& get_last_block_header, rpc_input in) {
@@ -308,10 +297,10 @@ namespace cryptonote::rpc {
 
   void parse_request(GET_BLOCK_HEADER_BY_HASH& get_block_header_by_hash, rpc_input in) {
     get_values(in,
-        "hash", get_block_header_by_hash.request.hash,
-        "hashes", get_block_header_by_hash.request.hashes,
         "fill_pow_hash", get_block_header_by_hash.request.fill_pow_hash,
-        "get_tx_hashes", get_block_header_by_hash.request.get_tx_hashes);
+        "get_tx_hashes", get_block_header_by_hash.request.get_tx_hashes,
+        "hash", get_block_header_by_hash.request.hash,
+        "hashes", get_block_header_by_hash.request.hashes);
   }
 
   void parse_request(SET_BANS& set_bans, rpc_input in) {
@@ -333,46 +322,46 @@ namespace cryptonote::rpc {
 
   void parse_request(GET_BLOCK_HEADERS_RANGE& get_block_headers_range, rpc_input in) {
     get_values(in,
-        "start_height", get_block_headers_range.request.start_height,
-        "end_height", get_block_headers_range.request.end_height,
+        "end_height",    get_block_headers_range.request.end_height,
         "fill_pow_hash", get_block_headers_range.request.fill_pow_hash,
-        "get_tx_hashes", get_block_headers_range.request.get_tx_hashes);
+        "get_tx_hashes", get_block_headers_range.request.get_tx_hashes,
+        "start_height",  get_block_headers_range.request.start_height);
   }
 
   void parse_request(GET_BLOCK_HEADER_BY_HEIGHT& get_block_header_by_height, rpc_input in) {
     get_values(in,
-        "height", get_block_header_by_height.request.height,
-        "heights", get_block_header_by_height.request.heights,
         "fill_pow_hash", get_block_header_by_height.request.fill_pow_hash,
-        "get_tx_hashes", get_block_header_by_height.request.get_tx_hashes);
+        "get_tx_hashes", get_block_header_by_height.request.get_tx_hashes,
+        "height",        get_block_header_by_height.request.height,
+        "heights",       get_block_header_by_height.request.heights);
   }
 
   void parse_request(GET_BLOCK& get_block, rpc_input in) {
     get_values(in,
-        "hash", get_block.request.hash,
-        "height", get_block.request.height,
-        "fill_pow_hash", get_block.request.fill_pow_hash);
+        "fill_pow_hash", get_block.request.fill_pow_hash,
+        "hash",          get_block.request.hash,
+        "height",        get_block.request.height);
   }
 
   void parse_request(GET_OUTPUT_HISTOGRAM& get_output_histogram, rpc_input in) {
     get_values(in,
-        "amounts", get_output_histogram.request.amounts,
-        "min_count", get_output_histogram.request.min_count,
-        "max_count", get_output_histogram.request.max_count,
-        "unlocked", get_output_histogram.request.unlocked,
-        "recent_cutoff", get_output_histogram.request.recent_cutoff);
+        "amounts",       get_output_histogram.request.amounts,
+        "max_count",     get_output_histogram.request.max_count,
+        "min_count",     get_output_histogram.request.min_count,
+        "recent_cutoff", get_output_histogram.request.recent_cutoff,
+        "unlocked",      get_output_histogram.request.unlocked);
   }
 
   void parse_request(BNS_OWNERS_TO_NAMES& owners_to_names, rpc_input in) {
     get_values(in,
-       "entries", required{owners_to_names.request.entries},
+       "entries",         required{owners_to_names.request.entries},
        "include_expired", owners_to_names.request.include_expired);
   }
 
   void parse_request(BNS_NAMES_TO_OWNERS& names_to_owners, rpc_input in) {
     get_values(in,
-        "name_hash", required{names_to_owners.request.name_hash},
-        "include_expired", names_to_owners.request.include_expired);
+        "include_expired", names_to_owners.request.include_expired,
+        "name_hash",       required{names_to_owners.request.name_hash});
   }
 
   void parse_request(BNS_RESOLVE& resolve, rpc_input in) {
@@ -388,9 +377,9 @@ namespace cryptonote::rpc {
 
   void parse_request(BNS_VALUE_DECRYPT& value_decrypt, rpc_input in) {
     get_values(in,
+        "encrypted_value", required{value_decrypt.request.encrypted_value},
         "name", required{value_decrypt.request.name},
-        "type", required{value_decrypt.request.type},
-        "encrypted_value", required{value_decrypt.request.encrypted_value});
+        "type", required{value_decrypt.request.type});
   }
 
   void parse_request(GET_QUORUM_STATE& qs, rpc_input in) {

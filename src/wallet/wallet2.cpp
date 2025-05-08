@@ -6947,7 +6947,6 @@ void wallet2::commit_tx(pending_tx& ptx, bool flash)
     nlohmann::json send_transaction_params{
       {"tx_as_hex", oxenc::to_hex(tx_to_blob(ptx.tx))},
       {"do_not_relay", false},
-      {"do_sanity_checks", true},
       {"flash", flash},
 
     };
