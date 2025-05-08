@@ -20,8 +20,6 @@ namespace cryptonote::rpc {
   // Checks that key names are given in ascending order
   template <typename... Ignore>
   void check_ascending_names(std::string_view name1, std::string_view name2, const Ignore&...) {
-    std::cout << "name1" << name1 << std::endl;
-    std::cout << "name2" << name2 << std::endl;
     if (!(name2 > name1))
       throw std::runtime_error{"Internal error: request values must be retrieved in ascending order"};
   }
