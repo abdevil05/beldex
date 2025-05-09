@@ -8744,7 +8744,7 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
                                                                   bns::bns_tx_type txtype,
                                                                   uint32_t account_index,
                                                                   std::string *reason,
-                                                                  nlohmann::json *response)
+                                                                  nlohmann::json* record = nullptr)
 {
   bns_prepared_args result = {};
   if (priority == tools::tx_priority_flash)
@@ -8815,29 +8815,34 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
   {
     std::vector<std::string> name_hash{};
     name_hash.push_back(oxenc::to_base64(tools::view_guts(result.name_hash)));
-    auto [success, response_] = wallet.bns_names_to_owners({{"name_hash", name_hash}});
-    if (!response)
-      response = &response_;
-    else
-      *response = std::move(response_);
-    if (!success)
-    {
-      if (reason) *reason = "Failed to query previous owner for BNS entry: communication with daemon failed";
+    auto [success, response] = wallet.bns_names_to_owners({{"name_hash", name_hash}});
+    bool bad_resp = false;
+    nlohmann::json tmp;
+    if (!success || !response.is_array())
+      bad_resp = true;
+    else 
+      *record = std::move(response.front());
+
+    if (bad_resp) {
+      if (reason)
+          *reason = "Failed to query previous owner for BNS entry: communication with daemon failed";
       return result;
     }
 
-    if ((*response)["entries"].size())
-    {
-      if (!tools::hex_to_type((*response)["entries"][0]["txid"].get<std::string_view>(), result.prev_txid))
-      {
-        if (reason) *reason = "Failed to convert response txid=" + (*response)["entries"][0]["txid"].get<std::string>() + " from the daemon into a 32 byte hash, it must be a 64 char hex string";
-        return result;
-      }
+    const auto& rec = *record;
+
+    if (!rec.is_null()) {
+        auto txid = rec["txid"].get<std::string_view>();
+        if (!tools::hex_to_type(txid, result.prev_txid)) {
+            if (reason)
+                *reason ="Failed to convert response txid=" + (std::string)txid + " from the daemon into a 32 byte hash, it must be a 64 char hex string";
+            return result;
+        }
     }
 
     if ((txtype == bns::bns_tx_type::update && make_signature) || (txtype == bns::bns_tx_type::renew))
     {
-      if (response->empty())
+      if (rec.is_null())
       {
         if (reason) *reason = "Signature requested when preparing BNS TX but record to update/renew does not exist";
         return result;
@@ -8845,18 +8850,18 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
 
       cryptonote::address_parse_info curr_owner_parsed        = {};
       cryptonote::address_parse_info curr_backup_owner_parsed = {};
-      auto& rowner = (*response)["entries"].front()["owner"];
-      std::string* rbackup_owner = (*response)["entries"].front().value("backup_owner", nullptr);
-      bool curr_owner        = cryptonote::get_account_address_from_str(curr_owner_parsed, wallet.nettype(), rowner.get<std::string_view>());
-      bool curr_backup_owner = rbackup_owner && cryptonote::get_account_address_from_str(curr_backup_owner_parsed, wallet.nettype(), *rbackup_owner);
+      auto rowner = rec["owner"].get<std::string>();
+      std::string rbackup_owner = rec.value("backup_owner", "");
+      bool curr_owner        = cryptonote::get_account_address_from_str(curr_owner_parsed, wallet.nettype(), rowner);
+      bool curr_backup_owner = rbackup_owner.size() && cryptonote::get_account_address_from_str(curr_backup_owner_parsed, wallet.nettype(), rbackup_owner);
       if (!try_generate_bns_signature(wallet, rowner, owner, backup_owner, result))
       {
-        if (!rbackup_owner || !try_generate_bns_signature(wallet, *rbackup_owner, owner, backup_owner, result))
+        if (rbackup_owner.empty()  || !try_generate_bns_signature(wallet, rbackup_owner, owner, backup_owner, result))
         {
           if (reason)
           {
-            *reason = "Signature requested when preparing ONS TX, but this wallet is not the owner of the record owner=" + rowner.get<std::string>();
-            if (rbackup_owner) *reason += ", backup_owner=" + *rbackup_owner;
+            *reason = "Signature requested when preparing ONS TX, but this wallet is not the owner of the record owner=" + rowner;
+            if (rbackup_owner.empty()) *reason += ", backup_owner=" + rbackup_owner;
           }
           return result;
         }

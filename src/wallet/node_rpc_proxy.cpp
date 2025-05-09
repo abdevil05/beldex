@@ -401,10 +401,22 @@ std::pair<bool, nlohmann::json> NodeRPCProxy::bns_names_to_owners(nlohmann::json
 
   try {
     auto res = m_http_client.json_rpc("bns_names_to_owners", request);
-    resolved = res;
+    auto st_it = res.find("status");
+    auto res_it = res.find("result");
+    if (st_it == res.end() || res_it == res.end() || !st_it->is_string() ||
+    !res_it->is_array()) {
+      // log::error(logcat, "Did not find expected result or status in:\n{}", res.dump());
+      throw std::runtime_error{"Missing result or status"};
+    }
+    if (auto status = st_it->get<std::string_view>(); status != "OK")
+        throw std::runtime_error("Received error status");
+    
+    resolved = res["result"];
   } catch (...) {
+    // log::error(logcat, "Failed to get ONS info: {}", e.what());
     return result;
   }
+
   success = true;
   return result;
 }

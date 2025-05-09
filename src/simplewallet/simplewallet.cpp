@@ -6808,7 +6808,7 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
 
     std::optional<uint64_t> blocks = bns::expiry_blocks(m_wallet->nettype(), *mapping_years);
     fmt::print(fmt::format(tr("Renewal {} {} ({} blocks)\n"),(years > 1) ? "years :" : "year  :", years, *blocks)); 
-    fmt::print(fmt::format(tr("New expiry    : Block {}\n"), (response[0]["expiration_height"].get<uint64_t>() + *blocks))); 
+    fmt::print(fmt::format(tr("New expiry    : Block {}\n"), (response["expiration_height"].get<uint64_t>() + *blocks))); 
     std::cout << std::flush;
 
     if (!confirm_and_send_tx(dsts, ptx_vector, false /*flash*/))
@@ -6891,100 +6891,48 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
       return true;
     }
 
-    auto enc_bchat_hex = response[0]["encrypted_bchat_value"].get<std::string>();
-    if (!oxenc::is_hex(enc_bchat_hex) || enc_bchat_hex.size() > 2 * bns::mapping_value::BUFFER_SIZE)
-    {
-      LOG_ERROR("invalid BNS data returned from beldexd");
-      fail_msg_writer() << tr("invalid BNS data returned from beldexd");
+    auto validate_encrypted_hex = [&](const std::string& label, const std::string& hex) -> bool {
+      if (!oxenc::is_hex(hex) || hex.size() > 2 * bns::mapping_value::BUFFER_SIZE) {
+        LOG_ERROR("Invalid BNS data for " << label << " returned from beldexd");
+        fail_msg_writer() << tr("Invalid BNS data returned from beldexd");
+        return false;
+      }
       return true;
-    }
-
-    auto enc_wallet_hex = response[0]["encrypted_wallet_value"].get<std::string>();
-    if (!oxenc::is_hex(enc_wallet_hex) || enc_wallet_hex.size() > 2 * bns::mapping_value::BUFFER_SIZE)
-    {
-      LOG_ERROR("invalid BNS data returned from beldexd");
-      fail_msg_writer() << tr("invalid BNS data returned from beldexd");
-      return true;
-    }
-
-    auto enc_belnet_hex = response[0]["encrypted_belnet_value"].get<std::string>();
-    if (!oxenc::is_hex(enc_belnet_hex) || enc_belnet_hex.size() > 2 * bns::mapping_value::BUFFER_SIZE)
-    {
-      LOG_ERROR("invalid BNS data returned from beldexd");
-      fail_msg_writer() << tr("invalid BNS data returned from beldexd");
-      return true;
-    }
+    };
     
-    auto enc_eth_hex = response[0]["encrypted_eth_addr_value"].get<std::string>();
-    if (!oxenc::is_hex(enc_eth_hex) || enc_eth_hex.size() > 2 * bns::mapping_value::BUFFER_SIZE)
-    {
-      LOG_ERROR("invalid BNS data returned from beldexd");
-      fail_msg_writer() << tr("invalid BNS data returned from beldexd");
+    auto enc_bchat_hex  = response["encrypted_bchat_value"].get<std::string>();
+    auto enc_wallet_hex = response["encrypted_wallet_value"].get<std::string>();
+    auto enc_belnet_hex = response["encrypted_belnet_value"].get<std::string>();
+    auto enc_eth_hex    = response["encrypted_eth_addr_value"].get<std::string>();
+    
+    if (!validate_encrypted_hex("bchat", enc_bchat_hex) ||
+        !validate_encrypted_hex("wallet", enc_wallet_hex) ||
+        !validate_encrypted_hex("belnet", enc_belnet_hex) ||
+        !validate_encrypted_hex("eth_addr", enc_eth_hex)) {
       return true;
     }
 
-    //BCHAT
-    bns::mapping_value bchat{};
-    {
-      if (!enc_bchat_hex.empty())
-      {
-        bchat.len = enc_bchat_hex.size() / 2;
-        bchat.encrypted = true;
-        oxenc::from_hex(enc_bchat_hex.begin(), enc_bchat_hex.end(), bchat.buffer.begin());
-        if (!bchat.decrypt(tools::lowercase_ascii_string(name), bns::mapping_type::bchat))
-        {
-          fail_msg_writer() << "Failed to decrypt the mapping value=" << enc_bchat_hex;
-          return false;
-        }
+    auto decrypt_mapping = [&](const std::string& hex, bns::mapping_type type, bns::mapping_value& out) -> bool {
+      if (hex.empty()) return true;
+    
+      out.len = hex.size() / 2;
+      out.encrypted = true;
+      oxenc::from_hex(hex.begin(), hex.end(), out.buffer.begin());
+    
+      if (!out.decrypt(tools::lowercase_ascii_string(name), type)) {
+        fail_msg_writer() << "Failed to decrypt the mapping value=" << hex;
+        return false;
       }
-    }
-
-    //WALLET
-    bns::mapping_value wallet{};
-    {
-      if (!enc_wallet_hex.empty())
-      {
-        wallet.len = enc_wallet_hex.size() / 2;
-        wallet.encrypted = true;
-        oxenc::from_hex(enc_wallet_hex.begin(), enc_wallet_hex.end(), wallet.buffer.begin());
-        if (!wallet.decrypt(tools::lowercase_ascii_string(name), bns::mapping_type::wallet))
-        {
-          fail_msg_writer() << "Failed to decrypt the mapping value=" << enc_wallet_hex;
-          return false;
-        }
-      }
-    }
-
-    //BELNET
-    bns::mapping_value belnet{};
-    {
-      if (!enc_belnet_hex.empty())
-      {
-        belnet.len = enc_belnet_hex.size() / 2;
-        belnet.encrypted = true;
-        oxenc::from_hex(enc_belnet_hex.begin(), enc_belnet_hex.end(), belnet.buffer.begin());
-        if (!belnet.decrypt(tools::lowercase_ascii_string(name), bns::mapping_type::belnet))
-        {
-          fail_msg_writer() << "Failed to decrypt the mapping value=" << enc_belnet_hex;
-          return false;
-        }
-      }
-    }
-
-    //ETH_ADDRESS
-    bns::mapping_value eth_addr{};
-    {
-      if (!enc_eth_hex.empty())
-      {
-        eth_addr.len = enc_eth_hex.size() / 2;
-        eth_addr.encrypted = true;
-        oxenc::from_hex(enc_eth_hex.begin(), enc_eth_hex.end(), eth_addr.buffer.begin());
-        if (!eth_addr.decrypt(tools::lowercase_ascii_string(name), bns::mapping_type::eth_addr))
-        {
-          fail_msg_writer() << "Failed to decrypt the mapping value=" << enc_eth_hex;
-          return false;
-        }
-      }
+    
+      return true;
+    };
+    
+    bns::mapping_value bchat{}, wallet{}, belnet{}, eth_addr{};
+    if (!decrypt_mapping(enc_bchat_hex,  bns::mapping_type::bchat,    bchat)    ||
+        !decrypt_mapping(enc_wallet_hex, bns::mapping_type::wallet,   wallet)   ||
+        !decrypt_mapping(enc_belnet_hex, bns::mapping_type::belnet,   belnet)   ||
+        !decrypt_mapping(enc_eth_hex,    bns::mapping_type::eth_addr, eth_addr)) {
+      return false;
     }
 
     std::vector<cryptonote::address_parse_info> dsts;
@@ -7041,22 +6989,22 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
 
     if (owner.size())
     {
-      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Owner         : {}\n"), response[0]["owner"]));
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Owner         : {}\n"), response["owner"].get<std::string>()));
       fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Owner         : {}\n"), owner));
     }
     else
     {
-      fmt::print(fmt::format(tr("Owner             : {} (unchanged)\n"), response[0]["owner"]));
+      fmt::print(fmt::format(tr("Owner             : {} (unchanged)\n"), response["owner"].get<std::string>()));
     }
 
     if (backup_owner.size())
     {
-      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Backup Owner  : {}\n"), response[0].value("backup_owner", "")));
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Backup Owner  : {}\n"), response.value("backup_owner", "")));
       fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Backup Owner  : {}\n"), backup_owner));
     }
     else
     {
-      fmt::print(fmt::format(tr("Backup Owner      : {} (unchanged)\n"), response[0].value("backup_owner", "")));
+      fmt::print(fmt::format(tr("Backup Owner      : {} (unchanged)\n"), response.value("backup_owner", "")));
     }
 
     if (value_bchat.size() && (value_bchat == bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat)))
@@ -7236,7 +7184,7 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
   }
 
   int last_index = -1;
-  for (const auto& mapping : response["result"]) {
+  for (const auto& mapping : response) {
       // Print any skipped (i.e. not registered) results:
       for (size_t i = last_index + 1; i < mapping["entry_index"]; i++)
         fail_msg_writer() << args[i] << " not found\n";
@@ -7348,80 +7296,70 @@ bool simple_wallet::bns_by_owner(const std::vector<std::string>& args)
   }
 
   auto nettype = m_wallet->nettype();
-  for (auto const &entry : result["entries"])
+  for (const auto& entry : result["entries"])
   {
-     std::string_view name;
-     std::string value_bchat, value_wallet, value_belnet, value_eth;
-     if (auto got = cache.find(entry["name_hash"]); got != cache.end())
-     {
-       name = got->second.name;
-       //BCHAT
-       {
-         bns::mapping_value mv;
-         const auto type = bns::mapping_type::bchat;
-         if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry["encrypted_bchat_value"].get<std::string>()), &mv)
-             && mv.decrypt(name, type))
-           value_bchat = mv.to_readable_value(nettype, type);
-       }
-       //WALLET
-       {
-         bns::mapping_value mv;
-         const auto type = bns::mapping_type::wallet;
-         if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry["encrypted_wallet_value"].get<std::string>()), &mv)
-             && mv.decrypt(name, type))
-           value_wallet = mv.to_readable_value(nettype,type);
-       }
-       //BELNET
-       {
-         bns::mapping_value mv;
-         const auto type = bns::mapping_type::belnet;
-         if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry["encrypted_belnet_value"].get<std::string>()), &mv)
-             && mv.decrypt(name, type))
-           value_belnet = mv.to_readable_value(nettype, type);
-       }
-       
-       //ETH_ADDRESS
-       {
-         bns::mapping_value mv;
-         const auto type = bns::mapping_type::eth_addr;
-         if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry["encrypted_eth_addr_value"].get<std::string>()), &mv)
-             && mv.decrypt(name, type))
-           value_eth = mv.to_readable_value(nettype, type);
-       }
-     }
-     auto writer = tools::msg_writer();
-     writer
-       << fmt::format(fg(fmt::color::sky_blue) , "    Name (hashed)          : {}", entry["name_hash"]);
-     if (!name.empty()) writer
-       << fmt::format(fg(fmt::color::sky_blue) , "\n    Name                   : {}", name);
-     if (!value_bchat.empty()) writer
-       << "\n    Value bchat            : " << value_bchat;
-     if (!value_wallet.empty()) writer
-       << "\n    Value wallet           : " << value_wallet;
-     if (!value_belnet.empty()) writer
-       << "\n    Value belnet           : " << value_belnet;
-     if (!value_eth.empty()) writer
-       << "\n    Value ethAddress       : " << value_eth;  
-     writer
-       << "\n    Owner                  : " << entry["owner"];
-     if (auto got = entry.find("backup_owner"); got != entry.end()) writer
-      << "\n    Backup owner: " << entry["backup_owner"];
-     writer
-       << "\n    Last updated height    : " << entry["update_height"];
-     if (auto got = entry.find("expiration_height"); got != entry.end()) writer
-      << "\n    Expiration height: " << entry["expiration_height"];
-     writer
-       << "\n    Encrypted bchat value  : " << (entry["encrypted_bchat_value"].empty() ? "(none)" : entry["encrypted_bchat_value"]);
-     writer
-       << "\n    Encrypted wallet value : " << (entry["encrypted_wallet_value"].empty() ? "(none)" : entry["encrypted_wallet_value"]);
-     writer
-       << "\n    Encrypted belnet value : " << (entry["encrypted_belnet_value"].empty() ? "(none)" : entry["encrypted_belnet_value"]);
-     writer
-       << "\n    Encrypted Eth value    : " << (entry["encrypted_eth_addr_value"].empty() ? "(none)" : entry["encrypted_eth_addr_value"]);
-     writer
-       << "\n";
+    std::string_view name;
+    std::string value_bchat, value_wallet, value_belnet, value_eth;
+
+    if (auto got = cache.find(entry["name_hash"]); got != cache.end())
+    {
+      name = got->second.name;
+
+      auto decrypt_value = [&](std::string_view key, bns::mapping_type type, std::string& out) {
+        auto it = entry.find(key);
+        if (it != entry.end() && !it->empty())
+        {
+          bns::mapping_value mv;
+          const auto& hex_str = it->get_ref<const std::string&>();
+          if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(hex_str), &mv) &&
+              mv.decrypt(name, type))
+          {
+            out = mv.to_readable_value(nettype, type);
+          }
+        }
+      };
+
+      decrypt_value("encrypted_bchat_value", bns::mapping_type::bchat, value_bchat);
+      decrypt_value("encrypted_wallet_value", bns::mapping_type::wallet, value_wallet);
+      decrypt_value("encrypted_belnet_value", bns::mapping_type::belnet, value_belnet);
+      decrypt_value("encrypted_eth_addr_value", bns::mapping_type::eth_addr, value_eth);
+    }
+
+    auto writer = tools::msg_writer();
+    writer << fmt::format(fg(fmt::color::sky_blue), "    Name (hashed)          : {}", entry["name_hash"]);
+    if (!name.empty())  writer << fmt::format(fg(fmt::color::sky_blue), "\n    Name                   : {}", name);
+
+    writer << "\n    Owner                  : " << entry["owner"].get<std::string>();
+
+    if (entry.contains("backup_owner") && !entry["backup_owner"].is_null())
+      writer << "\n    Backup owner           : " << entry["backup_owner"].get<std::string>();
+
+    if (!value_bchat.empty())  writer << "\n    Value bchat            : " << value_bchat;
+    if (!value_wallet.empty()) writer << "\n    Value wallet           : " << value_wallet;
+    if (!value_belnet.empty()) writer << "\n    Value belnet           : " << value_belnet;
+    if (!value_eth.empty())    writer << "\n    Value ethAddress       : " << value_eth;
+
+    writer << "\n    Last updated height    : " << entry["update_height"];
+
+    if (auto it = entry.find("expiration_height"); it != entry.end())
+      writer << "\n    Expiration height      : " << *it;
+
+     // Print encrypted values only if they are present and non-empty
+    auto safe_print_enc = [&](std::string_view label, std::string_view key) {
+      auto it = entry.find(key);
+      if (it != entry.end() && !it->get_ref<const std::string&>().empty())
+        writer << "\n    " << label << " : " << it->get<std::string>();
+    };
+
+    safe_print_enc("Encrypted bchat value", "encrypted_bchat_value");
+    safe_print_enc("Encrypted wallet value", "encrypted_wallet_value");
+    safe_print_enc("Encrypted belnet value", "encrypted_belnet_value");
+    safe_print_enc("Encrypted Eth value", "encrypted_eth_addr_value");
+
+    writer << "\n";
   }
- return true;
+
+  return true;
 }
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::coin_burn(std::vector<std::string> args)

@@ -3354,7 +3354,7 @@ namespace {
           MWARNING("Failed to decrypt BNS value for " << name << (errmsg.empty() ? ""s : ": " + errmsg));
         };
 
-        for (const auto& rec : records["result"])
+        for (const auto& rec : records)
         {
           size_t index = rec["entry_index"].get<size_t>();
           if (index >= remaining)
