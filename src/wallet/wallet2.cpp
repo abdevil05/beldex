@@ -8818,17 +8818,28 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
     auto [success, response] = wallet.bns_names_to_owners({{"name_hash", name_hash}});
     bool bad_resp = false;
     nlohmann::json tmp;
-    if (!success || !response.is_array())
+    if (!success)
       bad_resp = true;
-    else 
-      *record = std::move(response.front());
+    else if(response.is_null()) {
+      if (record)
+        *record = nullptr;
+      else
+        record = &tmp;
+    }
+    else {
+      if (record)
+        *record = std::move(response.front());
+      else
+        record = &response.front();
+    }
+      
 
     if (bad_resp) {
       if (reason)
           *reason = "Failed to query previous owner for BNS entry: communication with daemon failed";
       return result;
     }
-
+    
     const auto& rec = *record;
 
     if (!rec.is_null()) {
