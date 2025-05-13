@@ -49,6 +49,11 @@
 #include <deque>
 
 #include <boost/asio.hpp>
+#if BOOST_VERSION >= 108700
+namespace boost::asio {
+  using io_service = io_context;
+}
+#endif
 
 #include "../shared_sv.h"
 

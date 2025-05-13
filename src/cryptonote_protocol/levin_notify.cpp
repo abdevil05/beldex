@@ -339,7 +339,7 @@ namespace cryptonote::levin
         for (auto id = zone->map.begin(); id != zone->map.end(); ++id)
         {
           const std::size_t i = id - zone->map.begin();
-          zone->channels[i].strand.post(update_channel{zone, i, *id});
+          zone->channels[i].strand.post(update_channel{zone, i, *id}, std::allocator<void>{});
         }
       }
 
@@ -443,7 +443,8 @@ namespace cryptonote::levin
             if (connections.empty())
               MWARNING("Lost all outbound connections to anonymity network - currently unable to send transaction(s)");
 
-            zone_->strand.post(update_channels{zone_, std::move(connections)});
+            zone_->strand.post(
+                            update_channels{zone_, std::move(connections)}, std::allocator<void>{});
           }
         }
 
@@ -471,8 +472,11 @@ namespace cryptonote::levin
 
         const auto start = std::chrono::steady_clock::now();
         zone_->strand.dispatch(
-          change_channels{zone_, net::dandelionpp::connection_map{get_out_connections(*(zone_->p2p)), count_}}
-        );
+                    change_channels{
+                            zone_,
+                            net::dandelionpp::connection_map{
+                                    get_out_connections(*(zone_->p2p)), count_}},
+                    std::allocator<void>{});
 
         detail::zone& alias = *zone_;
         alias.next_epoch.expires_at(start + min_epoch_ + random_duration(epoch_range_));
@@ -513,8 +517,7 @@ namespace cryptonote::levin
       return;
 
     zone_->strand.dispatch(
-      update_channels{zone_, get_out_connections(*(zone_->p2p))}
-    );
+        update_channels{zone_, get_out_connections(*(zone_->p2p))}, std::allocator<void>{});
   }
 
   void notify::run_epoch()
@@ -567,8 +570,7 @@ namespace cryptonote::levin
       for (std::size_t channel = 0; channel < zone_->channels.size(); ++channel)
       {
         zone_->channels[channel].strand.dispatch(
-          queue_covert_notify{zone_, message, channel}
-        );
+                    queue_covert_notify{zone_, message, channel}, std::allocator<void>{});
       }
     }
     else
@@ -579,7 +581,8 @@ namespace cryptonote::levin
         epee::levin::make_notify(NOTIFY_NEW_TRANSACTIONS::ID, epee::strspan<std::uint8_t>(payload))};
 
       // traditional monero send technique
-      zone_->strand.dispatch(flood_notify{zone_, std::move(message), source});
+      zone_->strand.dispatch(
+                flood_notify{zone_, std::move(message), source}, std::allocator<void>{});
     }
 
     return true;

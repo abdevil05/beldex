@@ -28,7 +28,7 @@
 
 #pragma once
 
-#include <boost/asio/io_service.hpp>
+#include <boost/asio/io_context.hpp>
 #include <memory>
 #include <vector>
 
@@ -37,6 +37,10 @@
 #include "epee/net/enums.h"
 #include "epee/span.h"
 #include "epee/net/net_utils_base.h"
+
+namespace boost::asio {
+using io_service = io_context;
+}
 
 namespace epee
 {
