@@ -505,7 +505,7 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nett
 
   // create general purpose async service queue
 
-  m_async_work_idle = std::unique_ptr < boost::asio::io_service::work > (new boost::asio::io_service::work(m_async_service));
+  m_async_work_idle = std::make_unique<work_type>(m_async_service.get_executor());
   m_async_thread = std::thread{[this] { m_async_service.run(); }};
 
 #if defined(PER_BLOCK_CHECKPOINT)
@@ -4899,7 +4899,8 @@ bool Blockchain::cleanup_handle_incoming_blocks(bool force_sync)
       {
         m_sync_counter = 0;
         m_bytes_to_sync = 0;
-        m_async_service.dispatch([this] { return store_blockchain(); });
+        m_async_service.get_executor().dispatch(
+                        [this] { return store_blockchain(); }, std::allocator<void>{});
       }
       else if(m_db_sync_mode == db_sync)
       {

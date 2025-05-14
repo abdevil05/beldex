@@ -31,11 +31,10 @@
 #pragma once
 #include <array>
 #include <atomic>
-#include <boost/asio/io_service.hpp>
+#include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
-#include <boost/uuid/uuid.hpp>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -60,6 +59,10 @@
 
 PUSH_WARNINGS
 DISABLE_VS_WARNINGS(4355)
+
+namespace boost::asio {
+using io_service = io_context;
+}
 
 namespace nodetool
 {
@@ -216,9 +219,7 @@ namespace nodetool
         m_allow_local_ip(false),
         m_hide_my_port(false),
         m_offline(false),
-        is_closing(false),
-        m_network_id()
-    {}
+        is_closing(false) {}
     virtual ~node_server();
 
     static void init_options(boost::program_options::options_description& desc, boost::program_options::options_description& hidden);
@@ -298,14 +299,14 @@ namespace nodetool
     virtual void on_connection_close(p2p_connection_context& context);
     virtual void callback(p2p_connection_context& context);
     //----------------- i_p2p_endpoint -------------------------------------------------------------
-    virtual bool relay_notify_to_list(int command, const epee::span<const uint8_t> data_buff, std::vector<std::pair<epee::net_utils::zone, boost::uuids::uuid>> connections);
-    virtual epee::net_utils::zone send_txs(std::vector<cryptonote::blobdata> txs, const epee::net_utils::zone origin, const boost::uuids::uuid& source, const bool pad_txs);
+    virtual bool relay_notify_to_list(int command, const epee::span<const uint8_t> data_buff, std::vector<std::pair<epee::net_utils::zone, connection_id_t>> connections);
+    virtual epee::net_utils::zone send_txs(std::vector<cryptonote::blobdata> txs, const epee::net_utils::zone origin, const connection_id_t& source, const bool pad_txs);
     virtual bool invoke_command_to_peer(int command, const epee::span<const uint8_t> req_buff, std::string& resp_buff, const epee::net_utils::connection_context_base& context);
     virtual bool invoke_notify_to_peer(int command, const epee::span<const uint8_t> req_buff, const epee::net_utils::connection_context_base& context);
     virtual bool drop_connection(const epee::net_utils::connection_context_base& context);
     virtual void request_callback(const epee::net_utils::connection_context_base& context);
     virtual void for_each_connection(std::function<bool(typename t_payload_net_handler::connection_context&, peerid_type)> f);
-    virtual bool for_connection(const boost::uuids::uuid&, std::function<bool(typename t_payload_net_handler::connection_context&, peerid_type)> f);
+    virtual bool for_connection(const connection_id_t&, std::function<bool(typename t_payload_net_handler::connection_context&, peerid_type)> f);
     virtual bool add_host_fail(const epee::net_utils::network_address &address);
     //----------------- i_connection_filter  --------------------------------------------------------
     virtual bool is_remote_host_allowed(const epee::net_utils::network_address &address, time_t *t = NULL);
@@ -329,7 +330,7 @@ namespace nodetool
     bool make_new_connection_from_anchor_peerlist(const std::vector<anchor_peerlist_entry>& anchor_peerlist);
     bool make_new_connection_from_peerlist(network_zone& zone, bool use_white_list);
     bool try_to_connect_and_handshake_with_new_peer(const epee::net_utils::network_address& na, bool just_take_peerlist = false, uint64_t last_seen_stamp = 0, PeerType peer_type = white, uint64_t first_seen_stamp = 0);
-    size_t get_random_index_with_fixed_probability(size_t max_index);
+    size_t get_random_exp_index(size_t size, double rate = 0.13862943611198906);
     bool is_peer_used(const peerlist_entry& peer);
     bool is_peer_used(const anchor_peerlist_entry& peer);
     bool is_addr_connected(const epee::net_utils::network_address& peer);
@@ -447,7 +448,7 @@ namespace nodetool
     std::mutex m_used_stripe_peers_mutex;
     std::array<std::list<epee::net_utils::network_address>, 1 << cryptonote::PRUNING_LOG_STRIPES> m_used_stripe_peers;
 
-    boost::uuids::uuid m_network_id;
+    epee::connection_id_t m_network_id{};
     cryptonote::network_type m_nettype;
   };
 
