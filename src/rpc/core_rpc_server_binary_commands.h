@@ -261,9 +261,37 @@ namespace cryptonote::rpc {
   struct GET_OUTPUT_DISTRIBUTION_BIN : PUBLIC, BINARY
   {
     static constexpr auto names() { return NAMES("get_output_distribution.bin"); }
+    struct request
+    {
+      std::vector<uint64_t> amounts; // Amounts to look for in atomic units.
+      uint64_t from_height;          // (optional, default is 0) starting height to check from.
+      uint64_t to_height;            // (optional, default is 0) ending height to check up to.
+      bool cumulative;               // (optional, default is false) States if the result should be cumulative (true) or not (false).
+      bool binary;
+      bool compress;
 
-    struct request : GET_OUTPUT_DISTRIBUTION::request {};
-    using response = GET_OUTPUT_DISTRIBUTION::response;
+      KV_MAP_SERIALIZABLE
+    };
+
+    struct distribution
+    {
+      rpc::output_distribution_data data;
+      uint64_t amount;
+      std::string compressed_data;
+      bool binary;
+      bool compress;
+
+      KV_MAP_SERIALIZABLE
+    };
+
+    struct response
+    {
+      std::string status;                      // General RPC error code. "OK" means everything looks good.
+      std::vector<distribution> distributions; //
+      // bool untrusted;                          // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
+
+      KV_MAP_SERIALIZABLE
+    };
   };
 
   BELDEX_RPC_DOC_INTROSPECT

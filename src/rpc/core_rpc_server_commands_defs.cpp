@@ -167,6 +167,89 @@ void from_json(const nlohmann::json& j, GET_OUTPUT_HISTOGRAM::entry& e)
   j.at("recent_instances").get_to(e.recent_instances);
 };
 
+namespace
+{
+  template<typename T>
+  std::string compress_integer_array(const std::vector<T> &v)
+  {
+    std::string s;
+    s.reserve(tools::VARINT_MAX_LENGTH<T>);
+    auto ins = std::back_inserter(s);
+    for (const T &t: v)
+      tools::write_varint(ins, t);
+    return s;
+  }
+
+  template<typename T>
+  std::vector<T> decompress_integer_array(const std::string &s)
+  {
+    std::vector<T> v;
+    for (auto it = s.begin(); it < s.end(); )
+    {
+      int read = tools::read_varint(it, s.end(), v.emplace_back());
+      CHECK_AND_ASSERT_THROW_MES(read > 0, "Error decompressing data");
+    }
+    return v;
+  }
+}
+
+void to_json(nlohmann::json& j, const GET_OUTPUT_DISTRIBUTION::distribution& y)
+{
+  j["amount"] = y.amount;
+  j["binary"] = y.binary;
+  j["compress"] = y.compress;
+  j["data"] = {
+    {"start_height", y.data.start_height},
+    {"base", y.data.base}
+  };
+
+  if (y.binary)
+  {
+    if (y.compress)
+    {
+      j["compressed_data"] = y.compressed_data;
+    }
+    else
+    {
+      j["data"]["distribution"] = y.data.distribution;  // Uncompressed, stored as array
+    }
+  }
+  else
+  {
+    j["data"]["distribution"] = y.data.distribution;
+  }
+}
+
+void from_json(const nlohmann::json& j, GET_OUTPUT_DISTRIBUTION::distribution& y)
+{
+  j.at("amount").get_to(y.amount);
+  j.at("binary").get_to(y.binary);
+  j.at("compress").get_to(y.compress);
+
+  const auto& data_obj = j.at("data");
+  data_obj.at("start_height").get_to(y.data.start_height);
+  data_obj.at("base").get_to(y.data.base);
+
+  if (y.binary)
+  {
+    if (y.compress)
+    {
+      j.at("compressed_data").get_to(y.compressed_data);
+
+      // Decompress here
+      y.data.distribution = decompress_integer_array<uint64_t>(y.compressed_data);
+    }
+    else
+    {
+      data_obj.at("distribution").get_to(y.data.distribution);
+    }
+  }
+  else
+  {
+    data_obj.at("distribution").get_to(y.data.distribution);
+  }
+}
+
 void to_json(nlohmann::json& j, const BNS_OWNERS_TO_NAMES::response_entry& r)
 {      
   j = nlohmann::json{
@@ -894,81 +977,81 @@ void to_json(nlohmann::json& j, const BNS_OWNERS_TO_NAMES::response_entry& r)
 // KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_DISTRIBUTION::request)
-  KV_SERIALIZE(amounts)
-  KV_SERIALIZE_OPT(from_height, (uint64_t)0)
-  KV_SERIALIZE_OPT(to_height, (uint64_t)0)
-  KV_SERIALIZE_OPT(cumulative, false)
-  KV_SERIALIZE_OPT(binary, true)
-  KV_SERIALIZE_OPT(compress, false)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_DISTRIBUTION::request)
+//   KV_SERIALIZE(amounts)
+//   KV_SERIALIZE_OPT(from_height, (uint64_t)0)
+//   KV_SERIALIZE_OPT(to_height, (uint64_t)0)
+//   KV_SERIALIZE_OPT(cumulative, false)
+//   KV_SERIALIZE_OPT(binary, true)
+//   KV_SERIALIZE_OPT(compress, false)
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-namespace
-{
-  template<typename T>
-  std::string compress_integer_array(const std::vector<T> &v)
-  {
-    std::string s;
-    s.reserve(tools::VARINT_MAX_LENGTH<T>);
-    auto ins = std::back_inserter(s);
-    for (const T &t: v)
-      tools::write_varint(ins, t);
-    return s;
-  }
+// namespace
+// {
+//   template<typename T>
+//   std::string compress_integer_array(const std::vector<T> &v)
+//   {
+//     std::string s;
+//     s.reserve(tools::VARINT_MAX_LENGTH<T>);
+//     auto ins = std::back_inserter(s);
+//     for (const T &t: v)
+//       tools::write_varint(ins, t);
+//     return s;
+//   }
 
-  template<typename T>
-  std::vector<T> decompress_integer_array(const std::string &s)
-  {
-    std::vector<T> v;
-    for (auto it = s.begin(); it < s.end(); )
-    {
-      int read = tools::read_varint(it, s.end(), v.emplace_back());
-      CHECK_AND_ASSERT_THROW_MES(read > 0, "Error decompressing data");
-    }
-    return v;
-  }
-}
+//   template<typename T>
+//   std::vector<T> decompress_integer_array(const std::string &s)
+//   {
+//     std::vector<T> v;
+//     for (auto it = s.begin(); it < s.end(); )
+//     {
+//       int read = tools::read_varint(it, s.end(), v.emplace_back());
+//       CHECK_AND_ASSERT_THROW_MES(read > 0, "Error decompressing data");
+//     }
+//     return v;
+//   }
+// }
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_DISTRIBUTION::distribution)
-  KV_SERIALIZE(amount)
-  KV_SERIALIZE_N(data.start_height, "start_height")
-  KV_SERIALIZE(binary)
-  KV_SERIALIZE(compress)
-  if (binary)
-  {
-    if (is_store)
-    {
-      if (compress)
-      {
-        const_cast<std::string&>(compressed_data) = compress_integer_array(data.distribution);
-        KV_SERIALIZE(compressed_data)
-      }
-      else
-        KV_SERIALIZE_CONTAINER_POD_AS_BLOB_N(data.distribution, "distribution")
-    }
-    else
-    {
-      if (compress)
-      {
-        KV_SERIALIZE(compressed_data)
-        const_cast<std::vector<uint64_t>&>(data.distribution) = decompress_integer_array<uint64_t>(compressed_data);
-      }
-      else
-        KV_SERIALIZE_CONTAINER_POD_AS_BLOB_N(data.distribution, "distribution")
-    }
-  }
-  else
-    KV_SERIALIZE_N(data.distribution, "distribution")
-  KV_SERIALIZE_N(data.base, "base")
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_DISTRIBUTION::distribution)
+//   KV_SERIALIZE(amount)
+//   KV_SERIALIZE_N(data.start_height, "start_height")
+//   KV_SERIALIZE(binary)
+//   KV_SERIALIZE(compress)
+//   if (binary)
+//   {
+//     if (is_store)
+//     {
+//       if (compress)
+//       {
+//         const_cast<std::string&>(compressed_data) = compress_integer_array(data.distribution);
+//         KV_SERIALIZE(compressed_data)
+//       }
+//       else
+//         KV_SERIALIZE_CONTAINER_POD_AS_BLOB_N(data.distribution, "distribution")
+//     }
+//     else
+//     {
+//       if (compress)
+//       {
+//         KV_SERIALIZE(compressed_data)
+//         const_cast<std::vector<uint64_t>&>(data.distribution) = decompress_integer_array<uint64_t>(compressed_data);
+//       }
+//       else
+//         KV_SERIALIZE_CONTAINER_POD_AS_BLOB_N(data.distribution, "distribution")
+//     }
+//   }
+//   else
+//     KV_SERIALIZE_N(data.distribution, "distribution")
+//   KV_SERIALIZE_N(data.base, "base")
+// KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_DISTRIBUTION::response)
-  KV_SERIALIZE(status)
-  KV_SERIALIZE(distributions)
+// KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_DISTRIBUTION::response)
+//   KV_SERIALIZE(status)
+//   KV_SERIALIZE(distributions)
   // KV_SERIALIZE(untrusted)
-KV_SERIALIZE_MAP_CODE_END()
+// KV_SERIALIZE_MAP_CODE_END()
 
 
 // KV_SERIALIZE_MAP_CODE_BEGIN(POP_BLOCKS::request)

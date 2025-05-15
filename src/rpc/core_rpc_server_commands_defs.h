@@ -1765,7 +1765,7 @@ namespace cryptonote::rpc {
   {
     static constexpr auto names() { return NAMES("get_output_distribution"); }
 
-    struct request
+    struct request_parameters
     {
       std::vector<uint64_t> amounts; // Amounts to look for in atomic units.
       uint64_t from_height;          // (optional, default is 0) starting height to check from.
@@ -1773,9 +1773,7 @@ namespace cryptonote::rpc {
       bool cumulative;               // (optional, default is false) States if the result should be cumulative (true) or not (false).
       bool binary;
       bool compress;
-
-      KV_MAP_SERIALIZABLE
-    };
+    }request;
 
     struct distribution
     {
@@ -1784,19 +1782,10 @@ namespace cryptonote::rpc {
       std::string compressed_data;
       bool binary;
       bool compress;
-
-      KV_MAP_SERIALIZABLE
-    };
-
-    struct response
-    {
-      std::string status;                      // General RPC error code. "OK" means everything looks good.
-      std::vector<distribution> distributions; //
-      // bool untrusted;                          // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
-
-      KV_MAP_SERIALIZABLE
     };
   };
+  void to_json(nlohmann::json& j, const GET_OUTPUT_DISTRIBUTION::distribution& y);
+  void from_json(const nlohmann::json& j, GET_OUTPUT_DISTRIBUTION::distribution& y);
 
   /// RPC: daemon/pop_blocks
   ///
@@ -2735,6 +2724,7 @@ namespace cryptonote::rpc {
     BNS_LOOKUP,
     BNS_VALUE_DECRYPT,
     OUT_PEERS,
+    GET_OUTPUT_DISTRIBUTION,
     POP_BLOCKS,
     PRUNE_BLOCKCHAIN,
     REPORT_PEER_STATUS,
@@ -2753,8 +2743,7 @@ namespace cryptonote::rpc {
     TEST_TRIGGER_UPTIME_PROOF
   >;
   using FIXME_old_rpc_types = tools::type_list<
-    RELAY_TX,
-    GET_OUTPUT_DISTRIBUTION
+    RELAY_TX
   >;
 
 } // namespace cryptonote::rpc

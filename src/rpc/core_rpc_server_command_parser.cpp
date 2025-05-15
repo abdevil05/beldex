@@ -244,6 +244,16 @@ namespace cryptonote::rpc {
         "set", in_peers.request.set);
   }
 
+  void parse_request(GET_OUTPUT_DISTRIBUTION& get_output_distribution, rpc_input in) {
+    get_values(in,
+        "amounts",       get_output_distribution.request.amounts,
+        "binary",      get_output_distribution.request.binary,
+        "compress",      get_output_distribution.request.compress,
+        "cumulative", get_output_distribution.request.cumulative,
+        "from_height",     get_output_distribution.request.from_height,
+        "to_height",     get_output_distribution.request.to_height);
+  }
+
   void parse_request(POP_BLOCKS& pop_blocks, rpc_input in){
     get_values(in,
         "nblocks", required{pop_blocks.request.nblocks});
