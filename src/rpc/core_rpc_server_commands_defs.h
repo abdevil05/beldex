@@ -1771,21 +1771,15 @@ namespace cryptonote::rpc {
       uint64_t from_height;          // (optional, default is 0) starting height to check from.
       uint64_t to_height;            // (optional, default is 0) ending height to check up to.
       bool cumulative;               // (optional, default is false) States if the result should be cumulative (true) or not (false).
-      bool binary;
-      bool compress;
     }request;
 
     struct distribution
     {
       rpc::output_distribution_data data;
       uint64_t amount;
-      std::string compressed_data;
-      bool binary;
-      bool compress;
     };
   };
   void to_json(nlohmann::json& j, const GET_OUTPUT_DISTRIBUTION::distribution& y);
-  void from_json(const nlohmann::json& j, GET_OUTPUT_DISTRIBUTION::distribution& y);
 
   /// RPC: daemon/pop_blocks
   ///

@@ -163,7 +163,7 @@ namespace cryptonote::rpc {
     void invoke(GET_BASE_FEE_ESTIMATE& get_base_fee_estimate, rpc_context context);
     void invoke(OUT_PEERS& out_peers, rpc_context context);
     void invoke(IN_PEERS& in_peers, rpc_context context);
-    void invoke(GET_OUTPUT_DISTRIBUTION& get_output_distribution, rpc_context context, bool binary = false);
+    void invoke(GET_OUTPUT_DISTRIBUTION& get_output_distribution, rpc_context);
     void invoke(POP_BLOCKS& pop_blocks, rpc_context context);
     void invoke(BELNET_PING& lokinet_ping, rpc_context context);
     void invoke(STORAGE_SERVER_PING& storage_server_ping, rpc_context context);
