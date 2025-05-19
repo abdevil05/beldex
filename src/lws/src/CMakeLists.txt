@@ -19,7 +19,6 @@ target_link_libraries(beldex-lws-common beldex-lws-db)
 add_executable(beldex-lws-daemon server_main.cpp scanner.cpp rest_server.cpp)
 
 target_link_libraries(beldex-lws-daemon PUBLIC
-    beldex-lws-db
     beldex-lws-common
     beldex-lws-rpc
     beldex-lws-util
