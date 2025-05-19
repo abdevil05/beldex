@@ -86,6 +86,16 @@ namespace cryptonote
     unsigned long dest;
     wire::read_bytes(source, dest);
   }
+
+  inline void read_bytes(wire::json_reader& source, cryptonote::hf& self)
+  {
+      // assuming `cryptonote::hf` is an enum or has a from_string/from_int method
+      uint8_t value;
+      wire::read_bytes(source, value);  // read as an integer first
+      std::cout << "value :" << std::endl;
+      self = static_cast<cryptonote::hf>(value); // cast to enum or custom type
+  }
+
   static void read_bytes(wire::json_reader& source, txout_to_script& self)
   {
     wire::object(source, WIRE_FIELD(keys), WIRE_FIELD(script));

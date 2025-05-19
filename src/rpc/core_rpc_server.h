@@ -209,6 +209,8 @@ namespace cryptonote::rpc {
     GET_TRANSACTION_POOL_HASHES_BIN::response   invoke(GET_TRANSACTION_POOL_HASHES_BIN::request&& req, rpc_context context);
     GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN::response invoke(GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN::request&& req, rpc_context context);
     GET_OUTPUT_DISTRIBUTION::response           invoke(GET_OUTPUT_DISTRIBUTION::request&& req, rpc_context context, bool binary = false);
+    GET_BLOCKS_FAST_RPC::response               invoke(GET_BLOCKS_FAST_RPC::request&& req, rpc_context context);
+    GET_HASHES_FAST_RPC::response               invoke(GET_HASHES_FAST_RPC::request&& req, rpc_context context);
 
     // FIXME: unconverted JSON RPC endpoints:
     // SET_BOOTSTRAP_DAEMON::response                      invoke(SET_BOOTSTRAP_DAEMON::request&& req, rpc_context context);

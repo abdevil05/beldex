@@ -50,15 +50,15 @@ namespace
       static constexpr const char base[] = "http://127.0.0.1:";
       switch (lws::config::network)
       {
-      case cryptonote::TESTNET:
-        return base + std::to_string(config::testnet::RPC_DEFAULT_PORT);
-      case cryptonote::DEVNET:
-        return base + std::to_string(config::devnet::RPC_DEFAULT_PORT);
-      case cryptonote::MAINNET:
+      case cryptonote::network_type::TESTNET:
+        return base + std::to_string(cryptonote::config::testnet::RPC_DEFAULT_PORT);
+      case cryptonote::network_type::DEVNET:
+        return base + std::to_string(cryptonote::config::devnet::RPC_DEFAULT_PORT);
+      case cryptonote::network_type::MAINNET:
       default:
         break;
       }
-      return base + std::to_string(config::RPC_DEFAULT_PORT);
+      return base + std::to_string(cryptonote::config::RPC_DEFAULT_PORT);
     }
 
     options()

@@ -58,7 +58,7 @@ namespace lws
 
     bool is_locked(std::uint64_t unlock_time, db::block_id last) noexcept
     {
-      if (unlock_time > CRYPTONOTE_MAX_BLOCK_NUMBER)
+      if (unlock_time > cryptonote::MAX_BLOCK_NUMBER)
         return std::chrono::seconds{unlock_time} > std::chrono::system_clock::now().time_since_epoch();
       return db::block_id(unlock_time) > last;
     }
@@ -696,20 +696,20 @@ namespace lws
           // reuse allocated vector memory
           amounts.resize(amounts.size() - ringct_count);
 
-          histogram_rpc::request histogram_req{};
-          histogram_req.amounts = std::move(amounts);
-          histogram_req.min_count = 0;
-          histogram_req.max_count = 0;
-          histogram_req.unlocked = true;
-          histogram_req.recent_cutoff = 0;
+          histogram_rpc histogram_req{};
+          histogram_req.request.amounts = std::move(amounts);
+          histogram_req.request.min_count = 0;
+          histogram_req.request.max_count = 0;
+          histogram_req.request.unlocked = true;
+          histogram_req.request.recent_cutoff = 0;
 
-          // epee::byte_slice msg = rpc::client::make_message("get_output_histogram", histogram_req);
+          // epee::byte_slice msg = rpc::client::make_message("get_output_histogram", histogram_req.request);
           // MONERO_CHECK(client->send(std::move(msg), std::chrono::seconds{10}));
           json output_histogram = {
             {"jsonrpc","2.0"},
             {"id","0"},
             {"method","get_output_histogram"},
-            {"params",{{"amounts",histogram_req.amounts},{"min_count",histogram_req.min_count},{"max_count",histogram_req.max_count},{"unlocked",histogram_req.unlocked},{"recent_cutoff",histogram_req.recent_cutoff}}}
+            {"params",{{"amounts",histogram_req.request.amounts},{"min_count",histogram_req.request.min_count},{"max_count",histogram_req.request.max_count},{"unlocked",histogram_req.request.unlocked},{"recent_cutoff",histogram_req.request.recent_cutoff}}}
           };
 
           // auto histogram_resp = client->receive<histogram_rpc::Response>(std::chrono::minutes{3}, MLWS_CURRENT_LOCATION);
@@ -731,12 +731,12 @@ namespace lws
             histograms.push_back(histogram_resp);
           }
 
-          if (histograms.size() != histogram_req.amounts.size())
+          if (histograms.size() != histogram_req.request.amounts.size())
             return {lws::error::bad_daemon_response};
 
           // histograms = std::move(histogram_resp->histogram);
 
-          amounts = std::move(histogram_req.amounts);
+          amounts = std::move(histogram_req.request.amounts);
           amounts.insert(amounts.end(), ringct_count, 0);
         }
 
@@ -821,8 +821,7 @@ namespace lws
             int i =0;
             for(auto it :ids)
             {
-              amount_index[i]["amounts"] = it.amount;
-              amount_index[i]["index"] = it.index;
+              amount_index.push_back(it.amount);
               i++;
             }
             // std::cout << "amount index in get_outs : " << amount_index << std::endl;
@@ -830,7 +829,7 @@ namespace lws
             {"jsonrpc","2.0"},
             {"id","0"},
             {"method","get_outs"},
-            {"params",{{"outputs",amount_index},{"get_txid",false}}}
+            {"params",{{"output_indices",amount_index},{"get_txid",false}}}
            };
 
             // std::cout << "ids.size() :" << ids.size() << std::endl;
@@ -965,20 +964,19 @@ namespace lws
 
       static expect<response> handle(request req, const db::storage &disk)
       {
-        using transaction_rpc = cryptonote::rpc::SEND_RAW_TX;
+        using transaction_rpc = cryptonote::rpc::SUBMIT_TRANSACTION;
 
         // expect<rpc::client> client = gclient.clone();
         // if (!client)
         //   return client.error();
 
-        transaction_rpc::request daemon_req{};
-        daemon_req.do_not_relay = false;
-        daemon_req.tx_as_hex = std::move(req.tx);
+        transaction_rpc daemon_req{};
+        daemon_req.request.tx = std::move(req.tx);
         if(req.fee == "5")
         {
-          daemon_req.flash = true;
+          daemon_req.request.flash = true;
         }else{
-          daemon_req.flash =false;
+          daemon_req.request.flash =false;
         }// Handles Flash Method from Client
 
         // epee::byte_slice message = rpc::client::make_message("send_raw_tx_hex", daemon_req);
@@ -987,7 +985,7 @@ namespace lws
             {"jsonrpc","2.0"},
             {"id","0"},
             {"method","send_raw_transaction"},
-            {"params",{{"tx_as_hex",daemon_req.tx_as_hex},{"do_not_relay",daemon_req.do_not_relay},{"flash",daemon_req.flash}}}
+            {"params",{{"tx",daemon_req.request.tx},{"flash",daemon_req.request.flash}}}
           };
           // std::cout <<"message : " << message.dump() << std::endl;
         auto resp = cpr::Post(cpr::Url{lws::daemon_add},

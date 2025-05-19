@@ -435,6 +435,8 @@ if(BUILD_STATIC_DEPS)
   # SSL::* targets already set up
 else()
   find_package(OpenSSL REQUIRED)
+  include_directories(/opt/homebrew/opt/openssl@3/include)
+  link_directories(/opt/homebrew/opt/openssl@3/lib)
 endif()
 
 add_definition_if_library_exists(c memset_s "string.h" HAVE_MEMSET_S)

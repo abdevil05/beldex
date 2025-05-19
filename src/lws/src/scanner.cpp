@@ -647,7 +647,7 @@ namespace lws
       */
 
       boost::thread::attributes attrs;
-      attrs.set_stack_size(THREAD_STACK_SIZE);
+      attrs.set_stack_size(5 * 1024 * 1024);
 
       threads.reserve(thread_count);
       std::sort(users.begin(), users.end(), by_height{});  //users are sorted by their scan height

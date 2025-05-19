@@ -250,16 +250,16 @@ namespace db
           //   genesis_nonce = ::config::stagenet::GENESIS_NONCE;
           //   break;
 
-          case cryptonote::MAINNET:
-            genesis_tx = ::config::GENESIS_TX;
-            genesis_nonce = ::config::GENESIS_NONCE;
+          case cryptonote::network_type::MAINNET:
+            genesis_tx = cryptonote::config::GENESIS_TX;
+            genesis_nonce = cryptonote::config::GENESIS_NONCE;
             break;
 
           default:
             MONERO_THROW(lws::error::bad_blockchain, "Unsupported net type");
           }
           cryptonote::block b;
-          cryptonote::generate_genesis_block(b,cryptonote::MAINNET);
+          cryptonote::generate_genesis_block(b,cryptonote::network_type::MAINNET);
           crypto::hash block_hash = cryptonote::get_block_hash(b);
           if (!data.add_checkpoint(0, epee::to_hex::string(epee::as_byte_span(block_hash))))
             MONERO_THROW(lws::error::bad_blockchain, "Genesis tx and checkpoints file mismatch");
