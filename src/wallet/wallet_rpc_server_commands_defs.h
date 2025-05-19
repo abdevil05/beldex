@@ -1354,7 +1354,7 @@ BELDEX_RPC_DOC_INTROSPECT
       bool coinbase = false;
       bool filter_by_height = false;
       uint64_t min_height = 0;
-      uint64_t max_height = CRYPTONOTE_MAX_BLOCK_NUMBER;
+      uint64_t max_height = cryptonote::MAX_BLOCK_NUMBER;
       std::set<uint32_t> subaddr_indices;
       uint32_t account_index;
       bool all_accounts;
@@ -2413,16 +2413,16 @@ This command is only required if the open wallet is one of the owners of a BNS r
       std::string name;                          // The plaintext name
       std::string owner;                         // The public key that purchased the Beldex Name Service entry.
       std::optional<std::string> backup_owner;   // The backup public key or wallet that the owner specified when purchasing the Beldex Name Service entry. Omitted if no backup owner.
-      std::string encrypted_bchat_value;         // The encrypted value of bchat that the name maps to, in hex.
-      std::string encrypted_wallet_value;        // The encrypted value of wallet that the name maps to, in hex.
-      std::string encrypted_belnet_value;        // The encrypted value of belnet that the name maps to, in hex.
-      std::string encrypted_eth_addr_value;
+      std::optional<std::string> encrypted_bchat_value;         // The encrypted value of bchat that the name maps to, in hex.
+      std::optional<std::string> encrypted_wallet_value;        // The encrypted value of wallet that the name maps to, in hex.
+      std::optional<std::string> encrypted_belnet_value;        // The encrypted value of belnet that the name maps to, in hex.
+      std::optional<std::string> encrypted_eth_addr_value;
       std::optional<std::string> value_bchat;    // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
       std::optional<std::string> value_wallet;   // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
       std::optional<std::string> value_belnet;   // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
       std::optional<std::string> value_eth_addr;
       uint64_t update_height;                    // The last height that this Beldex Name Service entry was updated on the Blockchain.
-      std::optional<uint64_t> expiration_height; // For records that expire, this will be set to the expiration block height.
+      uint64_t expiration_height;                // For records that expire, this will be set to the expiration block height.
       std::optional<bool> expired;               // Indicates whether the record has expired. Only included in the response if "include_expired" is specified in the request.
       std::string txid;                          // The txid of the mapping's most recent update or purchase.
 

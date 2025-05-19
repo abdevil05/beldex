@@ -213,9 +213,9 @@ namespace rct {
         keyV mu_P_to_hash(2*n+4); // domain, I, D, P, C, C_offset
         keyV mu_C_to_hash(2*n+4); // domain, I, D, P, C, C_offset
         sc_0(mu_P_to_hash[0].bytes);
-        memcpy(mu_P_to_hash[0].bytes, config::HASH_KEY_CLSAG_AGG_0.data(), config::HASH_KEY_CLSAG_AGG_0.size());
+        memcpy(mu_P_to_hash[0].bytes, cryptonote::hashkey::CLSAG_AGG_0.data(),cryptonote::hashkey::CLSAG_AGG_0.size());
         sc_0(mu_C_to_hash[0].bytes);
-        memcpy(mu_C_to_hash[0].bytes, config::HASH_KEY_CLSAG_AGG_1.data(), config::HASH_KEY_CLSAG_AGG_1.size());
+        memcpy(mu_C_to_hash[0].bytes, cryptonote::hashkey::CLSAG_AGG_1.data(), cryptonote::hashkey::CLSAG_AGG_1.size());
         for (size_t i = 1; i < n+1; ++i) {
             mu_P_to_hash[i] = P[i-1];
             mu_C_to_hash[i] = P[i-1];
@@ -238,7 +238,7 @@ namespace rct {
         keyV c_to_hash(2*n+5); // domain, P, C, C_offset, message, aG, aH
         key c;
         sc_0(c_to_hash[0].bytes);
-        memcpy(c_to_hash[0].bytes, config::HASH_KEY_CLSAG_ROUND.data(), config::HASH_KEY_CLSAG_ROUND.size());
+        memcpy(c_to_hash[0].bytes, cryptonote::hashkey::CLSAG_ROUND.data(), cryptonote::hashkey::CLSAG_ROUND.size());
         for (size_t i = 1; i < n+1; ++i)
         {
             c_to_hash[i] = P[i-1];
@@ -918,9 +918,9 @@ namespace rct {
             keyV mu_P_to_hash(2*n+4); // domain, I, D, P, C, C_offset
             keyV mu_C_to_hash(2*n+4); // domain, I, D, P, C, C_offset
             sc_0(mu_P_to_hash[0].bytes);
-            memcpy(mu_P_to_hash[0].bytes, config::HASH_KEY_CLSAG_AGG_0.data(), config::HASH_KEY_CLSAG_AGG_0.size());
+            memcpy(mu_P_to_hash[0].bytes, cryptonote::hashkey::CLSAG_AGG_0.data(), cryptonote::hashkey::CLSAG_AGG_0.size());
             sc_0(mu_C_to_hash[0].bytes);
-            memcpy(mu_C_to_hash[0].bytes, config::HASH_KEY_CLSAG_AGG_1.data(), config::HASH_KEY_CLSAG_AGG_1.size());
+            memcpy(mu_C_to_hash[0].bytes, cryptonote::hashkey::CLSAG_AGG_1.data(), cryptonote::hashkey::CLSAG_AGG_1.size());
             for (size_t i = 1; i < n+1; ++i) {
                 mu_P_to_hash[i] = pubs[i-1].dest;
                 mu_C_to_hash[i] = pubs[i-1].dest;
@@ -942,7 +942,7 @@ namespace rct {
             // Set up round hash
             keyV c_to_hash(2*n+5); // domain, P, C, C_offset, message, L, R
             sc_0(c_to_hash[0].bytes);
-            memcpy(c_to_hash[0].bytes, config::HASH_KEY_CLSAG_ROUND.data(), config::HASH_KEY_CLSAG_ROUND.size());
+            memcpy(c_to_hash[0].bytes, cryptonote::hashkey::CLSAG_ROUND.data(), cryptonote::hashkey::CLSAG_ROUND.size());
             for (size_t i = 1; i < n+1; ++i)
             {
                 c_to_hash[i] = pubs[i-1].dest;
@@ -1213,7 +1213,7 @@ namespace rct {
                 {
                     size_t batch_size = 1;
                     if (rct_config.range_proof_type == RangeProofType::MultiOutputBulletproof)
-                        while (batch_size * 2 + amounts_proved <= n_amounts && batch_size * 2 <= BULLETPROOF_MAX_OUTPUTS)
+                        while (batch_size * 2 + amounts_proved <= n_amounts && batch_size * 2 <= cryptonote::TX_BULLETPROOF_MAX_OUTPUTS)
                             batch_size *= 2;
                     rct::keyV C, masks;
                     std::vector<uint64_t> batch_amounts(batch_size);
