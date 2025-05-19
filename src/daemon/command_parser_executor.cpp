@@ -111,6 +111,7 @@ bool command_parser_executor::print_mn_state_changes(const std::vector<std::stri
     std::cout << "start_height should be a number" << std::endl;
     return false;
   }
+  args_list.pop_front();
 
   if (!parse_if_present(args_list, end_height, "end height"))
     return false;
