@@ -332,8 +332,9 @@ namespace lws
             {"jsonrpc","2.0"},
             {"id","0"},
             {"method","get_blocks_fast"},
-            {"params",{{"start_height",std::to_string(start_height)}}}
+            {"params",{{"start_height",start_height}}}
           };
+
           auto response = cpr::Post(cpr::Url{daemon_rpc},
                                     cpr::Body{block_fast.dump()},
                                     cpr::Header{ { "Content-Type", "application/json" }});
@@ -356,15 +357,17 @@ namespace lws
           details.erase("minor_tx_hashes");
 
           std::map<uint, crypto::hash> heightWithHash;
-          for (auto it : minorTxHashes)
+          for (const auto& it : minorTxHashes)
           {
-
-            uint height = it["height"];
-            // std::cout << "Inside loop  height: " << static_cast<uint64_t>(height) << std::endl;
-            std::string mHash = it["minorHash"];
-            crypto::hash minorHash;
-            tools::hex_to_type(mHash, minorHash);
-            heightWithHash[height] = minorHash;
+            if (it.is_array() && it.size() == 2) {
+              uint height = it[0].get<uint>();
+              std::string mHash = it[1].get<std::string>();
+              crypto::hash minorHash;
+              tools::hex_to_type(mHash, minorHash);
+              heightWithHash[height] = minorHash;
+            } else {
+              throw std::runtime_error("Invalid format in minor_tx_hashes entry");
+            }
           }
 
           // parse the string format in_to json formate
@@ -771,13 +774,15 @@ namespace lws
               {"jsonrpc","2.0"},
               {"id","0"},
               {"method","get_hashes"},
-              {"params",{{"start_height",std::to_string(a)}}}
+              {"params",{{"start_height",a}}}
             };
+
         auto response = cpr::Post(cpr::Url{daemon_rpc},
                                   cpr::Body{block_hashes.dump()},
                                       cpr::Header{ { "Content-Type", "application/json" }});
 
-            if(!response.text.size())
+        // std::cout << "response: " << response.text << std::endl;
+        if(!response.text.size())
         {
           throw std::runtime_error{"daemon connection failed"};
         }

@@ -79,12 +79,9 @@ namespace cryptonote
 {
   static void read_bytes(wire::json_reader& source,cryptonote::txversion& self)
   {
-    // //  wire::object(source, ENUM_FIELD(version));
-    // int value =0;
-    // source.enumConversion(source,value);
-    self = cryptonote::txversion::v4_tx_types;
-    unsigned long dest;
-    wire::read_bytes(source, dest);
+    uint8_t value;
+    wire::read_bytes(source, value);  // read as an integer first
+    self = static_cast<cryptonote::txversion>(value); // cast to enum or custom type
   }
 
   inline void read_bytes(wire::json_reader& source, cryptonote::hf& self)
@@ -92,7 +89,6 @@ namespace cryptonote
       // assuming `cryptonote::hf` is an enum or has a from_string/from_int method
       uint8_t value;
       wire::read_bytes(source, value);  // read as an integer first
-      std::cout << "value :" << std::endl;
       self = static_cast<cryptonote::hf>(value); // cast to enum or custom type
   }
 

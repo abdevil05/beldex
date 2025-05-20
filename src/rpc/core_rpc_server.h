@@ -186,6 +186,8 @@ namespace cryptonote::rpc {
     void invoke(GET_BLOCK_HEADERS_RANGE& get_block_headers_range, rpc_context context);
     void invoke(GET_BLOCK_HEADER_BY_HEIGHT& get_block_header_by_height, rpc_context context);
     void invoke(GET_BLOCK& get_block, rpc_context context);
+    void invoke(GET_BLOCKS_FAST_RPC& get_blocks_fast_rpc, rpc_context context);
+    void invoke(GET_HASHES_FAST_RPC& get_hashes_fast_rpc, rpc_context context);
     void invoke(GET_MASTER_NODE_REGISTRATION_CMD& get_master_node_registration_cmd, rpc_context context);
     void invoke(GET_MASTER_NODE_REGISTRATION_CMD_RAW& get_master_node_registration_cmd_raw, rpc_context context);
     void invoke(GET_QUORUM_STATE& get_quorum_state, rpc_context context);
@@ -198,7 +200,6 @@ namespace cryptonote::rpc {
     void invoke(BNS_VALUE_DECRYPT& value_decrypt, rpc_context context);
 
 
-
     // Deprecated Monero NIH binary endpoints:
     GET_ALT_BLOCKS_HASHES_BIN::response         invoke(GET_ALT_BLOCKS_HASHES_BIN::request&& req, rpc_context context);
     GET_BLOCKS_BIN::response                    invoke(GET_BLOCKS_BIN::request&& req, rpc_context context);
@@ -209,8 +210,6 @@ namespace cryptonote::rpc {
     GET_OUTPUTS_BIN::response                   invoke(GET_OUTPUTS_BIN::request&& req, rpc_context context);
     GET_TRANSACTION_POOL_HASHES_BIN::response   invoke(GET_TRANSACTION_POOL_HASHES_BIN::request&& req, rpc_context context);
     GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN::response invoke(GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN::request&& req, rpc_context context);
-    GET_BLOCKS_FAST_RPC::response               invoke(GET_BLOCKS_FAST_RPC::request&& req, rpc_context context);
-    GET_HASHES_FAST_RPC::response               invoke(GET_HASHES_FAST_RPC::request&& req, rpc_context context);
 
     // FIXME: unconverted JSON RPC endpoints:
     // SET_BOOTSTRAP_DAEMON::response                      invoke(SET_BOOTSTRAP_DAEMON::request&& req, rpc_context context);

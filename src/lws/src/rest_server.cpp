@@ -744,23 +744,23 @@ namespace lws
         if (ringct_count)
         {
           // std::cout << "print the function " << ringct_count << "\n";
-          distribution_rpc::request distribution_req{};
+          distribution_rpc distribution_req{};
           if (ringct_count == amounts.size())
-            distribution_req.amounts = std::move(amounts);
+            distribution_req.request.amounts = std::move(amounts);
 
-          distribution_req.amounts.resize(1);
-          distribution_req.from_height = 0;
-          distribution_req.to_height = 0;
-          distribution_req.cumulative = true;
+          distribution_req.request.amounts.resize(1);
+          distribution_req.request.from_height = 0;
+          distribution_req.request.to_height = 0;
+          distribution_req.request.cumulative = true;
 
           //       // epee::byte_slice msg =
-          //       //   rpc::client::make_message("get_output_distribution", distribution_req);
+          //       //   rpc::client::make_message("get_output_distribution", distribution_req.request);
           //       // MONERO_CHECK(client->send(std::move(msg), std::chrono::seconds{10}));
           json output_distribution = {
             {"jsonrpc","2.0"},
             {"id","0"},
             {"method","get_output_distribution"},
-            {"params",{{"amounts",distribution_req.amounts},{"from_height",distribution_req.from_height},{"to_height",distribution_req.to_height},{"cumulative",distribution_req.cumulative}}}
+            {"params",{{"amounts",distribution_req.request.amounts},{"from_height",distribution_req.request.from_height},{"to_height",distribution_req.request.to_height},{"cumulative",distribution_req.request.cumulative}}}
           };
 
           // auto distribution_resp =
@@ -786,7 +786,7 @@ namespace lws
 
           if (amounts.empty())
           {
-            amounts = std::move(distribution_req.amounts);
+            amounts = std::move(distribution_req.request.amounts);
             amounts.insert(amounts.end(), ringct_count - 1, 0);
           }
         }

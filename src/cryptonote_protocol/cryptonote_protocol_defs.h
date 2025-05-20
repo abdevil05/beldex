@@ -141,7 +141,6 @@ namespace cryptonote
   {
     std::string block;
     std::vector <std::string> transactions;
-    std::vector<serializable_flash_metadata> flashes;
     KV_MAP_SERIALIZABLE
   };
   /************************************************************************/
