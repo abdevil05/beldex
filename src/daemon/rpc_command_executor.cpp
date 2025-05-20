@@ -298,28 +298,23 @@ bool rpc_command_executor::print_checkpoints(std::optional<uint64_t> start_heigh
   if (!maybe_checkpoints)
     return false;
 
-  auto checkpoints = *maybe_checkpoints;
+  auto& checkpoints = maybe_checkpoints->at("checkpoints");
 
   std::string entry;
   if (print_json)
-    entry.append(checkpoints.dump());
+    entry = checkpoints.dump();
   else {
-    for (size_t i = 0; i < checkpoints.size(); i++)
-    {
-      entry.append("[");
-      entry.append(std::to_string(i));
-      entry.append("]");
-
-      entry.append(" Type: ");
-      entry.append(checkpoints[i]["type"]);
-
-      entry.append(" Height: ");
-      entry.append(checkpoints[i]["height"]);
-
-      entry.append(" Hash: ");
-      entry.append(checkpoints[i]["block_hash"]);
-      entry.append("\n");
-    }
+        for (size_t i = 0; i < checkpoints.size(); i++) {
+            auto& cp = checkpoints[i];
+            int type = cp["type"].get<int>();
+            fmt::format_to(
+                    std::back_inserter(entry),
+                    "[{}] Type: {}, Height: {}, Hash: {}\n",
+                    i,
+                    type == 0 ? "hard-coded" : "Master Node",
+                    cp["height"].get<int64_t>(),
+                    cp["block_hash"].get<std::string_view>());
+        }
     if (entry.empty())
       entry.append("No Checkpoints");
   }
@@ -334,7 +329,7 @@ bool rpc_command_executor::print_mn_state_changes(uint64_t start_height, std::op
     json params{{"start_height", start_height}};
     if (end_height)
       params["end_height"] = *end_height;
-    return invoke<GET_MN_STATE_CHANGES>(std::move(params)); }, "Failed to query service node state changes");
+    return invoke<GET_MN_STATE_CHANGES>(std::move(params)); }, "Failed to query master node state changes");
   if (!maybe_mn_state)
     return false;
 
@@ -342,12 +337,12 @@ bool rpc_command_executor::print_mn_state_changes(uint64_t start_height, std::op
 
   std::stringstream output;
 
-  output << "Master Node State Changes (blocks " << mn_state_changes["start_height"].get<std::string_view>() << "-" << mn_state_changes["end_height"].get<std::string_view>() << ")" << std::endl;
-  output << " Recommissions:\t\t" << mn_state_changes["total_recommission"].get<std::string_view>() << std::endl;
-  output << " Unlocks:\t\t" << mn_state_changes["total_unlock"].get<std::string_view>() << std::endl;
-  output << " Decommissions:\t\t" << mn_state_changes["total_decommission"].get<std::string_view>() << std::endl;
-  output << " Deregistrations:\t" << mn_state_changes["total_deregister"].get<std::string_view>() << std::endl;
-  output << " IP change penalties:\t" << mn_state_changes["total_ip_change_penalty"].get<std::string_view>() << std::endl;
+  output << "Master Node State Changes (blocks " << mn_state_changes["start_height"].get<int>() << "-" << mn_state_changes["end_height"].get<int>() << ")" << std::endl;
+  output << " Recommissions:\t\t" << mn_state_changes["total_recommission"].get<int>() << std::endl;
+  output << " Unlocks:\t\t" << mn_state_changes["total_unlock"].get<int>() << std::endl;
+  output << " Decommissions:\t\t" << mn_state_changes["total_decommission"].get<int>() << std::endl;
+  output << " Deregistrations:\t" << mn_state_changes["total_deregister"].get<int>() << std::endl;
+  output << " IP change penalties:\t" << mn_state_changes["total_ip_change_penalty"].get<int>() << std::endl;
 
   tools::success_msg_writer() << output.str();
   return true;
@@ -614,18 +609,17 @@ bool rpc_command_executor::mining_status() {
 
   bool mining_busy = false;
   auto& mres = *maybe_mining_info;
-  if (mres["status"] == STATUS_BUSY)
+  if (mres["status"].get<std::string_view>() == STATUS_BUSY)
     mining_busy = true;
-  else if (mres["status"] != STATUS_OK) {
+  else if (mres["status"].get<std::string_view>() != STATUS_OK) {
     tools::fail_msg_writer() << "Failed to retrieve mining info";
     return false;
   }
   bool active = mres["active"].get<bool>();
-  long speed = mres["speed"].get<long>();
   if (mining_busy || !active)
     tools::msg_writer() << "Not currently mining";
   else {
-    tools::msg_writer() << "Mining at " << get_mining_speed(speed) << " with " << mres["threads_count"].get<int>() << " threads";
+    tools::msg_writer() << "Mining at " << get_mining_speed(mres["speed"].get<long>()) << " with " << mres["threads_count"].get<int>() << " threads";
     tools::msg_writer() << "Mining address: " << mres["address"].get<std::string_view>();
   }
   tools::msg_writer() << "PoW algorithm: " << mres["pow_algorithm"].get<std::string_view>();
@@ -768,35 +762,26 @@ bool rpc_command_executor::print_quorum_state(std::optional<uint64_t> start_heig
     return false;
   auto& quorums = *maybe_quorums;
 
-  std::string output;
-  output.append("{\n\"quorums\": [");
-  for (auto const& quorum : quorums["quorums"])
-  {
-    output.append("\n");
-    output.append(quorum);
-    output.append(",\n");
-  }
-  output.append("]\n}");
-  tools::success_msg_writer() << output;
+  tools::success_msg_writer() << "{{\n quorums : \n}}"<<quorums["quorums"].dump(2);
   return true;
 }
 
 
 bool rpc_command_executor::set_log_level(int8_t level) {
-  if (!invoke<SET_LOG_LEVEL>(json{{"level", level}}))
+  auto maybe_level = try_running([this, &level] { return invoke<SET_LOG_LEVEL>(json{{"level", level}}); }, "Failed to set log categories");
+  if (!maybe_level)
     return false;
+  auto& level_response = *maybe_level;
 
-  tools::success_msg_writer() << "Log level is now " << std::to_string(level);
-
+  tools::success_msg_writer() << "Log level is now " << level_response["level"].get<uint64_t>();
   return true;
 }
 
 bool rpc_command_executor::set_log_categories(std::string categories) {
-  // auto maybe_categories = try_running([this, &categories] { return invoke<SET_LOG_CATEGORIES>(json{{"categories", std::move(categories)}}); }, "Failed to set log categories");
-  // if (!maybe_categories)
-  //   return false;
-  // auto& categories_response = *maybe_categories;
-  auto categories_response = make_request<SET_LOG_CATEGORIES>(json{{"categories", std::move(categories)}});
+  auto maybe_categories = try_running([this, &categories] { return invoke<SET_LOG_CATEGORIES>(json{{"categories", std::move(categories)}}); }, "Failed to set log categories");
+  if (!maybe_categories)
+    return false;
+  auto& categories_response = *maybe_categories;
   tools::success_msg_writer() << "Log categories are now " << categories_response["categories"].get<std::string_view>();
 
   return true;
@@ -873,7 +858,7 @@ bool rpc_command_executor::print_transaction(const crypto::hash& transaction_has
   auto prunable_hex = tx.value<std::string_view>("prunable", ""sv);
   bool pruned = !prunable_hash.empty() && prunable_hex.empty();
 
-  bool in_pool = tx["in_pool"].get<bool>();
+  bool in_pool = tx.value("in_pool", false);
   if (in_pool)
     tools::success_msg_writer() << "Found in pool";
   else
@@ -1161,10 +1146,9 @@ bool rpc_command_executor::out_peers(bool set, uint32_t limit)
   if (!maybe_out_peers)
     return false;
   auto& out_peers = *maybe_out_peers;
-
-  const std::string s = out_peers["out_peers"] == (uint32_t)-1 ? "unlimited" : out_peers["out_peers"].get<std::string>();
-	tools::msg_writer() << "Max number of out peers set to " << s << std::endl;
-
+  auto peers = out_peers["out_peers"].get<uint32_t>();
+  tools::msg_writer() << "Max number of out peers set to "
+    << (peers == std::numeric_limits<uint32_t>::max() ? "unlimited" : std::to_string(peers));
 	return true;
 }
 
@@ -1174,31 +1158,33 @@ bool rpc_command_executor::in_peers(bool set, uint32_t limit)
   if (!maybe_in_peers)
     return false;
   auto& in_peers = *maybe_in_peers;
-
-	const std::string s = in_peers["in_peers"] == (uint32_t)-1 ? "unlimited" : in_peers["in_peers"].get<std::string>();
-	tools::msg_writer() << "Max number of in peers set to " << s << std::endl;
+  auto peers = in_peers["in_peers"].get<uint32_t>();
+  tools::msg_writer() << "Max number of incoming peers set to "
+    << (peers == std::numeric_limits<uint32_t>::max() ? "unlimited" : std::to_string(peers));
 
 	return true;
 }
 
 bool rpc_command_executor::print_bans()
 {
-    auto maybe_bans = try_running([this] { return invoke<GET_BANS>(); }, "Failed to retrieve ban list");
-    if (!maybe_bans)
-      return false;
-    auto bans = *maybe_bans;
+  auto maybe_bans = 
+      try_running([this] { return invoke<GET_BANS>(); }, "Failed to retrieve ban list");
+  if (!maybe_bans)
+    return false;
 
-    if (!bans.empty())
-    {
-      for (auto i = bans.begin(); i != bans.end(); ++i)
-        {
-          tools::msg_writer() << (*i)["host"] << " banned for " << (*i)["seconds"] << " seconds";
-        }
-    }
-    else
-        tools::msg_writer() << "No IPs are banned";
-
+  auto bans = *maybe_bans;
+  auto ban_array = bans.at("bans");
+  assert(ban_array.is_array() && "Internal error, RPC API has changed");
+  
+  if (ban_array.empty()) {
+    tools::msg_writer()<<"No IPs are banned";
     return true;
+  }
+
+  for(const auto& ban : ban_array){
+    tools::msg_writer() << ban["host"].get<std::string_view>() << " banned for " << ban["seconds"].get<int64_t>() << " seconds";
+  }
+  return true;
 }
 
 bool rpc_command_executor::ban(const std::string &address, time_t seconds, bool clear_ban)
@@ -1231,7 +1217,7 @@ bool rpc_command_executor::banned(const std::string &address)
     auto& banned_response = *maybe_banned;
 
     if (banned_response["banned"].get<bool>())
-      tools::msg_writer() << address << " is banned for " << banned_response["seconds"].get<std::string_view>() << " seconds";
+      tools::msg_writer() << address << " is banned for " << banned_response["seconds"].get<int64_t>() << " seconds";
     else
       tools::msg_writer() << address << " is not banned";
 
@@ -1244,9 +1230,11 @@ bool rpc_command_executor::flush_txpool(std::string txid)
     if (!txid.empty())
       txids.push_back(std::move(txid));
 
-    if (!invoke<FLUSH_TRANSACTION_POOL>(json{{txids, std::move(txids)}})) {
-      tools::fail_msg_writer() << "Failed to flush tx pool";
-      return false;
+    try {
+        invoke<FLUSH_TRANSACTION_POOL>(json{{"txids", std::move(txids)}});
+    } catch (const std::exception& e) {
+        tools::fail_msg_writer() << "Failed to flush tx pool:"<< e.what();
+        return false;
     }
 
     tools::success_msg_writer() << "Pool successfully flushed";
@@ -1397,10 +1385,21 @@ bool rpc_command_executor::print_blockchain_dynamic_stats(uint64_t nblocks)
       return false;
   auto& feres = *maybe_fees;
 
-  auto height = info["height"].get<uint64_t>();
-  tools::msg_writer() << "Height: " << height << ", diff " << info["difficulty"].get<uint64_t>() << ", cum. diff " << info["cumulative_difficulty"].get<uint64_t>()
-      << ", target " << info["target"].get<int>() << " sec" << ", dyn fee " << cryptonote::print_money(feres["fee_per_byte"]) << "/" << (hfinfo["enabled"].get<bool>() ? "byte" : "kB")
-      << " + " << cryptonote::print_money(feres["fee_per_output"]) << "/out";
+  // Safe access with fallback
+  auto safe_uint64 = [](const json& j, const std::string& key) {
+    return j.contains(key) && !j[key].is_null() ? j[key].get<uint64_t>() : 0;
+  };
+  auto safe_int = [](const json& j, const std::string& key) {
+    return j.contains(key) && !j[key].is_null() ? j[key].get<int>() : 0;
+  };
+
+  uint64_t height = safe_uint64(info, "height");
+  uint64_t difficulty = safe_uint64(info, "difficulty");
+  uint64_t cumulative_difficulty = safe_uint64(info, "cumulative_difficulty");
+  int target = safe_int(info, "target");
+  tools::msg_writer() << "Height: " << height << ", diff " << difficulty << ", cum. diff " << cumulative_difficulty
+      << ", target " << target << " sec" << ", dyn fee " << cryptonote::print_money(safe_uint64(feres, "fee_per_byte")) << "/" << (hfinfo["enabled"].get<bool>() ? "byte" : "kB")
+      << " + " << cryptonote::print_money(safe_uint64(feres, "fee_per_byte")) << "/out";
 
   if (nblocks > 0)
   {
@@ -1421,14 +1420,24 @@ bool rpc_command_executor::print_blockchain_dynamic_stats(uint64_t nblocks)
     std::map<unsigned, std::pair<unsigned, unsigned>> versions; // version -> {majorcount, minorcount}
     for (const auto &bhr: block_headers["headers"])
     {
-      avgdiff += bhr["difficulty"].get<double>();
-      avgnumtxes += bhr["num_txes"].get<double>();
-      avgreward += bhr["reward"].get<double>();
-      weights.push_back(bhr["block_weight"].get<uint64_t>());
-      versions[bhr["major_version"]].first++;
-      versions[bhr["minor_version"]].second++;
-      earliest = std::min(earliest, bhr["timestamp"].get<uint64_t>());
-      latest = std::max(latest, bhr["timestamp"].get<uint64_t>());
+      auto get_or = [](const json& j, const std::string& key, uint64_t def) {
+        return j.contains(key) && !j[key].is_null() ? j[key].get<uint64_t>() : def;
+      };
+      auto get_or_unsigned = [](const json& j, const std::string& key) {
+        return j.contains(key) && !j[key].is_null() ? j[key].get<unsigned>() : 0;
+      };
+
+      avgdiff += get_or(bhr, "difficulty", 0);
+      avgnumtxes += get_or(bhr, "num_txes", 0);
+      avgreward += get_or(bhr, "reward", 0);
+      weights.push_back(get_or(bhr, "block_weight", 0));
+
+      versions[get_or_unsigned(bhr, "major_version")].first++;
+      versions[get_or_unsigned(bhr, "minor_version")].second++;
+
+      uint64_t timestamp = get_or(bhr, "timestamp", 0);
+      earliest = std::min(earliest, timestamp);
+      latest = std::max(latest, timestamp);
     }
     avgdiff /= nblocks;
     avgnumtxes /= nblocks;
@@ -1931,8 +1940,13 @@ bool rpc_command_executor::print_mn(const std::vector<std::string> &args, bool s
 
 bool rpc_command_executor::flush_cache(bool bad_txs, bool bad_blocks)
 {
-  if (!invoke<FLUSH_CACHE>(json{{"bad_txs", bad_txs}, {"bad_blocks", bad_blocks}}, "Failed to flush TX cache"))
-      return false;
+  try {
+    invoke<FLUSH_CACHE>(json{{"bad_txs", bad_txs}, {"bad_blocks", bad_blocks}});
+  } catch (const std::exception& e) {
+    tools::fail_msg_writer()<<"Failed to flush cache: "<< e.what();
+    return false;
+  } 
+  tools::success_msg_writer() << "Cache flushed successfully";
   return true;
 }
 
@@ -2548,7 +2562,7 @@ bool rpc_command_executor::check_blockchain_pruning()
       return false;
     auto& pruning = *maybe_pruning;
 
-    tools::success_msg_writer() << "Blockchain is" << (pruning["pruning_seed"] ? "" : " not") << " pruned";
+    tools::success_msg_writer() << "Blockchain " << (pruning["pruning_seed"].get<uint64_t>() > 0 ? "is" : "is not") << " pruned";
     return true;
 }
 
