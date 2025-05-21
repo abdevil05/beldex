@@ -169,12 +169,12 @@ void from_json(const nlohmann::json& j, GET_OUTPUT_HISTOGRAM::entry& e)
 
 void to_json(nlohmann::json& j, const GET_OUTPUT_DISTRIBUTION::distribution& y)
 {
-  j["amount"] = y.amount;
-  j["data"] = {
+  j = nlohmann::json{
+    {"amount", y.amount},
+    {"distribution", y.data.distribution},
     {"start_height", y.data.start_height},
     {"base", y.data.base}
   };
-  j["data"]["distribution"] = y.data.distribution;  
 }
 
 void to_json(nlohmann::json& j, const BNS_OWNERS_TO_NAMES::response_entry& r)

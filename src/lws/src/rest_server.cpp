@@ -711,7 +711,7 @@ namespace lws
             {"method","get_output_histogram"},
             {"params",{{"amounts",histogram_req.request.amounts},{"min_count",histogram_req.request.min_count},{"max_count",histogram_req.request.max_count},{"unlocked",histogram_req.request.unlocked},{"recent_cutoff",histogram_req.request.recent_cutoff}}}
           };
-
+          // std::cout << "output_histogram : " << output_histogram.dump() << std::endl;
           // auto histogram_resp = client->receive<histogram_rpc::Response>(std::chrono::minutes{3}, MLWS_CURRENT_LOCATION);
           auto histogram_data = cpr::Post(cpr::Url{lws::daemon_add},
                                           cpr::Body{output_histogram.dump()},
@@ -720,7 +720,7 @@ namespace lws
           json resp = json::parse(histogram_data.text);
           // if (!histogram_resp)
           //   return histogram_resp.error();
-          // std::cout << "resp : " << resp << std::endl;
+          // std::cout << "output_histogram resp : " << resp << std::endl;
           for(auto it :resp["result"]["histogram"])
           {
             lws::histogram histogram_resp{};
@@ -817,11 +817,11 @@ namespace lws
 
             // get_keys_rpc::request keys_req{};
             // keys_req.outputs = std::move(ids);
-            json amount_index;
+            json output_indices;
             int i =0;
             for(auto it :ids)
             {
-              amount_index.push_back(it.amount);
+              output_indices.push_back(it.index);
               i++;
             }
             // std::cout << "amount index in get_outs : " << amount_index << std::endl;
@@ -829,9 +829,9 @@ namespace lws
             {"jsonrpc","2.0"},
             {"id","0"},
             {"method","get_outs"},
-            {"params",{{"output_indices",amount_index},{"get_txid",false}}}
+            {"params",{{"output_indices",output_indices},{"get_txid",false}}}
            };
-
+            // std::cout << "out_keys : " << out_keys.dump() << std::endl;
             // std::cout << "ids.size() :" << ids.size() << std::endl;
             // expect<rpc::client> client = gclient.clone();
             // if (!client)

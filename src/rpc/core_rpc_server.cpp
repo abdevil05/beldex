@@ -2623,7 +2623,7 @@ namespace cryptonote::rpc {
         // data through JSON explodes it in terms of size (most values under 0x20 have to be encoded
         // using 6 chars such as "\u0002").
         distributions = {std::move(*data), amount};
-        get_output_distribution.response["distribution"].push_back(distributions);
+        get_output_distribution.response["distributions"].push_back(distributions);
       }
     }
     catch (const std::exception &e)
