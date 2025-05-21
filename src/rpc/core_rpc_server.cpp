@@ -2401,7 +2401,6 @@ namespace cryptonote::rpc {
     PERF_TIMER(on_get_output_distribution);
     // if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_DISTRIBUTION>(req, res))
     //   return res;
-    GET_OUTPUT_DISTRIBUTION::distribution distributions{};
     try
     {
       // 0 is placeholder for the whole chain
@@ -2422,8 +2421,8 @@ namespace cryptonote::rpc {
         // Force binary & compression off if this is a JSON request because trying to pass binary
         // data through JSON explodes it in terms of size (most values under 0x20 have to be encoded
         // using 6 chars such as "\u0002").
-        distributions = {std::move(*data), amount};
-        get_output_distribution.response["distribution"].push_back(distributions);
+        GET_OUTPUT_DISTRIBUTION::distribution distributions = {std::move(*data), amount};
+        get_output_distribution.response["distributions"].push_back(distributions);
       }
     }
     catch (const std::exception &e)

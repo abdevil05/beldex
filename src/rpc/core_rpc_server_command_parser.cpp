@@ -74,7 +74,7 @@ namespace cryptonote::rpc {
       }
     }
     if (!legacy_outputs)
-      get_values(in, "outputs", get_outputs.request.output_indices);
+      get_values(in, "output_indices", get_outputs.request.output_indices);
   }
 
   void parse_request(GET_TRANSACTION_POOL_STATS& pstats, rpc_input in) {
