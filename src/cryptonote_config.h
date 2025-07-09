@@ -55,6 +55,7 @@ inline constexpr uint64_t MINED_MONEY_UNLOCK_WINDOW            = 60;
 inline constexpr uint64_t DEFAULT_TX_SPENDABLE_AGE_V17         = 2;
 inline constexpr uint64_t TX_OUTPUT_DECOYS                     = 9;
 inline constexpr size_t   TX_BULLETPROOF_MAX_OUTPUTS           = 16;
+inline constexpr size_t   TX_BULLETPROOF_PLUS_MAX_OUTPUTS      = 16;
 inline constexpr uint64_t PUBLIC_ADDRESS_TEXTBLOB_VER          = 0;
 
 inline constexpr uint64_t FINAL_SUBSIDY_PER_MINUTE             = 500000000; // 3 * pow(10, 7)
@@ -103,6 +104,8 @@ inline constexpr size_t HASH_OF_HASHES_STEP = 256;
 // Hash domain separators
 namespace hashkey {
   inline constexpr std::string_view BULLETPROOF_EXPONENT = "bulletproof"sv;
+  inline constexpr std::string_view BULLETPROOF_PLUS_EXPONENT  = "bulletproof_plus"sv;
+  inline constexpr std::string_view BULLETPROOF_PLUS_TRANSCRIPT = "bulletproof_plus_transcript"sv;
   inline constexpr std::string_view RINGDB = "ringdsb\0"sv;
   inline constexpr std::string_view SUBADDRESS = "SubAddr\0"sv;
   inline constexpr unsigned char ENCRYPTED_PAYMENT_ID = 0x8d;
