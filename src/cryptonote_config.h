@@ -203,7 +203,7 @@ enum class hf : uint8_t
     hf17_POS, // Proof Of Stake, Batched Governance
     hf18_bns,
     hf19_enhance_bns, // provided EVM address in BNS
-    hf20_bulletproof_plusplus,
+    hf20_bulletproof_plus,
 
     _next,
     none = 0
@@ -234,6 +234,7 @@ namespace feature {
   constexpr auto POS                          = hf::hf17_POS;
   constexpr auto CLSAG                        = hf::hf15_flash;
   constexpr auto PROOF_BTENC                  = hf::hf18_bns;
+  constexpr auto BULLETPROOF_PLUS             = hf::hf20_bulletproof_plus;
 }
 
 enum network_type : uint8_t

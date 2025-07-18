@@ -273,6 +273,11 @@ namespace rct {
     size_t n_bulletproof_amounts(const std::vector<Bulletproof> &proofs);
     size_t n_bulletproof_max_amounts(const std::vector<Bulletproof> &proofs);
 
+    size_t n_bulletproof_plus_amounts(const BulletproofPlus &proof);
+    size_t n_bulletproof_plus_max_amounts(const BulletproofPlus &proof);
+    size_t n_bulletproof_plus_amounts(const std::vector<BulletproofPlus> &proofs);
+    size_t n_bulletproof_plus_max_amounts(const std::vector<BulletproofPlus> &proofs);
+
     template <typename Archive, typename T>
     auto start_array(Archive& ar, std::string_view tag, std::vector<T>& v, size_t size) {
       ar.tag(tag);
@@ -327,7 +332,7 @@ namespace rct {
             field_varint(ar, "type", type);
             if (type == RCTType::Null)
                 return;
-            if (!tools::equals_any(type, RCTType::Full, RCTType::Simple, RCTType::Bulletproof, RCTType::Bulletproof2, RCTType::CLSAG))
+            if (!tools::equals_any(type, RCTType::Full, RCTType::Simple, RCTType::Bulletproof, RCTType::Bulletproof2, RCTType::CLSAG, RCTType::BulletproofPlus))
                 throw std::invalid_argument{"invalid ringct type"};
 
             field_varint(ar, "txnFee", txnFee);
@@ -344,7 +349,7 @@ namespace rct {
 
             {
                 auto arr = start_array(ar, "ecdhInfo", ecdhInfo, outputs);
-                if (tools::equals_any(type, RCTType::Bulletproof2, RCTType::CLSAG))
+                if (tools::equals_any(type, RCTType::Bulletproof2, RCTType::CLSAG, RCTType::BulletproofPlus))
                 {
                     for (auto& e : ecdhInfo) {
                         auto obj = ar.begin_object();
@@ -368,6 +373,7 @@ namespace rct {
     struct rctSigPrunable {
         std::vector<rangeSig> rangeSigs;
         std::vector<Bulletproof> bulletproofs;
+        std::vector<BulletproofPlus> bulletproofs_plus;
         std::vector<mgSig> MGs; // simple rct has N, full has 1
         std::vector<clsag> CLSAGs;
         keyV pseudoOuts; //C - for simple rct
@@ -378,9 +384,28 @@ namespace rct {
         {
             if (type == RCTType::Null)
                 return;
-            if (!tools::equals_any(type, RCTType::Full, RCTType::Simple, RCTType::Bulletproof, RCTType::Bulletproof2, RCTType::CLSAG))
+            if (!tools::equals_any(type, RCTType::Full, RCTType::Simple, RCTType::Bulletproof, RCTType::Bulletproof2, RCTType::CLSAG, RCTType::BulletproofPlus))
                 throw std::invalid_argument{"invalid ringct type"};
-            if (rct::is_rct_bulletproof(type))
+            if (type == RCTType::BulletproofPlus)
+            {
+                uint32_t nbp = bulletproofs_plus.size();
+                VARINT_FIELD(nbp)
+                ar.tag("bpp");
+                ar.begin_array();
+                if (nbp > outputs)
+                    return false;
+                PREPARE_CUSTOM_VECTOR_SERIALIZATION(nbp, bulletproofs_plus);
+                for (size_t i = 0; i < nbp; ++i)
+                {
+                    FIELDS(bulletproofs_plus[i])
+                    if (nbp - i > 1)
+                        ar.delimit_array();
+                }
+                if (n_bulletproof_plus_max_amounts(bulletproofs_plus) < outputs)
+                    return false;
+                ar.end_array();
+            }
+            else if (type == RCTType::Bulletproof || type == RCTType::Bulletproof2 || type == RCTType::CLSAG)
             {
                 uint32_t nbp = bulletproofs.size();
                 if (tools::equals_any(type, RCTType::Bulletproof2, RCTType::CLSAG))
@@ -404,7 +429,7 @@ namespace rct {
                     value(ar, s);
             }
 
-            if (type == RCTType::CLSAG)
+            if (type == RCTType::CLSAG || type == RCTType::BulletproofPlus)
             {
                 auto arr = start_array(ar, "CLSAGs", CLSAGs, inputs);
 
@@ -462,7 +487,7 @@ namespace rct {
                     }
                 }
             }
-            if (tools::equals_any(type, RCTType::Bulletproof, RCTType::Bulletproof2, RCTType::CLSAG))
+            if (tools::equals_any(type, RCTType::Bulletproof, RCTType::Bulletproof2, RCTType::CLSAG, RCTType::BulletproofPlus))
             {
                 auto arr = start_array(ar, "pseudoOuts", pseudoOuts, inputs);
                 for (auto& o : pseudoOuts)
@@ -470,18 +495,26 @@ namespace rct {
             }
         }
 
+        BEGIN_SERIALIZE_OBJECT()
+          FIELD(rangeSigs)
+          FIELD(bulletproofs)
+          FIELD(bulletproofs_plus)
+          FIELD(MGs)
+          FIELD(CLSAGs)
+          FIELD(pseudoOuts)
+        END_SERIALIZE()
     };
     struct rctSig: public rctSigBase {
         rctSigPrunable p;
 
         keyV& get_pseudo_outs()
         {
-          return rct::is_rct_bulletproof(type) ? p.pseudoOuts : pseudoOuts;
+          return type == RCTType::Bulletproof || type == RCTType::Bulletproof2 || type == RCTType::CLSAG || type == RCTType::BulletproofPlus ? p.pseudoOuts : pseudoOuts;
         }
 
         keyV const& get_pseudo_outs() const
         {
-          return rct::is_rct_bulletproof(type) ? p.pseudoOuts : pseudoOuts;
+          return RCTType::Bulletproof || type == RCTType::Bulletproof2 || type == RCTType::CLSAG || type == RCTType::BulletproofPlus ? p.pseudoOuts : pseudoOuts;
         }
     };
 
@@ -641,3 +674,4 @@ VARIANT_TAG(rct::Bulletproof, "rct_bulletproof", 0x9c);
 VARIANT_TAG(rct::multisig_kLRki, "rct_multisig_kLR", 0x9d);
 VARIANT_TAG(rct::multisig_out, "rct_multisig_out", 0x9e);
 VARIANT_TAG(rct::clsag, "rct_clsag", 0x9f);
+VARIANT_TAG(rct::BulletproofPlus, "rct_bulletproof_plus", 0xa0);

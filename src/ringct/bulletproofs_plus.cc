@@ -65,7 +65,7 @@ namespace rct
 
     // Proof bounds
     static constexpr size_t maxN = 64; // maximum number of bits in range
-    static constexpr size_t maxM = BULLETPROOF_PLUS_MAX_OUTPUTS; // maximum number of outputs to aggregate into a single proof
+    static constexpr size_t maxM = TX_BULLETPROOF_PLUS_MAX_OUTPUTS; // maximum number of outputs to aggregate into a single proof
 
     // Cached public generators
     static ge_p3 Hi_p3[maxN*maxM], Gi_p3[maxN*maxM];
@@ -108,7 +108,7 @@ namespace rct
     // Use hashed values to produce indexed public generators
     static ge_p3 get_exponent(const rct::key &base, size_t idx)
     {
-        std::string hashed = std::string((const char*)base.bytes, sizeof(base)) + config::HASH_KEY_BULLETPROOF_PLUS_EXPONENT + tools::get_varint_data(idx);
+        std::string hashed = std::string((const char*)base.bytes, sizeof(base)) + config::BULLETPROOF_PLUS_EXPONENT + tools::get_varint_data(idx);
         rct::key generator;
         ge_p3 generator_p3;
         rct::hash_to_p3(generator_p3, rct::hash2rct(crypto::cn_fast_hash(hashed.data(), hashed.size())));
