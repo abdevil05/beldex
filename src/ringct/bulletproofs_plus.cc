@@ -40,8 +40,8 @@
 #include <stdlib.h>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/lock_guard.hpp>
-#include "misc_log_ex.h"
-#include "span.h"
+#include "epee/misc_log_ex.h"
+#include "epee/span.h"
 #include "cryptonote_config.h"
 extern "C"
 {
@@ -50,6 +50,7 @@ extern "C"
 #include "rctOps.h"
 #include "multiexp.h"
 #include "bulletproofs_plus.h"
+#include "common/varint.h"
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "bulletproof_plus"
@@ -65,7 +66,7 @@ namespace rct
 
     // Proof bounds
     static constexpr size_t maxN = 64; // maximum number of bits in range
-    static constexpr size_t maxM = TX_BULLETPROOF_PLUS_MAX_OUTPUTS; // maximum number of outputs to aggregate into a single proof
+    static constexpr size_t maxM = cryptonote::TX_BULLETPROOF_PLUS_MAX_OUTPUTS; // maximum number of outputs to aggregate into a single proof
 
     // Cached public generators
     static ge_p3 Hi_p3[maxN*maxM], Gi_p3[maxN*maxM];
@@ -108,7 +109,7 @@ namespace rct
     // Use hashed values to produce indexed public generators
     static ge_p3 get_exponent(const rct::key &base, size_t idx)
     {
-        std::string hashed = std::string((const char*)base.bytes, sizeof(base)) + config::BULLETPROOF_PLUS_EXPONENT + tools::get_varint_data(idx);
+        std::string hashed = std::string((const char*)base.bytes, sizeof(base)) + std::string(cryptonote::hashkey::BULLETPROOF_PLUS_EXPONENT) + tools::get_varint_data(idx);
         rct::key generator;
         ge_p3 generator_p3;
         rct::hash_to_p3(generator_p3, rct::hash2rct(crypto::cn_fast_hash(hashed.data(), hashed.size())));
@@ -150,7 +151,7 @@ namespace rct
         sc_sub(TWO_SIXTY_FOUR_MINUS_ONE.bytes, TWO_SIXTY_FOUR_MINUS_ONE.bytes, ONE.bytes);
 
         // Generate the initial Fiat-Shamir transcript hash, which is constant across all proofs
-        const std::string domain_separator(config::HASH_KEY_BULLETPROOF_PLUS_TRANSCRIPT);
+        const std::string domain_separator(cryptonote::config::HASH_KEY_BULLETPROOF_PLUS_TRANSCRIPT);
         ge_p3 initial_transcript_p3;
         rct::hash_to_p3(initial_transcript_p3, rct::hash2rct(crypto::cn_fast_hash(domain_separator.data(), domain_separator.size())));
         ge_p3_tobytes(initial_transcript.bytes, &initial_transcript_p3);

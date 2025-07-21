@@ -264,7 +264,7 @@ namespace rct {
         FIELD(R)
 
         if (L.empty() || L.size() != R.size())
-          return false;
+          throw std::runtime_error("Bad bulletproofplus serialization");
       END_SERIALIZE()
     };
 
@@ -390,19 +390,17 @@ namespace rct {
             {
                 uint32_t nbp = bulletproofs_plus.size();
                 VARINT_FIELD(nbp)
-                ar.tag("bpp");
-                ar.begin_array();
                 if (nbp > outputs)
-                    return false;
-                PREPARE_CUSTOM_VECTOR_SERIALIZATION(nbp, bulletproofs_plus);
+                    throw std::invalid_argument{"too many bulletproofs_plus"};
+                auto arr = start_array(ar, "bpp", bulletproofs_plus, nbp);
                 for (size_t i = 0; i < nbp; ++i)
                 {
                     FIELDS(bulletproofs_plus[i])
                     if (nbp - i > 1)
                         ar.delimit_array();
                 }
-                if (n_bulletproof_plus_max_amounts(bulletproofs_plus) < outputs)
-                    return false;
+                if (auto n_max = n_bulletproof_plus_max_amounts(bulletproofs_plus); n_max < outputs)
+                    throw std::invalid_argument{"invalid bulletproofs_plus: n_max (" + std::to_string(n_max) + ") < outputs (" + std::to_string(outputs) + ")"};
                 ar.end_array();
             }
             else if (type == RCTType::Bulletproof || type == RCTType::Bulletproof2 || type == RCTType::CLSAG)
@@ -514,7 +512,7 @@ namespace rct {
 
         keyV const& get_pseudo_outs() const
         {
-          return RCTType::Bulletproof || type == RCTType::Bulletproof2 || type == RCTType::CLSAG || type == RCTType::BulletproofPlus ? p.pseudoOuts : pseudoOuts;
+          return (type == RCTType::Bulletproof || type == RCTType::Bulletproof2 || type == RCTType::CLSAG || type == RCTType::BulletproofPlus) ? p.pseudoOuts : pseudoOuts;
         }
     };
 

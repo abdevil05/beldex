@@ -665,7 +665,7 @@ namespace rct {
                 kv.push_back(p.t);
             }
         }
-        else if (rv.type == RCTTypeBulletproofPlus)
+        else if (rv.type == RCTType::BulletproofPlus)
         {
             kv.reserve((6 * 2 + 6) * rv.p.bulletproofs_plus.size());
             for (const auto &p : rv.p.bulletproofs_plus)

@@ -201,8 +201,8 @@ namespace rct {
         return V_size;
     }
 
-    size_t n_bulletproof_amounts(const Bulletproof &proof) { return n_bulletproof_amounts_base(proof.L.size(), proof.R.size(), proof.V.size(), BULLETPROOF_MAX_OUTPUTS); }
-    size_t n_bulletproof_plus_amounts(const BulletproofPlus &proof) { return n_bulletproof_amounts_base(proof.L.size(), proof.R.size(), proof.V.size(), TX_BULLETPROOF_PLUS_MAX_OUTPUTS); }
+    size_t n_bulletproof_amounts(const Bulletproof &proof) { return n_bulletproof_amounts_base(proof.L.size(), proof.R.size(), proof.V.size(), cryptonote::TX_BULLETPROOF_MAX_OUTPUTS); }
+    size_t n_bulletproof_plus_amounts(const BulletproofPlus &proof) { return n_bulletproof_amounts_base(proof.L.size(), proof.R.size(), proof.V.size(), cryptonote::TX_BULLETPROOF_PLUS_MAX_OUTPUTS); }
 
     size_t n_bulletproof_amounts(const std::vector<Bulletproof> &proofs)
     {
@@ -242,8 +242,8 @@ namespace rct {
         return 1 << (L_size - 6);
     }
 
-    size_t n_bulletproof_max_amounts(const Bulletproof &proof) { return n_bulletproof_max_amounts_base(proof.L.size(), proof.R.size(), BULLETPROOF_MAX_OUTPUTS); }
-    size_t n_bulletproof_plus_max_amounts(const BulletproofPlus &proof) { return n_bulletproof_max_amounts_base(proof.L.size(), proof.R.size(), TX_BULLETPROOF_PLUS_MAX_OUTPUTS); }
+    size_t n_bulletproof_max_amounts(const Bulletproof &proof) { return n_bulletproof_max_amounts_base(proof.L.size(), proof.R.size(), cryptonote::TX_BULLETPROOF_MAX_OUTPUTS); }
+    size_t n_bulletproof_plus_max_amounts(const BulletproofPlus &proof) { return n_bulletproof_max_amounts_base(proof.L.size(), proof.R.size(), cryptonote::TX_BULLETPROOF_PLUS_MAX_OUTPUTS); }
 
     size_t n_bulletproof_max_amounts(const std::vector<Bulletproof> &proofs)
     {

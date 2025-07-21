@@ -98,7 +98,7 @@ static inline bool is_reduced(const rct::key &scalar)
 
 static rct::key get_exponent(const rct::key &base, size_t idx)
 {
-  std::string hashed = std::string((const char*)base.bytes, sizeof(base)) + config::BULLETPROOF_EXPONENT + tools::get_varint_data(idx);
+  std::string hashed = std::string((const char*)base.bytes, sizeof(base)) + std::string(cryptonote::hashkey::BULLETPROOF_EXPONENT) + tools::get_varint_data(idx);
   rct::key e;
   ge_p3 e_p3;
   rct::hash_to_p3(e_p3, rct::hash2rct(crypto::cn_fast_hash(hashed.data(), hashed.size())));

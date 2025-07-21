@@ -1283,7 +1283,7 @@ namespace cryptonote
           }
           rvv.push_back(&rv); // delayed batch verification
           break;
-        case rct::RCTTypeBulletproofPlus:
+        case rct::RCTType::BulletproofPlus:
           if (!is_canonical_bulletproof_plus_layout(rv.p.bulletproofs_plus))
           {
             MERROR_VER("Bulletproof_plus does not have canonical form");

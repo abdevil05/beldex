@@ -493,7 +493,7 @@ namespace cryptonote
     while ((n_padded_outputs = (1u << nrl)) < tx.vout.size())
       ++nrl;
     nrl += 6;
-    extra = 32 * ((rct::is_rct_bulletproof_plus(tx.rct_signatures.type) ? 6 : 9) + 2 * nrl) + 2;
+    uint64_t extra = 32 * ((rct::is_rct_bulletproof_plus(tx.rct_signatures.type) ? 6 : 9) + 2 * nrl) + 2;
     weight += extra;
 
     // calculate deterministic CLSAG/MLSAG data size
