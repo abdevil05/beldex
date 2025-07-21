@@ -10283,7 +10283,7 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
   ptx.construction_data.hf_version = tx_params.hf_version;
   ptx.construction_data.rct_config = {
     rct::RangeProofType::PaddedBulletproof,
-    use_fork_rules(HF_VERSION_BULLETPROOF_PLUS, 0) ? 4 : 3
+    use_fork_rules(feature::BULLETPROOF_PLUS, 0) ? 4 : 3
   };
   ptx.construction_data.dests = dsts;
   // record which subaddress indices are being used as inputs
@@ -10984,7 +10984,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   uint64_t needed_fee, available_for_fee = 0;
   uint64_t upper_transaction_weight_limit = get_upper_transaction_weight_limit();
   const bool clsag = use_fork_rules(feature::CLSAG, 0);
-  const bool bulletproof_plus = use_fork_rules(HF_VERSION_BULLETPROOF_PLUS(), 0);
+  const bool bulletproof_plus = use_fork_rules(feature::BULLETPROOF_PLUS, 0);
   const rct::RCTConfig rct_config{rct::RangeProofType::PaddedBulletproof, bulletproof_plus ? 4 : 3};
   const auto base_fee = get_base_fees();
   const uint64_t fee_percent = get_fee_percent(priority, tx_params.tx_type);
@@ -11664,7 +11664,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
   std::vector<std::vector<get_outs_entry>> outs;
 
   const bool clsag = use_fork_rules(feature::CLSAG, 0);
-  const bool bulletproof_plus = use_fork_rules(HF_VERSION_BULLETPROOF_PLUS(), 0);
+  const bool bulletproof_plus = use_fork_rules(feature::BULLETPROOF_PLUS, 0);
   const rct::RCTConfig rct_config{rct::RangeProofType::PaddedBulletproof, bulletproof_plus ? 4 : 3};
   const auto base_fee = get_base_fees();
   const uint64_t fee_percent = get_fee_percent(priority, tx_type);
@@ -11747,7 +11747,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
       pending_tx test_ptx;
 
       const size_t num_outputs = get_num_outputs(tx.dsts, m_transfers, tx.selected_transfers, beldex_tx_params);
-      needed_fee = estimate_fee(tx.selected_transfers.size(), fake_outs_count, num_outputs, extra_base.size(), clsag, base_fee, fee_percent, fixed_fee, fee_quantization_mask);
+      needed_fee = estimate_fee(tx.selected_transfers.size(), fake_outs_count, num_outputs, extra_base.size(), clsag, bulletproof_plus, base_fee, fee_percent, fixed_fee, fee_quantization_mask);
 
       // add N - 1 outputs for correct initial fee estimation
       for (size_t i = 0; i < ((outputs > 1) ? outputs - 1 : outputs); ++i)
@@ -11860,7 +11860,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const crypton
   std::vector<std::vector<get_outs_entry>> outs;
 
   const bool clsag = use_fork_rules(feature::CLSAG, 0);
-  const bool bulletproof_plus = use_fork_rules(HF_VERSION_BULLETPROOF_PLUS(), 0);
+  const bool bulletproof_plus = use_fork_rules(feature::BULLETPROOF_PLUS, 0);
   const rct::RCTConfig rct_config{rct::RangeProofType::PaddedBulletproof, bulletproof_plus ? 4 : 3};
   const auto base_fee = get_base_fees();
   const uint64_t fee_percent = get_fee_percent(priority, tx_type);
@@ -12095,7 +12095,7 @@ void wallet2::cold_sign_tx(const std::vector<pending_tx>& ptx_vector, signed_tx_
   hw::wallet_shim wallet_shim;
   setup_shim(&wallet_shim, this);
   aux_data.tx_recipients = dsts_info;
-  aux_data.bp_version = use_fork_rules(HF_VERSION_BULLETPROOF_PLUS , 0) ? 4 : 3;
+  aux_data.bp_version = use_fork_rules(feature::BULLETPROOF_PLUS , 0) ? 4 : 3;
   auto hf_version = get_hard_fork_version();
   CHECK_AND_ASSERT_THROW_MES(hf_version, "Failed to query hard fork");
   aux_data.hard_fork = static_cast<uint8_t>(*hf_version);

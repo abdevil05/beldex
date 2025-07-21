@@ -3163,7 +3163,7 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
       const bool bulletproof_plus = rct::is_rct_bulletproof_plus(tx.rct_signatures.type);
       if (bulletproof_plus || !tx.rct_signatures.p.bulletproofs_plus.empty())
       {
-        MERROR_VER("Bulletproofs plus are not allowed before v" << std::to_string(feature::BULLETPROOF_PLUS));
+        MERROR_VER("Bulletproofs plus are not allowed before v" << std::to_string(static_cast<int>(feature::BULLETPROOF_PLUS)));
         tvc.m_invalid_output = true;
         return false;
       }
@@ -3176,7 +3176,7 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
       const bool bulletproof = rct::is_rct_bulletproof(tx.rct_signatures.type);
       if (bulletproof)
       {
-        MERROR_VER("Bulletproof range proofs are not allowed after v" + std::to_string(feature::BULLETPROOF_PLUS));
+        MERROR_VER("Bulletproof range proofs are not allowed after v" << std::to_string(static_cast<int>(feature::BULLETPROOF_PLUS)));
         tvc.m_invalid_output = true;
         return false;
       }

@@ -396,12 +396,10 @@ namespace rct {
                 for (size_t i = 0; i < nbp; ++i)
                 {
                     FIELDS(bulletproofs_plus[i])
-                    if (nbp - i > 1)
-                        ar.delimit_array();
                 }
                 if (auto n_max = n_bulletproof_plus_max_amounts(bulletproofs_plus); n_max < outputs)
                     throw std::invalid_argument{"invalid bulletproofs_plus: n_max (" + std::to_string(n_max) + ") < outputs (" + std::to_string(outputs) + ")"};
-                ar.end_array();
+                
             }
             else if (type == RCTType::Bulletproof || type == RCTType::Bulletproof2 || type == RCTType::CLSAG)
             {

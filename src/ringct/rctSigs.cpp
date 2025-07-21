@@ -1308,7 +1308,7 @@ namespace rct {
                 {
                     size_t batch_size = 1;
                     if (rct_config.range_proof_type == RangeProofType::MultiOutputBulletproof)
-                        while (batch_size * 2 + amounts_proved <= n_amounts && batch_size * 2 <= (plus ? cryptonote:TX_BULLETPROOF_PLUS_MAX_OUTPUTS : cryptonote::TX_BULLETPROOF_MAX_OUTPUTS))                   
+                        while (batch_size * 2 + amounts_proved <= n_amounts && batch_size * 2 <= (plus ? cryptonote::TX_BULLETPROOF_PLUS_MAX_OUTPUTS : cryptonote::TX_BULLETPROOF_MAX_OUTPUTS))                   
                             batch_size *= 2;
                     rct::keyV C, masks;
                     std::vector<uint64_t> batch_amounts(batch_size);
@@ -1585,15 +1585,11 @@ namespace rct {
         if (!bpp_proofs.empty() && !verBulletproofPlus(bpp_proofs))
         {
           LOG_PRINT_L1("Aggregate range proof verified failed");
-          if (!waiter.wait())
-            return false;
           return false;
         }
         if (!bp_proofs.empty() && !verBulletproof(bp_proofs))
         {
           LOG_PRINT_L1("Aggregate range proof verified failed");
-          if (!waiter.wait())
-            return false;
           return false;
         }
 

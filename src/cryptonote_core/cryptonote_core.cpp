@@ -1310,7 +1310,7 @@ namespace cryptonote
       {
         if (!tx_info[n].result || tx_info[n].already_have)
           continue;
-        if (tx_info[n].tx->rct_signatures.type != rct::RCTType::Bulletproof && tx_info[n].tx->rct_signatures.type != rct::RCTType::Bulletproof2 && tx_info[n].tx->rct_signatures.type != rct::RCTType::CLSAG && tx_info[n].tx->rct_signatures.type != rct::RCTType::BulletproofPlus)
+        if (tx_info[n].tx.rct_signatures.type != rct::RCTType::Bulletproof && tx_info[n].tx.rct_signatures.type != rct::RCTType::Bulletproof2 && tx_info[n].tx.rct_signatures.type != rct::RCTType::CLSAG && tx_info[n].tx.rct_signatures.type != rct::RCTType::BulletproofPlus)
           continue;
         if (assumed_bad || !rct::verRctSemanticsSimple(tx_info[n].tx.rct_signatures))
         {
