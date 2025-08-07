@@ -771,9 +771,8 @@ bool rpc_command_executor::set_log_level(int8_t level) {
   auto maybe_level = try_running([this, &level] { return invoke<SET_LOG_LEVEL>(json{{"level", level}}); }, "Failed to set log categories");
   if (!maybe_level)
     return false;
-  auto& level_response = *maybe_level;
 
-  tools::success_msg_writer() << "Log level is now " << level_response["level"].get<uint64_t>();
+  tools::success_msg_writer() << "Log level is now " << std::to_string(level);
   return true;
 }
 
