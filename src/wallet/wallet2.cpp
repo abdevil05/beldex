@@ -12698,6 +12698,8 @@ void wallet2::check_tx_key_helper(const cryptonote::transaction &tx, const crypt
         rct::ecdhDecode(ecdh_info, rct::sk2rct(scalar1), tools::equals_any(tx.rct_signatures.type, rct::RCTType::Bulletproof2, rct::RCTType::CLSAG, rct::RCTType::BulletproofPlus));
         rct::key C = tx.rct_signatures.outPk[n].mask;
         rct::key Ctmp;
+        if (rct::is_rct_bulletproof_plus(tx.rct_signatures.type))
+          C = rct::scalarmult8(C);
         THROW_WALLET_EXCEPTION_IF(sc_check(ecdh_info.mask.bytes) != 0, error::wallet_internal_error, "Bad ECDH input mask");
         THROW_WALLET_EXCEPTION_IF(sc_check(ecdh_info.amount.bytes) != 0, error::wallet_internal_error, "Bad ECDH input amount");
         rct::addKeys2(Ctmp, ecdh_info.mask, ecdh_info.amount, rct::H);
