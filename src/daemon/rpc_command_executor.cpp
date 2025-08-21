@@ -652,7 +652,7 @@ bool rpc_command_executor::print_connections() {
       "Remote Host", "Type", "Peer id", "Recv/Sent (inactive,sec)", "State", "Livetime(sec)",
       "Down (kB/sec)", "Down(now)", "Up (kB/s)", "Up(now)");
 
-  for (auto& info : conns)
+  for (auto& info : conns["connections"])
   {
     std::string address = info["incoming"].get<bool>() ? "INC " : "OUT ";
     address += info["ip"].get<std::string_view>();
@@ -1398,7 +1398,7 @@ bool rpc_command_executor::print_blockchain_dynamic_stats(uint64_t nblocks)
   int target = safe_int(info, "target");
   tools::msg_writer() << "Height: " << height << ", diff " << difficulty << ", cum. diff " << cumulative_difficulty
       << ", target " << target << " sec" << ", dyn fee " << cryptonote::print_money(safe_uint64(feres, "fee_per_byte")) << "/" << (hfinfo["enabled"].get<bool>() ? "byte" : "kB")
-      << " + " << cryptonote::print_money(safe_uint64(feres, "fee_per_byte")) << "/out";
+      << " + " << cryptonote::print_money(safe_uint64(feres, "fee_per_output")) << "/out";
 
   if (nblocks > 0)
   {
