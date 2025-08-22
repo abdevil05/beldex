@@ -2598,7 +2598,8 @@ bool rpc_command_executor::version()
 
 bool rpc_command_executor::test_trigger_uptime_proof()
 {
-  return invoke<TEST_TRIGGER_UPTIME_PROOF>(json{{}}, "Failed to trigger uptime proof");
+  tools::success_msg_writer() << invoke<TEST_TRIGGER_UPTIME_PROOF>(json{{}}, "Failed to trigger uptime proof");
+    return true;
 }
 
 }// namespace daemonize
