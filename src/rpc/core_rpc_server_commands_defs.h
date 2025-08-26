@@ -1615,7 +1615,7 @@ namespace cryptonote::rpc {
   /// ```
   ///
   /// Example-JSON-Fetch
-  struct GET_BASE_FEE_ESTIMATE : PUBLIC
+  struct GET_FEE_ESTIMATE : PUBLIC
   {
     static constexpr auto names() { return NAMES("get_fee_estimate"); }
 
@@ -2674,7 +2674,7 @@ namespace cryptonote::rpc {
     FLUSH_TRANSACTION_POOL,
     GET_ALTERNATE_CHAINS,
     GET_BANS,
-    GET_BASE_FEE_ESTIMATE,
+    GET_FEE_ESTIMATE,
     GET_BLOCK,
     GET_BLOCK_COUNT,
     GET_BLOCK_HASH,

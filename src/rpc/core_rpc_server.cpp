@@ -1202,7 +1202,7 @@ namespace cryptonote::rpc {
     {
       tx.response["status"] = STATUS_FAILED;
       auto reason = print_tx_verification_context(tvc);
-      LOG_PRINT_L0("[on_send_raw_tx]: " << (tvc.m_verifivation_failed ? "tx verification failed" : "Failed to process tx") << reason);
+      LOG_PRINT_L0("[on_submit_transaction]: " << (tvc.m_verifivation_failed ? "tx verification failed" : "Failed to process tx") << reason);
       tx.response["reason"] = std::move(reason);
       tx.response["reason_codes"] = tx_verification_failure_codes(tvc);
       return;
@@ -2103,22 +2103,22 @@ namespace cryptonote::rpc {
     }
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  void core_rpc_server::invoke(GET_BASE_FEE_ESTIMATE& get_base_fee_estimate, rpc_context context)
+  void core_rpc_server::invoke(GET_FEE_ESTIMATE& get_fee_estimate, rpc_context context)
   {
-    PERF_TIMER(on_get_base_fee_estimate);
+    PERF_TIMER(on_get_fee_estimate);
     //TODO handle bootstrap daemon in new RPC format
-    //if (use_bootstrap_daemon_if_necessary<GET_BASE_FEE_ESTIMATE>(req, res))
+    //if (use_bootstrap_daemon_if_necessary<GET_FEE_ESTIMATE>(req, res))
       //return res;
 
-    auto fees = m_core.get_blockchain_storage().get_dynamic_base_fee_estimate(get_base_fee_estimate.request.grace_blocks);
-    get_base_fee_estimate.response["fee_per_byte"] = fees.first;
-    get_base_fee_estimate.response["fee_per_output"] = fees.second;
-    get_base_fee_estimate.response["flash_fee_fixed"] = beldex::FLASH_BURN_FIXED;
+    auto fees = m_core.get_blockchain_storage().get_dynamic_base_fee_estimate(get_fee_estimate.request.grace_blocks);
+    get_fee_estimate.response["fee_per_byte"] = fees.first;
+    get_fee_estimate.response["fee_per_output"] = fees.second;
+    get_fee_estimate.response["flash_fee_fixed"] = beldex::FLASH_BURN_FIXED;
     constexpr auto flash_percent =  beldex::FLASH_MINER_TX_FEE_PERCENT +  beldex::FLASH_BURN_TX_FEE_PERCENT_OLD;
-    get_base_fee_estimate.response["flash_fee_per_byte"] = fees.first * flash_percent / 100;
-    get_base_fee_estimate.response["flash_fee_per_output"] = fees.second * flash_percent / 100;
-    get_base_fee_estimate.response["quantization_mask"] = Blockchain::get_fee_quantization_mask();
-    get_base_fee_estimate.response["status"] = STATUS_OK;
+    get_fee_estimate.response["flash_fee_per_byte"] = fees.first * flash_percent / 100;
+    get_fee_estimate.response["flash_fee_per_output"] = fees.second * flash_percent / 100;
+    get_fee_estimate.response["quantization_mask"] = Blockchain::get_fee_quantization_mask();
+    get_fee_estimate.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_ALTERNATE_CHAINS& get_alternate_chains, rpc_context context)

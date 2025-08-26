@@ -80,9 +80,8 @@
 #include "ringdb.h"
 #include "device/device_cold.hpp"
 #ifdef DEVICE_TREZOR_READY
-#  include "device_trezor/device_trezor.hpp"
-#endif
 #include "device_trezor/device_trezor.hpp"
+#endif
 
 #include "cryptonote_core/master_node_list.h"
 #include "cryptonote_core/master_node_rules.h"
@@ -3268,7 +3267,7 @@ std::vector<wallet2::get_pool_state_tx> wallet2::get_pool_state(bool refreshed)
       nlohmann::json get_transactions_params{
         {"tx_hashes", hex_hashes}
       };
-      auto res = m_http_client.json_rpc("get_transactions", get_transactions_params);
+      res = m_http_client.json_rpc("get_transactions", get_transactions_params);
     } catch (const std::exception& e) {
       LOG_PRINT_L0("Failed to retrieve transactions: " << e.what());
       return process_txs;
