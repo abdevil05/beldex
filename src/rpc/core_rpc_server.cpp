@@ -1727,6 +1727,15 @@ namespace cryptonote::rpc {
     uint64_t end_height = get_block_headers_range.request.end_height;
     if (start_height >= bc_height || end_height >= bc_height || start_height > end_height)
       throw rpc_error{ERROR_TOO_BIG_HEIGHT, "Invalid start/end heights."};
+    
+    if (end_height - start_height >= GET_BLOCK_HEADERS_RANGE::MAX_COUNT)
+        throw rpc_error{
+            ERROR_TOO_BIG_HEIGHT,
+            "Invalid start/end heights: requested range of " + 
+            std::to_string(end_height - start_height + 1) + 
+            " blocks exceeds limit " + 
+            std::to_string(GET_BLOCK_HEADERS_RANGE::MAX_COUNT)};
+            
     std::vector<block_header_response> headers;
     for (uint64_t h = start_height; h <= end_height; ++h)
     {
