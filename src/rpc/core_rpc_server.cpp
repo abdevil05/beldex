@@ -787,19 +787,20 @@ namespace cryptonote::rpc {
           bns["update"] = true;
         else if (x.is_renewing())
           bns["renew"] = true;
-        auto bns_bin = json_binary_proxy{bns, format};
-        bns_bin["name_hash"] = x.name_hash;
+        // ✅ Always store name_hash as hex string (RPC-compatible)
+        bns["name_hash"] = oxenc::to_hex(std::string_view{x.name_hash.data, sizeof(x.name_hash.data)});
         if (!x.encrypted_bchat_value.empty())
-          bns_bin["value_bchat"] = x.encrypted_bchat_value;
+          bns["value_bchat"] = oxenc::to_hex(x.encrypted_bchat_value);
         if (!x.encrypted_wallet_value.empty())
-          bns_bin["value_wallet"] = x.encrypted_wallet_value;
+          bns["value_wallet"] = oxenc::to_hex(x.encrypted_wallet_value);
         if (!x.encrypted_belnet_value.empty())
-          bns_bin["value_belnet"] = x.encrypted_belnet_value;
+          bns["value_belnet"] = oxenc::to_hex(x.encrypted_belnet_value);
         if (!x.encrypted_eth_addr_value.empty())
-          bns_bin["value_eth_addr"] = x.encrypted_eth_addr_value;
+          bns["value_eth_addr"] = oxenc::to_hex(x.encrypted_eth_addr_value);
         _load_owner(bns, "owner", x.owner);
         _load_owner(bns, "backup_owner", x.backup_owner);
-      }
+        set("bns", std::move(bns));
+    }
 
       // Ignore these fields:
       void operator()(const tx_extra_padding&) {}
@@ -1034,17 +1035,20 @@ namespace cryptonote::rpc {
       if (get.request.tx_extra_raw)
         e_bin["tx_extra_raw"] = std::string_view{reinterpret_cast<const char*>(tx.extra.data()), tx.extra.size()};
 
-      // Clear it because we don't want/care about it in the RPC output (we already got it more
-      // usefully from the above).
-      tx.extra.clear();
-
       {
+        // Serialize *without* extra because we don't want/care about it in the RPC output (we
+        // already have all the extra info in more useful form from the other bits of this
+        // code).
+        std::vector<uint8_t> saved_extra;
+        std::swap(tx.extra, saved_extra);
+
         serialization::json_archiver ja{
           get.is_bt() ? json_binary_proxy::fmt::bt : json_binary_proxy::fmt::hex};
 
         serialize(ja, tx);
         auto dumped = std::move(ja).json();
         e.update(dumped);
+        std::swap(saved_extra, tx.extra);
       }
 
       if (extra)
