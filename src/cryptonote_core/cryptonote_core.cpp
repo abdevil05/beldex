@@ -1212,7 +1212,7 @@ namespace cryptonote
     if (proofs.size() != 1)
       return false;
     const size_t sz = proofs[0].V.size();
-    if (sz == 0 || sz > TX_BULLETPROOF_PLUS_MAX_OUTPUTS)
+    if (sz == 0 || sz > cryptonote::TX_BULLETPROOF_PLUS_MAX_OUTPUTS)
       return false;
     return true;
   }

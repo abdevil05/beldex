@@ -3158,12 +3158,12 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
   }
 
   // allow bulletproofs plus
-  if (hf_version < feature::BULLETPROOF_PLUS) {
+  if (hf_version < cryptonote::feature::BULLETPROOF_PLUS) {
     if (tx.version >= txversion::v4_tx_types && tx.is_transfer()) {
       const bool bulletproof_plus = rct::is_rct_bulletproof_plus(tx.rct_signatures.type);
       if (bulletproof_plus || !tx.rct_signatures.p.bulletproofs_plus.empty())
       {
-        MERROR_VER("Bulletproofs plus are not allowed before v" << std::to_string(static_cast<int>(feature::BULLETPROOF_PLUS)));
+        MERROR_VER("Bulletproofs plus are not allowed before v" << std::to_string(static_cast<int>(cryptonote::feature::BULLETPROOF_PLUS)));
         tvc.m_invalid_output = true;
         return false;
       }
@@ -3171,12 +3171,12 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
   }
 
   // forbid bulletproofs
-  if (hf_version >= feature::BULLETPROOF_PLUS) {
+  if (hf_version >= cryptonote::feature::BULLETPROOF_PLUS) {
     if (tx.version >= txversion::v4_tx_types && tx.is_transfer()) {
       const bool bulletproof = rct::is_rct_bulletproof(tx.rct_signatures.type);
       if (bulletproof)
       {
-        MERROR_VER("Bulletproof range proofs are not allowed after v" << std::to_string(static_cast<int>(feature::BULLETPROOF_PLUS)));
+        MERROR_VER("Bulletproof range proofs are not allowed after v" << std::to_string(static_cast<int>(cryptonote::feature::BULLETPROOF_PLUS)));
         tvc.m_invalid_output = true;
         return false;
       }

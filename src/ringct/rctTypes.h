@@ -46,6 +46,7 @@ extern "C" {
 #include "common/hex.h"
 #include "serialization/variant.h"
 #include "common/util.h"
+#include <serialization/serialization.h>
 
 
 //Define this flag when debugging to get additional info on the console
@@ -242,8 +243,7 @@ namespace rct {
       rct::key r1, s1, d1;
       rct::keyV L, R;
 
-      BulletproofPlus():
-        A({}), A1({}), B({}), r1({}), s1({}), d1({}) {}
+      BulletproofPlus() {}
       BulletproofPlus(const rct::key &V, const rct::key &A, const rct::key &A1, const rct::key &B, const rct::key &r1, const rct::key &s1, const rct::key &d1, const rct::keyV &L, const rct::keyV &R):
         V({V}), A(A), A1(A1), B(B), r1(r1), s1(s1), d1(d1), L(L), R(R) {}
       BulletproofPlus(const rct::keyV &V, const rct::key &A, const rct::key &A1, const rct::key &B, const rct::key &r1, const rct::key &s1, const rct::key &d1, const rct::keyV &L, const rct::keyV &R):
@@ -386,22 +386,20 @@ namespace rct {
                 return;
             if (!tools::equals_any(type, RCTType::Full, RCTType::Simple, RCTType::Bulletproof, RCTType::Bulletproof2, RCTType::CLSAG, RCTType::BulletproofPlus))
                 throw std::invalid_argument{"invalid ringct type"};
-            if (type == RCTType::BulletproofPlus)
+            if (rct::is_rct_bulletproof_plus(type))
             {
                 uint32_t nbp = bulletproofs_plus.size();
-                VARINT_FIELD(nbp)
+                field_varint(ar, "nbp", nbp);
                 if (nbp > outputs)
                     throw std::invalid_argument{"too many bulletproofs_plus"};
                 auto arr = start_array(ar, "bpp", bulletproofs_plus, nbp);
-                for (size_t i = 0; i < nbp; ++i)
-                {
-                    FIELDS(bulletproofs_plus[i])
-                }
+                for (auto& b : bulletproofs_plus)
+                    value(ar, b);
                 if (auto n_max = n_bulletproof_plus_max_amounts(bulletproofs_plus); n_max < outputs)
                     throw std::invalid_argument{"invalid bulletproofs_plus: n_max (" + std::to_string(n_max) + ") < outputs (" + std::to_string(outputs) + ")"};
                 
             }
-            else if (type == RCTType::Bulletproof || type == RCTType::Bulletproof2 || type == RCTType::CLSAG)
+            else if (rct::is_rct_bulletproof(type))
             {
                 uint32_t nbp = bulletproofs.size();
                 if (tools::equals_any(type, RCTType::Bulletproof2, RCTType::CLSAG))
@@ -505,7 +503,7 @@ namespace rct {
 
         keyV& get_pseudo_outs()
         {
-          return type == RCTType::Bulletproof || type == RCTType::Bulletproof2 || type == RCTType::CLSAG || type == RCTType::BulletproofPlus ? p.pseudoOuts : pseudoOuts;
+          return (type == RCTType::Bulletproof || type == RCTType::Bulletproof2 || type == RCTType::CLSAG || type == RCTType::BulletproofPlus) ? p.pseudoOuts : pseudoOuts;
         }
 
         keyV const& get_pseudo_outs() const

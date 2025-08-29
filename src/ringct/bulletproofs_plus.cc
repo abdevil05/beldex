@@ -109,7 +109,8 @@ namespace rct
     // Use hashed values to produce indexed public generators
     static ge_p3 get_exponent(const rct::key &base, size_t idx)
     {
-        std::string hashed = std::string((const char*)base.bytes, sizeof(base)) + std::string(cryptonote::hashkey::BULLETPROOF_PLUS_EXPONENT) + tools::get_varint_data(idx);
+        static const std::string domain_separator(cryptonote::hashkey::BULLETPROOF_PLUS_EXPONENT);
+        std::string hashed = std::string((const char*)base.bytes, sizeof(base)) + domain_separator + tools::get_varint_data(idx);
         rct::key generator;
         ge_p3 generator_p3;
         rct::hash_to_p3(generator_p3, rct::hash2rct(crypto::cn_fast_hash(hashed.data(), hashed.size())));
@@ -151,7 +152,7 @@ namespace rct
         sc_sub(TWO_SIXTY_FOUR_MINUS_ONE.bytes, TWO_SIXTY_FOUR_MINUS_ONE.bytes, ONE.bytes);
 
         // Generate the initial Fiat-Shamir transcript hash, which is constant across all proofs
-        const std::string domain_separator(cryptonote::config::HASH_KEY_BULLETPROOF_PLUS_TRANSCRIPT);
+        const std::string domain_separator(cryptonote::hashkey::BULLETPROOF_PLUS_TRANSCRIPT);
         ge_p3 initial_transcript_p3;
         rct::hash_to_p3(initial_transcript_p3, rct::hash2rct(crypto::cn_fast_hash(domain_separator.data(), domain_separator.size())));
         ge_p3_tobytes(initial_transcript.bytes, &initial_transcript_p3);
@@ -645,8 +646,7 @@ try_again:
         {
             sc_mul(temp.bytes, temp.bytes, z_squared.bytes);
             sc_mul(temp2.bytes, y_powers[MN+1].bytes, temp.bytes);
-            sc_mul(temp2.bytes, temp2.bytes, gamma[j].bytes);
-            sc_add(alpha1.bytes, alpha1.bytes, temp2.bytes);
+            sc_muladd(alpha1.bytes, temp2.bytes, gamma[j].bytes, alpha1.bytes);
         }
 
         // These are used in the inner product rounds
@@ -707,7 +707,8 @@ try_again:
 
             rct::key challenge_squared;
             sc_mul(challenge_squared.bytes, challenge.bytes, challenge.bytes);
-            rct::key challenge_squared_inv = invert(challenge_squared);
+            rct::key challenge_squared_inv;
+            sc_mul(challenge_squared_inv.bytes, challenge_inv.bytes, challenge_inv.bytes);
             sc_muladd(alpha1.bytes, dL.bytes, challenge_squared.bytes, alpha1.bytes);
             sc_muladd(alpha1.bytes, dR.bytes, challenge_squared_inv.bytes, alpha1.bytes);
 

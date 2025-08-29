@@ -1163,7 +1163,7 @@ namespace rct {
             //compute range proof
             rv.p.rangeSigs[i] = proveRange(rv.outPk[i].mask, outSk[i].mask, amounts[i]);
 #ifdef DBG
-            if (!bulletproof)
+            if (!bulletproof_or_plus)
                 CHECK_AND_ASSERT_THROW_MES(verRange(rv.outPk[i].mask, rv.p.rangeSigs[i]), "verRange failed on newly created proof");
 #endif
             //mask amount and mask
@@ -1257,7 +1257,7 @@ namespace rct {
             if (!bulletproof_or_plus)
                 rv.p.rangeSigs[i] = proveRange(rv.outPk[i].mask, outSk[i].mask, outamounts[i]);
 #ifdef DBG
-            if (!bulletproof_or_plus)
+            if (!bulletproof)
                 CHECK_AND_ASSERT_THROW_MES(verRange(rv.outPk[i].mask, rv.p.rangeSigs[i]), "verRange failed on newly created proof");
 #endif
         }
@@ -1266,7 +1266,7 @@ namespace rct {
         rv.p.bulletproofs_plus.clear();
         if (bulletproof_or_plus)
         {
-            const bool plus = is_rct_bulletproof_plus(rv.type);
+            const bool plus = rv.type == RCTType::BulletproofPlus;
             size_t n_amounts = outamounts.size();
             size_t amounts_proved = 0;
             if (rct_config.range_proof_type == RangeProofType::PaddedBulletproof)
@@ -1288,7 +1288,6 @@ namespace rct {
                     else
                       rv.p.bulletproofs.push_back(proveRangeBulletproof(C, masks, outamounts, keys, hwdev));
 #ifdef DBG
-                    CHECK_AND_ASSERT_THROW_MES(verBulletproof(rv.p.bulletproofs.back()), "verBulletproof failed on newly created proof");
                     if (plus)
                       CHECK_AND_ASSERT_THROW_MES(verBulletproofPlus(rv.p.bulletproofs_plus.back()), "verBulletproofPlus failed on newly created proof");
                     else
@@ -1297,10 +1296,7 @@ namespace rct {
                 }
                 for (i = 0; i < outamounts.size(); ++i)
                 {
-                    if (plus)
-                      rv.outPk[i].mask = C[i];
-                    else
-                      rv.outPk[i].mask = rct::scalarmult8(C[i]);
+                    rv.outPk[i].mask = rct::scalarmult8(C[i]);
                     outSk[i].mask = masks[i];
                 }
             }
@@ -1338,10 +1334,7 @@ namespace rct {
                     }
                     for (i = 0; i < batch_size; ++i)
                     {
-                      if (plus)
-                        rv.outPk[i + amounts_proved].mask = C[i];
-                      else
-                        rv.outPk[i + amounts_proved].mask = rct::scalarmult8(C[i]);
+                      rv.outPk[i + amounts_proved].mask = rct::scalarmult8(C[i]);
                       outSk[i + amounts_proved].mask = masks[i];
                     }
                     amounts_proved += batch_size;
@@ -1502,7 +1495,8 @@ namespace rct {
         {
           CHECK_AND_ASSERT_MES(rvp, false, "rctSig pointer is NULL");
           const rctSig &rv = *rvp;
-          CHECK_AND_ASSERT_MES(rct::is_rct_simple(rv.type), false, "verRctSemanticsSimple called on non simple rctSig");
+          CHECK_AND_ASSERT_MES(rv.type == RCTType::Simple || rv.type == RCTType::Bulletproof || rv.type == RCTType::Bulletproof2 || rv.type == RCTType::CLSAG || rv.type == RCTType::BulletproofPlus,
+            false, "verRctSemanticsSimple called on non simple rctSig");
           const bool bulletproof = is_rct_bulletproof(rv.type);
           const bool bulletproof_plus = is_rct_bulletproof_plus(rv.type);
           if (bulletproof || bulletproof_plus)
@@ -1546,9 +1540,6 @@ namespace rct {
 
           rct::keyV masks(rv.outPk.size());
           for (size_t i = 0; i < rv.outPk.size(); i++) {
-            if (bulletproof_plus)
-              masks[i] = rct::scalarmult8(rv.outPk[i].mask);
-            else
               masks[i] = rv.outPk[i].mask;
           }
           key sumOutpks = addKeys(masks);
@@ -1628,7 +1619,8 @@ namespace rct {
       {
         PERF_TIMER(verRctNonSemanticsSimple);
 
-        CHECK_AND_ASSERT_MES(rct::is_rct_simple(rv.type), false, "verRctNonSemanticsSimple called on non simple rctSig");
+        CHECK_AND_ASSERT_MES(rv.type == RCTType::Simple || rv.type == RCTType::Bulletproof || rv.type == RCTType::Bulletproof2 || rv.type == RCTType::CLSAG || rv.type == RCTType::BulletproofPlus, 
+            false, "verRctNonSemanticsSimple called on non simple rctSig");
         const bool bulletproof = is_rct_bulletproof(rv.type);
         const bool bulletproof_plus = is_rct_bulletproof_plus(rv.type);
         // semantics check is early, and mixRing/MGs aren't resolved yet
@@ -1702,8 +1694,6 @@ namespace rct {
         mask = ecdh_info.mask;
         key amount = ecdh_info.amount;
         key C = rv.outPk[i].mask;
-        if (is_rct_bulletproof_plus(rv.type))
-          C = scalarmult8(C);
         DP("C");
         DP(C);
         key Ctmp;
@@ -1724,7 +1714,8 @@ namespace rct {
     }
 
     xmr_amount decodeRctSimple(const rctSig & rv, const key & sk, unsigned int i, key &mask, hw::device &hwdev) {
-        CHECK_AND_ASSERT_MES(rct::is_rct_simple(rv.type), false, "decodeRct called on non simple rctSig");
+        CHECK_AND_ASSERT_MES(rv.type == RCTType::Simple || rv.type == RCTType::Bulletproof || rv.type == RCTType::Bulletproof2 || rv.type == RCTType::CLSAG || rv.type == RCTType::BulletproofPlus,
+            false, "decodeRct called on non simple rctSig");
         CHECK_AND_ASSERT_THROW_MES(i < rv.ecdhInfo.size(), "Bad index");
         CHECK_AND_ASSERT_THROW_MES(rv.outPk.size() == rv.ecdhInfo.size(), "Mismatched sizes of rv.outPk and rv.ecdhInfo");
 
@@ -1734,8 +1725,6 @@ namespace rct {
         mask = ecdh_info.mask;
         key amount = ecdh_info.amount;
         key C = rv.outPk[i].mask;
-        if (is_rct_bulletproof_plus(rv.type))
-          C = scalarmult8(C);
         DP("C");
         DP(C);
         key Ctmp;
