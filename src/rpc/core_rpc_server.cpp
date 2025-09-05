@@ -1069,10 +1069,10 @@ namespace cryptonote::rpc {
         const auto& meta = ptx_it->second.meta;
         e["in_pool"] = true;
         e["weight"] = meta.weight;
-        e["relayed"] = (bool) ptx_it->second.meta.relayed;
-        e["received_timestamp"] = ptx_it->second.meta.receive_time;
+        e["relayed"] = (bool) meta.relayed;
+        e["received_timestamp"] = meta.receive_time;
         e["flash"] = ptx_it->second.flash;
-        if (meta.double_spend_seen) e["double_spend_seen"] = true;
+        e["double_spend_seen"] = meta.double_spend_seen;
         if (meta.do_not_relay) e["do_not_relay"] = true;
         if (meta.last_relayed_time) e["last_relayed_time"] = meta.last_relayed_time;
         if (meta.kept_by_block) e["kept_by_block"] = (bool) meta.kept_by_block;
