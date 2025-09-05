@@ -81,16 +81,16 @@ PRAGMA_WARNING_DISABLE_VS(4355)
   template<class t_protocol_handler>
   connection<t_protocol_handler>::connection( boost::asio::io_service& io_service,
                 std::shared_ptr<shared_state> state,
-		t_connection_type connection_type
+		t_connection_type connection_type,ssl_support_t ssl_support
 	)
-	: connection(boost::asio::ip::tcp::socket{io_service}, std::move(state), connection_type)
+	: connection(boost::asio::ip::tcp::socket{io_service}, std::move(state), connection_type,ssl_support)
   {
   }
 
   template<class t_protocol_handler>
   connection<t_protocol_handler>::connection( boost::asio::ip::tcp::socket&& sock,
                 std::shared_ptr<shared_state> state,
-		t_connection_type connection_type
+		t_connection_type connection_type,ssl_support_t ssl_support
 	)
 	: 
 		connection_basic(std::move(sock), state),
@@ -864,7 +864,7 @@ PRAGMA_WARNING_DISABLE_VS(4355)
   //---------------------------------------------------------------------------------
   template<class t_protocol_handler>
     bool boosted_tcp_server<t_protocol_handler>::init_server(uint32_t port,  const std::string& address,
-	uint32_t port_ipv6, const std::string& address_ipv6, bool use_ipv6, bool require_ipv4)
+	uint32_t port_ipv6, const std::string& address_ipv6, bool use_ipv6, bool require_ipv4,ssl_options_t ssl_options)
   {
     TRY_ENTRY();
     m_stop_signal_sent = false;
@@ -874,6 +874,9 @@ PRAGMA_WARNING_DISABLE_VS(4355)
     m_address_ipv6 = address_ipv6;
     m_use_ipv6 = use_ipv6;
     m_require_ipv4 = require_ipv4;
+
+    if (ssl_options)
+      m_state->configure_ssl(std::move(ssl_options));
 
     std::string ipv4_failed = "";
     std::string ipv6_failed = "";
@@ -890,7 +893,7 @@ PRAGMA_WARNING_DISABLE_VS(4355)
       boost::asio::ip::tcp::endpoint binded_endpoint = acceptor_.local_endpoint();
       m_port = binded_endpoint.port();
       MDEBUG("start accept (IPv4)");
-      new_connection_.reset(new connection<t_protocol_handler>(io_service_, m_state, m_connection_type));
+      new_connection_.reset(new connection<t_protocol_handler>(io_service_, m_state, m_connection_type,m_state->ssl_options().support));
       acceptor_.async_accept(new_connection_->socket(),
 	boost::bind(&boosted_tcp_server<t_protocol_handler>::handle_accept_ipv4, this,
 	boost::asio::placeholders::error));
@@ -926,7 +929,7 @@ PRAGMA_WARNING_DISABLE_VS(4355)
         boost::asio::ip::tcp::endpoint binded_endpoint = acceptor_ipv6.local_endpoint();
         m_port_ipv6 = binded_endpoint.port();
         MDEBUG("start accept (IPv6)");
-        new_connection_ipv6.reset(new connection<t_protocol_handler>(io_service_, m_state, m_connection_type));
+        new_connection_ipv6.reset(new connection<t_protocol_handler>(io_service_, m_state, m_connection_type,m_state->ssl_options().support));
         acceptor_ipv6.async_accept(new_connection_ipv6->socket(),
             boost::bind(&boosted_tcp_server<t_protocol_handler>::handle_accept_ipv6, this,
               boost::asio::placeholders::error));
@@ -964,7 +967,7 @@ PUSH_WARNINGS
 DISABLE_GCC_WARNING(maybe-uninitialized)
   template<class t_protocol_handler>
   bool boosted_tcp_server<t_protocol_handler>::init_server(const std::string port,  const std::string& address,
-      const std::string port_ipv6, const std::string address_ipv6, bool use_ipv6, bool require_ipv4)
+      const std::string port_ipv6, const std::string address_ipv6, bool use_ipv6, bool require_ipv4, ssl_options_t ssl_options)
   {
     uint32_t p = 0;
     uint32_t p_ipv6 = 0;
@@ -978,7 +981,7 @@ DISABLE_GCC_WARNING(maybe-uninitialized)
       MERROR("Failed to convert port no = " << port_ipv6);
       return false;
     }
-    return this->init_server(p, address, p_ipv6, address_ipv6, use_ipv6, require_ipv4);
+    return this->init_server(p, address, p_ipv6, address_ipv6, use_ipv6, require_ipv4,std::move(ssl_options));
   }
 POP_WARNINGS
   //---------------------------------------------------------------------------------

@@ -46,6 +46,12 @@
 
 #include <boost/asio.hpp>
 #include <boost/asio/steady_timer.hpp>
+#include <boost/asio/ssl.hpp>
+#include <boost/asio/strand.hpp>
+#include <boost/array.hpp>
+#include <boost/enable_shared_from_this.hpp>
+#include <boost/thread/thread.hpp>
+#include <boost/optional.hpp>
 #include "net_utils_base.h"
 #include "connection_basic.hpp"
 #include "network_throttle-detail.hpp"
@@ -97,11 +103,11 @@ namespace net_utils
     /// Construct a connection with the given io_service.
     explicit connection( boost::asio::io_service& io_service,
                         std::shared_ptr<shared_state> state,
-			t_connection_type connection_type);
+			t_connection_type connection_type,ssl_support_t ssl_support = ssl_support_t::e_ssl_support_autodetect);
 
     explicit connection( boost::asio::ip::tcp::socket&& sock,
 			 std::shared_ptr<shared_state> state,
-			t_connection_type connection_type);
+			t_connection_type connection_type,epee::net_utils::ssl_support_t ssl_support = ssl_support_t::e_ssl_support_autodetect);
 
 
 
@@ -220,9 +226,9 @@ namespace net_utils
     void create_server_type_map();
 
     bool init_server(uint32_t port, const std::string& address = "0.0.0.0",
-        uint32_t port_ipv6 = 0, const std::string& address_ipv6 = "::", bool use_ipv6 = false, bool require_ipv4 = true);
+        uint32_t port_ipv6 = 0, const std::string& address_ipv6 = "::", bool use_ipv6 = false, bool require_ipv4 = true,ssl_options_t ssl_options = ssl_support_t::e_ssl_support_autodetect);
     bool init_server(const std::string port,  const std::string& address = "0.0.0.0",
-        const std::string port_ipv6 = "", const std::string address_ipv6 = "::", bool use_ipv6 = false, bool require_ipv4 = true);
+        const std::string port_ipv6 = "", const std::string address_ipv6 = "::", bool use_ipv6 = false, bool require_ipv4 = true,ssl_options_t ssl_options = ssl_support_t::e_ssl_support_autodetect);
 
     /// Run the server's io_service loop.
     bool run_server(size_t threads_count, bool wait = true);

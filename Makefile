@@ -49,7 +49,7 @@ all: release-all
 
 cmake-debug:
 	mkdir -p $(builddir)/debug
-	cd $(builddir)/debug && cmake -D CMAKE_BUILD_TYPE=Debug $(topdir)
+	cd $(builddir)/debug && cmake -D CMAKE_BUILD_TYPE=Debug $(topdir) -DUSE_LTO=OFF -DRANDOMX_ENABLE_JIT=OFF
 
 debug: cmake-debug
 	cd $(builddir)/debug && $(MAKE)

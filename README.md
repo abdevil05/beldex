@@ -403,6 +403,36 @@ config](utils/conf/beldexd.conf).
 If you're on Mac, you may need to add the `--max-concurrency 1` option to
 beldex-wallet-cli, and possibly beldexd, if you get crashes refreshing.
 
+## Running Beldex-lws
+
+This is an implementation of the Beldex light-wallet REST API. Clients can submit their Beldex viewkey via the REST API, and the server will scan for incoming Beldex blockchain transactions.
+
+For the more information about the REST API look [Beldex light-wallet REST API](https://github.com/Beldex-Coin/beldex/tree/lws-implementation/src/lws/lightwallet_rest.md)
+
+The build places the binary in `bin/` sub-directory within the build directory
+from which cmake was invoked (repository root by default). To run in
+foreground:
+
+### Running the beldexd
+
+```bash
+./bin/beldexd
+```
+This beldexd runs and exposed on 127.0.0.1:19091
+### Running the lws-daemon
+
+```bash
+./bin/beldex-lws-daemon
+```
+To list all available options, run `./bin/beldex-lws-daemon --help`. 
+
+### Running the lws-admin
+
+```bash
+./bin/beldex-lws-admin
+```
+To list all available options, run `./bin/beldex-lws-admin --help`. 
+
 ## Internationalization
 
 See [README.i18n.md](README.i18n.md).

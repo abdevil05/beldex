@@ -108,6 +108,22 @@ namespace cryptonote
   /*                                                                      */
   /************************************************************************/
   BELDEX_RPC_DOC_INTROSPECT
+  struct tx_blob_entry
+  {
+    blobdata blob;
+    crypto::hash prunable_hash;
+    BEGIN_KV_SERIALIZE_MAP()
+      KV_SERIALIZE(blob)
+      KV_SERIALIZE_VAL_POD_AS_BLOB(prunable_hash)
+    END_KV_SERIALIZE_MAP()
+
+    tx_blob_entry(const blobdata &bd = {}, const crypto::hash &h = crypto::null_hash): blob(bd), prunable_hash(h) {}
+  };
+
+   /************************************************************************/
+  /*                                                                      */
+  /************************************************************************/
+  BELDEX_RPC_DOC_INTROSPECT
   struct block_complete_entry
   {
     blobdata block;
@@ -117,6 +133,16 @@ namespace cryptonote
     KV_MAP_SERIALIZABLE
   };
 
+  /************************************************************************/
+  /*                                                                      */
+  /************************************************************************/
+  BELDEX_RPC_DOC_INTROSPECT
+  struct block_complete_entry_rpc
+  {
+    std::string block;
+    std::vector <std::string> transactions;
+    KV_MAP_SERIALIZABLE
+  };
   /************************************************************************/
   /*                                                                      */
   /************************************************************************/

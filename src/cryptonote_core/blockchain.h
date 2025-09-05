@@ -437,6 +437,7 @@ namespace cryptonote
      * @return true if a block found in common, else false
      */
     bool find_blockchain_supplement(const std::list<crypto::hash>& qblock_ids, std::vector<crypto::hash>& hashes, uint64_t& start_height, uint64_t& current_height, bool clip_pruned) const;
+     bool find_blockchain_supplement_rpc(const std::list<crypto::hash>& qblock_ids, std::vector<crypto::hash>& hashes, uint64_t& start_height, uint64_t& current_height, bool clip_pruned) const;
 
     /**
      * @brief get recent block hashes for a foreign chain

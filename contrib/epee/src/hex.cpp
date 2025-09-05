@@ -36,6 +36,7 @@
 #include <cctype>
 #include <algorithm>
 
+#include "epee/storages/parserse_base_utils.h"
 namespace epee
 {
   namespace
@@ -78,6 +79,39 @@ namespace epee
   void to_hex::buffer_unchecked(char* out, const span<const std::uint8_t> src) noexcept
   {
     return write_hex(out, src);
+  }
+
+  bool from_hex::to_string(std::string& out, const boost::string_ref src)
+  {
+    out.resize(src.size() / 2);
+    return to_buffer_unchecked(reinterpret_cast<std::uint8_t*>(&out[0]), src);
+  }
+  
+  bool from_hex::to_buffer(span<std::uint8_t> out, const boost::string_ref src) noexcept
+  {
+    if (src.size() / 2 != out.size())
+      return false;
+    return to_buffer_unchecked(out.data(), src);
+  }
+
+  bool from_hex::to_buffer_unchecked(std::uint8_t* dst, const boost::string_ref s) noexcept
+  {
+      if (s.size() % 2 != 0)
+        return false;
+
+      const unsigned char *src = (const unsigned char *)s.data();
+      for(size_t i = 0; i < s.size(); i += 2)
+      {
+        int tmp = *src++;
+        tmp = epee::misc_utils::parse::detail::isx[tmp];
+        if (tmp == 0xff) return false;
+        int t2 = *src++;
+        t2 = epee::misc_utils::parse::detail::isx[t2];
+        if (t2 == 0xff) return false;
+        *dst++ = (tmp << 4) | t2;
+      }
+
+      return true;
   }
 
   std::vector<uint8_t> from_hex::vector(std::string_view src)

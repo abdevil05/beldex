@@ -351,6 +351,18 @@ namespace cryptonote::rpc {
         "height",        get_block.request.height);
   }
 
+  void parse_request(GET_BLOCKS_FAST_RPC& get_blocks_fast_rpc, rpc_input in) {
+    get_values(in,
+        "no_miner_tx",  get_blocks_fast_rpc.request.no_miner_tx,
+        "prune",        get_blocks_fast_rpc.request.prune,
+        "start_height", required{get_blocks_fast_rpc.request.start_height});
+  }
+
+  void parse_request(GET_HASHES_FAST_RPC& get_hashes_fast_rpc, rpc_input in){
+    get_values(in,
+        "start_height", required{get_hashes_fast_rpc.request.start_height});
+  }
+
   void parse_request(GET_OUTPUT_HISTOGRAM& get_output_histogram, rpc_input in) {
     get_values(in,
         "amounts",       get_output_histogram.request.amounts,

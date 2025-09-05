@@ -74,6 +74,8 @@
 #include "serialization/json_archive.h"
 #include "version.h"
 #include <fmt/core.h>
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "daemon.rpc"
@@ -404,6 +406,203 @@ namespace cryptonote::rpc {
     END_SERIALIZE()
   };
   }
+
+  //------------------------------------------------------------------------------------------------------------------------------
+  void core_rpc_server::invoke(GET_BLOCKS_FAST_RPC& get_blocks_fast_rpc, rpc_context context)
+  {
+    
+    typedef std::vector<uint64_t> tx_output_indices_rpc;
+    typedef std::vector<tx_output_indices_rpc> block_output_indices_rpc;
+    std::vector<block_output_indices_rpc> output_indices_rpc;
+    PERF_TIMER(on_get_blocks);
+    // if (use_bootstrap_daemon_if_necessary<GET_BLOCKS_FAST_RPC>(req, res))
+    //   return res;
+    
+    std::vector<std::pair<std::pair<blobdata, crypto::hash>, std::vector<std::pair<crypto::hash, blobdata> > > > blocks;
+    uint64_t current_height, start_height;
+    if(!m_core.find_blockchain_supplement(get_blocks_fast_rpc.request.start_height, std::list<crypto::hash>{}, blocks, current_height, start_height, get_blocks_fast_rpc.request.prune, !get_blocks_fast_rpc.request.no_miner_tx, GET_BLOCKS_FAST_RPC::MAX_COUNT))
+    {
+      get_blocks_fast_rpc.response["status"] = "Failed";
+      return;
+    }
+
+    size_t size = 0, ntxes = 0;
+    std::vector<block_complete_entry_rpc> blocks_res;
+    blocks_res.reserve(blocks.size());
+    
+    cryptonote::block blk;
+    cryptonote::transaction tx_hash;
+    uint64_t block_count = 0;
+    for(auto& bd: blocks)
+    {
+      blocks_res.resize(blocks_res.size()+1);
+      if (!parse_and_validate_block_from_blob(bd.first.first, blk))
+      {
+        // res.blocks.clear();
+        // res.output_indices.clear();
+        get_blocks_fast_rpc.response["status"] = "Failed";
+        return;
+      }
+
+      std::string extra_res = oxenc::to_hex(blk.miner_tx.extra.begin(), blk.miner_tx.extra.end());
+      //----------blk data's key changed for lws -----------------------------------
+      std::string block_json = obj_to_json_str(blk);
+      auto block = json::parse(block_json);
+    
+      if(block.contains("POS"))
+      {
+        block.erase(block.find("POS"));
+      }
+
+      block["miner_tx"]["extra"] = extra_res;
+
+      if (auto h = block["miner_tx"].value("vin", nlohmann::json::array());
+          !h.empty() && h[0].contains("gen") && h[0]["gen"].contains("height"))
+      {
+          get_blocks_fast_rpc.response["minor_tx_hashes"].push_back({
+              h[0]["gen"]["height"],
+              tools::type_to_hex(get_transaction_hash(blk.miner_tx))
+          });
+      }
+      //-----------------------------------------------------------------------
+      if (bd.second.size() != blk.tx_hashes.size())
+      {
+        // res.blocks.clear();
+        // res.output_indices.clear();
+        get_blocks_fast_rpc.response["status"] = "Failed";
+        return;
+      }
+      
+      block_output_indices_rpc indices;
+      // miner tx output indices
+      {
+        tx_output_indices_rpc tx_indices;
+        if (!m_core.get_tx_outputs_gindexs(get_transaction_hash(blk.miner_tx), tx_indices))
+        {
+          get_blocks_fast_rpc.response["status"] = "Failed";
+          return;
+        }
+        indices.push_back(std::move(tx_indices));
+      }
+
+      auto hash_it = blk.tx_hashes.begin();
+      std::vector<std::string> tx;
+      json tx_hash_block = {};
+      for (const auto& blob : bd.second)
+      {
+        tx_hash.pruned = get_blocks_fast_rpc.request.prune;
+
+        const bool parsed = get_blocks_fast_rpc.request.prune ?
+          parse_and_validate_tx_base_from_blob(blob.second, tx_hash) :
+          parse_and_validate_tx_from_blob(blob.second, tx_hash);
+        
+        if (parsed)
+        {
+          std::string extra_res_tx = oxenc::to_hex(tx_hash.extra.begin(), tx_hash.extra.end());
+          //----------tx_hash data's key changed -----------------------
+          std::string block_transactions = obj_to_json_str(tx_hash);
+          auto block_tx = json::parse(block_transactions);
+
+          if(!(block_tx.contains("rct_signatures"))){
+            ++hash_it;
+            continue;
+          }
+          else{
+            tx_output_indices_rpc tx_indices;
+            if (!m_core.get_tx_outputs_gindexs(*hash_it, tx_indices))
+            {
+              get_blocks_fast_rpc.response["status"] ="failed";
+              return;
+            }
+            indices.push_back(std::move(tx_indices));
+            ++hash_it;
+          }
+
+          block_tx["extra"] = extra_res_tx;
+
+          tx_hash_block.push_back(tools::type_to_hex(blob.first));
+          tx.push_back(block_tx.dump());
+          //---------------------------------------------------------------------------------------
+        }            
+        else
+          ++hash_it;
+      }
+
+      block["tx_hashes"] = tx_hash_block;
+      blocks_res.back().block = block.dump();
+      if(bd.second.size() != 0)
+      {
+        for(auto it : tx)
+        {
+          blocks_res[block_count].transactions.push_back(it);
+        }
+      }
+      else
+      {
+        json tx = json::array();
+        blocks_res[block_count].transactions.push_back(tx.dump());
+      }
+
+      output_indices_rpc.push_back(indices);
+      block_count++;
+    }
+
+    for (const auto& it : blocks_res)
+    {
+      nlohmann::json block_entry;
+      block_entry["block"] = it.block;
+      block_entry["transactions"] = it.transactions;
+
+      get_blocks_fast_rpc.response["blocks"].push_back(block_entry);
+    }
+    
+    get_blocks_fast_rpc.response["start_height"] = start_height;
+    get_blocks_fast_rpc.response["current_height"] = current_height;
+
+    std::string block_indices = obj_to_json_str(output_indices_rpc);
+    auto blkindices = json::parse(block_indices); 
+    get_blocks_fast_rpc.response["output_indices"] = blkindices.dump();
+    
+    get_blocks_fast_rpc.response["status"] = STATUS_OK;
+    MGINFO("on_get_blocks: " << blocks.size() << " blocks, " << ntxes << " txes, size " << size);
+
+    return;
+  }
+
+  //------------------------------------------------------------------------------------------------------------------------------
+  void core_rpc_server::invoke(GET_HASHES_FAST_RPC& get_hashes_fast_rpc, rpc_context context)
+  {
+
+    PERF_TIMER(on_get_hashes);
+    
+    // if (use_bootstrap_daemon_if_necessary<GET_HASHES_FAST_RPC>(req, res))
+    //   return res;
+
+    uint64_t start_height = get_hashes_fast_rpc.request.start_height;
+    uint64_t current_height = 0;
+    std::vector<crypto::hash> blk_ids;
+    if(!m_core.get_blockchain_storage().find_blockchain_supplement_rpc(std::list<crypto::hash>{}, blk_ids, start_height, current_height, false))
+    {
+      get_hashes_fast_rpc.response["status"] = "Failed";
+      return;
+    }
+    
+    std::vector<std::string>  m_block_ids;
+
+    m_block_ids.reserve(blk_ids.size());
+
+    for (const crypto::hash &m_blocks_id : blk_ids)
+    {
+      m_block_ids.push_back(tools::type_to_hex(m_blocks_id));
+    }
+    
+    get_hashes_fast_rpc.response["m_block_ids"] = std::move(m_block_ids);
+    get_hashes_fast_rpc.response["start_height"] = start_height;
+    get_hashes_fast_rpc.response["current_height"] = current_height;
+    get_hashes_fast_rpc.response["status"] = STATUS_OK;
+    return;
+  }
+  
   //------------------------------------------------------------------------------------------------------------------------------
   GET_BLOCKS_BIN::response core_rpc_server::invoke(GET_BLOCKS_BIN::request&& req, rpc_context context)
   {
@@ -532,6 +731,7 @@ namespace cryptonote::rpc {
     //   return res;
 
     res.start_height = req.start_height;
+
     if(!m_core.get_blockchain_storage().find_blockchain_supplement(req.block_ids, res.m_block_ids, res.start_height, res.current_height, false))
     {
       res.status = "Failed";
