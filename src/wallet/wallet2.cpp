@@ -3288,7 +3288,7 @@ std::vector<wallet2::get_pool_state_tx> wallet2::get_pool_state(bool refreshed)
                 [tx_hash](const std::pair<crypto::hash, bool> &e) { return e.first == tx_hash; });
             if (i != txids.end())
             {
-              process_txs.push_back({std::move(tx), tx_hash, tx_entry["double_spend_seen"].get<int>() != 0, tx_entry["flash"].get<bool>()});
+              process_txs.push_back({std::move(tx), tx_hash, tx_entry["double_spend_seen"].get<bool>(), tx_entry["flash"].get<bool>()});
             }
             else
             {

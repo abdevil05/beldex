@@ -1072,7 +1072,7 @@ namespace cryptonote::rpc {
         e["relayed"] = (bool) meta.relayed;
         e["received_timestamp"] = meta.receive_time;
         e["flash"] = ptx_it->second.flash;
-        e["double_spend_seen"] = meta.double_spend_seen;
+        e["double_spend_seen"] = meta.double_spend_seen ? true : false;
         if (meta.do_not_relay) e["do_not_relay"] = true;
         if (meta.last_relayed_time) e["last_relayed_time"] = meta.last_relayed_time;
         if (meta.kept_by_block) e["kept_by_block"] = (bool) meta.kept_by_block;
