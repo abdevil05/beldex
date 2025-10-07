@@ -6509,9 +6509,9 @@ std::optional<std::string> wallet2::resolve_address(std::string address, uint64_
         {"name_hash", b64_hashed_name}
       };
       auto [success, addr_response] = resolve(req_params);
-      if (success && addr_response["encrypted_value"])
+      if (success && addr_response.contains("encrypted_value") && addr_response["encrypted_value"].is_string())
       {
-        std::optional<cryptonote::address_parse_info> addr_info = bns::encrypted_wallet_value_to_info(name, addr_response["encrypted_value"], addr_response["nonce"]);
+        std::optional<cryptonote::address_parse_info> addr_info = bns::encrypted_wallet_value_to_info(name, addr_response["encrypted_value"].get<std::string>(), addr_response["nonce"].get<std::string>());
         if (addr_info)
         {
           info = std::move(*addr_info);
@@ -8873,7 +8873,7 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
         {
           if (reason)
           {
-            *reason = "Signature requested when preparing ONS TX, but this wallet is not the owner of the record owner=" + rowner;
+            *reason = "Signature requested when preparing BNS TX, but this wallet is not the owner of the record owner=" + rowner;
             if (rbackup_owner.empty()) *reason += ", backup_owner=" + rbackup_owner;
           }
           return result;
@@ -12270,8 +12270,6 @@ bool wallet2::use_fork_rules(hf version, uint64_t early_blocks) const
   if (!m_node_rpc_proxy.get_height(height))
     THROW_WALLET_EXCEPTION(tools::error::no_connection_to_daemon, __func__);
 
-  LOG_PRINT_L2("Version is v" << (unsigned)version << " rules");
-  LOG_PRINT_L2("earliest_height is h" << (unsigned)earliest_height << " height");
   if (!m_node_rpc_proxy.get_earliest_height(static_cast<uint8_t>(version), earliest_height))
     THROW_WALLET_EXCEPTION(tools::error::no_connection_to_daemon, __func__);
 
