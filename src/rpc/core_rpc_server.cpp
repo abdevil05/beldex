@@ -239,10 +239,10 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_HEIGHT& get_height, rpc_context context)
   {
     PERF_TIMER(on_get_height);
-    /* FIXME
-    if (use_bootstrap_daemon_if_necessary<GET_HEIGHT>(req, res))
-      return res;
-    */
+
+    if (use_bootstrap_daemon_if_necessary<GET_HEIGHT>({}, get_height.response))
+      return;
+    
     auto [height, hash] = m_core.get_blockchain_top();
     ++height; // block height to chain height
     get_height.response["status"] = STATUS_OK;
@@ -1882,10 +1882,15 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(HARD_FORK_INFO& hfinfo, rpc_context context)
   {
     PERF_TIMER(on_hard_fork_info);
-    /*
-    if (use_bootstrap_daemon_if_necessary<HARD_FORK_INFO>(req, res))
-      return res;
-    */
+    
+    json params{
+      {"version", hfinfo.request.version},
+      {"height", hfinfo.request.height}
+    };
+
+    if (use_bootstrap_daemon_if_necessary<HARD_FORK_INFO>(params, hfinfo.response))
+      return;
+    
     const auto& blockchain = m_core.get_blockchain_storage();
     auto version =
       hfinfo.request.version > 0 ? static_cast<hf>(hfinfo.request.version) :
@@ -2127,9 +2132,13 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_FEE_ESTIMATE& get_fee_estimate, rpc_context context)
   {
     PERF_TIMER(on_get_fee_estimate);
-    //TODO handle bootstrap daemon in new RPC format
-    //if (use_bootstrap_daemon_if_necessary<GET_FEE_ESTIMATE>(req, res))
-      //return res;
+    
+    json params{
+        {"grace_blocks", get_fee_estimate.request.grace_blocks}
+    };
+  
+    if (use_bootstrap_daemon_if_necessary<GET_FEE_ESTIMATE>(params, get_fee_estimate.response))
+      return;
 
     auto fees = m_core.get_blockchain_storage().get_dynamic_base_fee_estimate(get_fee_estimate.request.grace_blocks);
     get_fee_estimate.response["fee_per_byte"] = fees.first;
