@@ -566,10 +566,19 @@ namespace cryptonote::rpc {
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_OUTPUTS& get_outputs, rpc_context context)
   {
+
     PERF_TIMER(on_get_outs);
-    //TODO this bootstrap daemon call to work for new RPC design
-    //if (use_bootstrap_daemon_if_necessary<GET_OUTPUTS>(req, res))
-      //return;
+    json params{
+      {"get_txid", get_outputs.request.get_txid},
+      {"as_tuple", get_outputs.request.as_tuple},
+      {"output_indices", json::array()}
+    };
+
+    for (const auto& h: get_outputs.request.output_indices)
+      params["output_indices"].push_back(tools::type_to_hex(h));
+
+    if (use_bootstrap_daemon_if_necessary<IS_KEY_IMAGE_SPENT>(params, get_outputs.response))
+      return;
 
     if (!context.admin && get_outputs.request.output_indices.size() > GET_OUTPUTS::MAX_COUNT) {
       get_outputs.response["status"] = "Too many outs requested";
@@ -888,11 +897,22 @@ namespace cryptonote::rpc {
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_TRANSACTIONS& get, rpc_context context)
   {
-    PERF_TIMER(on_get_transactions);
-    /*
-    if (use_bootstrap_daemon_if_necessary<GET_TRANSACTIONS>(req, res))
-      return res;
-    */
+    PERF_TIMER(on_get_transactions);    
+    json params{
+      {"tx_hashes", json::array()},
+      {"memory_pool",get.request.memory_pool},
+      {"tx_extra",get.request.tx_extra},
+      {"tx_extra_raw",get.request.tx_extra_raw},
+      {"data",get.request.data},
+      {"split",get.request.split},
+      {"prune",get.request.prune}
+    };
+    for (const auto& h: get.request.tx_hashes)
+      params["tx_hashes"].push_back(tools::type_to_hex(h));
+
+    if (use_bootstrap_daemon_if_necessary<GET_TRANSACTIONS>(params, get.response))
+      return;
+    
     std::unordered_set<crypto::hash> missed_txs;
     using split_tx = std::tuple<crypto::hash, std::string, crypto::hash, std::string>;
     std::vector<split_tx> txs;
@@ -1126,10 +1146,16 @@ namespace cryptonote::rpc {
   {
 
     PERF_TIMER(on_is_key_image_spent);
-    /*
-    if (use_bootstrap_daemon_if_necessary<IS_KEY_IMAGE_SPENT>(req, res))
-      return res;
-    */
+    json params{
+      {"key_images", json::array()}
+    };
+
+    for (const auto& h: spent.request.key_images)
+      params["key_images"].push_back(tools::type_to_hex(h));
+
+    if (use_bootstrap_daemon_if_necessary<IS_KEY_IMAGE_SPENT>(params, spent.response))
+      return;
+   
    spent.response["status"] = STATUS_FAILED;
 
    std::vector<bool> blockchain_spent;
