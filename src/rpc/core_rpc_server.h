@@ -121,7 +121,8 @@ namespace cryptonote::rpc {
       );
 
     static void init_options(boost::program_options::options_description& desc, boost::program_options::options_description& hidden);
-    void init(const boost::program_options::variables_map& vm);
+    bool init(const boost::program_options::variables_map& vm);
+    bool deinit();
 
     /// Returns a reference to the owning cryptonote core object
     core& get_core() { return m_core; }
@@ -196,7 +197,7 @@ namespace cryptonote::rpc {
     void invoke(BNS_RESOLVE& resolve, rpc_context context);
     void invoke(BNS_LOOKUP& lookup, rpc_context context);
     void invoke(BNS_VALUE_DECRYPT& value_decrypt, rpc_context context);
-    void invoke(SET_BOOTSTRAP_DAEMON& bootstrap_daemon, rpc_context context);
+    void invoke(SET_BOOTSTRAP_DAEMON& set_bootstrap, rpc_context context);
 
 
 
@@ -267,7 +268,7 @@ private:
 
     // JSON version (new)
     template <typename COMMAND_TYPE>
-    bool use_bootstrap_daemon_if_necessary(const nlohmann::json& req, nlohmann::json& res);    
+    bool use_bootstrap_daemon_if_necessary(const nlohmann::json& req, nlohmann::json& res);
     
     core& m_core;
     nodetool::node_server<cryptonote::t_cryptonote_protocol_handler<cryptonote::core> >& m_p2p;

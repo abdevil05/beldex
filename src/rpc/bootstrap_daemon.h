@@ -20,8 +20,23 @@ namespace cryptonote
     // Called when a request has failed either internally or for some external reason; the next
     // request will attempt to use a different bootstrap server (if configured).
     void set_failed() { m_failed = true; }
+    
     // New JSON-based bootstrap invocation (for new RPC format)
-    bool invoke_json(std::string_view method, const nlohmann::json& req, nlohmann::json& res);
+    template <class RPC, std::enable_if_t<std::is_base_of_v<rpc::RPC_COMMAND, RPC>, int> = 0>
+    bool invoke_json(const nlohmann::json& req, nlohmann::json& res)
+    {
+      if (!switch_server_if_needed())
+        return false;
+
+      try {
+        res = m_http_client.json_rpc(RPC::names().front(), req);
+      } catch (const std::exception& e) {
+        MWARNING("bootstrap daemon request failed: " << e.what());
+        set_failed();
+        return false;
+      }
+      return true;
+    }
 
     template <class RPC, std::enable_if_t<std::is_base_of_v<rpc::RPC_COMMAND, RPC>, int> = 0>
     bool invoke(const typename RPC::request& req, typename RPC::response& res)

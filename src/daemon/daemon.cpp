@@ -121,6 +121,10 @@ daemon::daemon(boost::program_options::variables_map vm_) :
   if (!p2p->init(vm))
     throw std::runtime_error("Failed to initialize p2p server.");
 
+  MGINFO("- rpc");
+  if (!rpc->init(vm))
+    throw std::runtime_error("Failed to initialize rpc server.");
+
   // Handle circular dependencies
   protocol->set_p2p_endpoint(p2p.get());
   core->set_cryptonote_protocol(protocol.get());
@@ -233,6 +237,13 @@ daemon::~daemon()
   if (http_rpc_admin) {
     MGINFO("- admin HTTP RPC server");
     http_rpc_admin.reset();
+  }
+
+  MGINFO("- rpc");
+  try {
+    rpc->deinit();
+  } catch (const std::exception& e) {
+    MERROR("Failed to deinitialize rpc: " << e.what());
   }
 
   MGINFO("- p2p");

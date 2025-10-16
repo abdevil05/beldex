@@ -2567,25 +2567,27 @@ bool rpc_command_executor::check_blockchain_pruning()
 
 bool rpc_command_executor::set_bootstrap_daemon(
   const std::string &address,
-  const std::string &username,\
+  const std::string &username,
   const std::string &password)
 {
-  try {
-    invoke<SET_BOOTSTRAP_DAEMON>(json{
-      {"address", address},
-      {"username", username},
-      {"password", password}
-    });
-  } catch (const std::exception& e) {
-    tools::fail_msg_writer()
-      << "Failed to set bootstrap daemon to: " << address << ": " << e.what();
-    return false;
-  }
 
-  tools::success_msg_writer()
-    << "Successfully set bootstrap daemon addres= to "
-    << (!address.empty() ? address : "none");
-  return true;
+    auto maybe_set_bootstrap = try_running([&] {
+    json params{
+        {"address", address},
+        {"username", username},
+        {"password", password}
+    };
+    return invoke<SET_BOOTSTRAP_DAEMON>(std::move(params)); }, "Failed to query master node state changes");
+  
+    if (!maybe_set_bootstrap)
+      return false;
+
+    auto set_bootstrap_daemon = *maybe_set_bootstrap;
+
+    tools::success_msg_writer()
+      << "Successfully set bootstrap daemon address to "
+      << (!address.empty() ? address : "none");
+    return true;
 }
 
 bool rpc_command_executor::version()

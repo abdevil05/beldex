@@ -180,6 +180,7 @@ namespace cryptonote::rpc {
     , m_should_use_bootstrap_daemon(false)
     , m_was_bootstrap_ever_used(false)
   {}
+
   bool core_rpc_server::set_bootstrap_daemon(const std::string &address, std::string_view username_password)
   {
     std::string_view username, password;
@@ -209,14 +210,21 @@ namespace cryptonote::rpc {
     return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  void core_rpc_server::init(const boost::program_options::variables_map& vm)
+  bool core_rpc_server::init(const boost::program_options::variables_map& vm)
   {
     if (!set_bootstrap_daemon(command_line::get_arg(vm, arg_bootstrap_daemon_address),
                               command_line::get_arg(vm, arg_bootstrap_daemon_login)))
     {
       MERROR("Failed to parse bootstrap daemon address");
+      return false;
     }
     m_was_bootstrap_ever_used = false;
+    return true;
+  }
+  //---------------------------------------------------------------------------------
+  bool core_rpc_server::deinit()
+  {
+    return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   bool core_rpc_server::check_core_ready()
@@ -253,19 +261,20 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_INFO& info, rpc_context context)
   {
     PERF_TIMER(on_get_info);
+
     if (use_bootstrap_daemon_if_necessary<GET_INFO>({}, info.response))
     {
-        if (context.admin)
-        {
-            auto [height, top_hash] = m_core.get_blockchain_top();
-            info.response["height_without_bootstrap"] = height + 1;
-            info.response["was_bootstrap_ever_used"] = true;
+      if (context.admin)
+      {
+        auto [height, top_hash] = m_core.get_blockchain_top();
+        info.response["height_without_bootstrap"] = ++height; // turn top block height into blockchain height
+        info.response["was_bootstrap_ever_used"] = true;
 
-            std::shared_lock lock{m_bootstrap_daemon_mutex};
-            if (m_bootstrap_daemon)
-                info.response["bootstrap_daemon_address"] = m_bootstrap_daemon->address();
-        }
-        return;
+        std::shared_lock lock{m_bootstrap_daemon_mutex};
+        if (m_bootstrap_daemon)
+            info.response["bootstrap_daemon_address"] = m_bootstrap_daemon->address();
+      }
+      return;
     }
 
     auto [top_height, top_hash] = m_core.get_blockchain_top();
@@ -1438,22 +1447,10 @@ namespace cryptonote::rpc {
     stats.response["status"] = STATUS_OK;
 
   }
-  // //------------------------------------------------------------------------------------------------------------------------------
-  // SET_BOOTSTRAP_DAEMON::response core_rpc_server::invoke(SET_BOOTSTRAP_DAEMON::request&& req, rpc_context context)
-  // {
-  //   PERF_TIMER(on_set_bootstrap_daemon);
-
-  //   if (!set_bootstrap_daemon(req.address, req.username, req.password))
-  //     throw rpc_error{ERROR_WRONG_PARAM, "Failed to set bootstrap daemon to address = " + req.address};
-
-  //   SET_BOOTSTRAP_DAEMON::response res{};
-  //   res.status = STATUS_OK;
-  //   return res;
-  // }
   //------------------------------------------------------------------------------------------------------------------------------
-  void core_rpc_server::invoke(SET_BOOTSTRAP_DAEMON& bootstrap_daemon, rpc_context context){
+  void core_rpc_server::invoke(SET_BOOTSTRAP_DAEMON& set_bootstrap, rpc_context context){
     PERF_TIMER(on_set_bootstrap_daemon);
-    const auto& req = bootstrap_daemon.request;
+    const auto& req = set_bootstrap.request;
 
     if (!set_bootstrap_daemon(req.address, req.username, req.password))
     {
@@ -1463,8 +1460,8 @@ namespace cryptonote::rpc {
     }
 
     // On success, populate the response
-    bootstrap_daemon.response["status"] = STATUS_OK;
-    bootstrap_daemon.response["address"] = req.address.empty() ? "none" : req.address;
+    set_bootstrap.response["status"] = STATUS_OK;
+    set_bootstrap.response["address"] = req.address.empty() ? "none" : req.address;
   }
   //------------------------------------------------------------------------------------------------------------------------------
 
@@ -1660,20 +1657,18 @@ namespace cryptonote::rpc {
   template <typename RPC>
   bool core_rpc_server::use_bootstrap_daemon_if_necessary(const nlohmann::json& req, nlohmann::json& res)
   {
-      res["untrusted"] = false;
+    res["untrusted"] = false; // If compilation fails here then the type being instantiated doesn't support using a bootstrap daemon
 
-      auto bs_lock = should_bootstrap_lock();
-      if (!bs_lock)
-          return false;  // No bootstrap daemon available
+    auto bs_lock = should_bootstrap_lock();
+    if (!bs_lock)
+      return false;  // No bootstrap daemon available
 
-      std::string command_name{RPC::names().front()};
+    if (!m_bootstrap_daemon->invoke_json<RPC>(req, res))
+      throw std::runtime_error{"Bootstrap request failed"};
 
-      if (!m_bootstrap_daemon->invoke_json(command_name, req, res))
-          throw std::runtime_error{"Bootstrap request failed"};
-
-      m_was_bootstrap_ever_used = true;
-      res["untrusted"] = true;
-      return true;
+    m_was_bootstrap_ever_used = true;
+    res["untrusted"] = true;
+    return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_LAST_BLOCK_HEADER& get_last_block_header, rpc_context context)

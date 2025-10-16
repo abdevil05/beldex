@@ -206,11 +206,11 @@ namespace cryptonote::rpc {
         "level", required{set_log_level.request.level});
   }
 
-  void parse_request(SET_BOOTSTRAP_DAEMON& bootstrap_daemon, rpc_input in) {
+  void parse_request(SET_BOOTSTRAP_DAEMON& set_bootstrap_daemon, rpc_input in) {
     get_values(in,
-        "address", bootstrap_daemon.request.address,
-        "password",bootstrap_daemon.request.password,
-        "username",bootstrap_daemon.request.username);
+        "address",  required{set_bootstrap_daemon.request.address},
+        "password", set_bootstrap_daemon.request.password,
+        "username", set_bootstrap_daemon.request.username);
   }
 
   void parse_request(SET_LOG_CATEGORIES& set_log_categories, rpc_input in) {
