@@ -414,8 +414,8 @@ namespace cryptonote::rpc {
     GET_BLOCKS_BIN::response res{};
 
     PERF_TIMER(on_get_blocks);
-    // if (use_bootstrap_daemon_if_necessary<GET_BLOCKS_BIN>(req, res))
-    //   return res;
+    if (use_bootstrap_daemon_if_necessary<GET_BLOCKS_BIN>(req, res))
+      return res;
 
     std::vector<std::pair<std::pair<cryptonote::blobdata, crypto::hash>, std::vector<std::pair<crypto::hash, cryptonote::blobdata> > > > bs;
 
@@ -470,8 +470,8 @@ namespace cryptonote::rpc {
     GET_ALT_BLOCKS_HASHES_BIN::response res{};
 
     PERF_TIMER(on_get_alt_blocks_hashes);
-    // if (use_bootstrap_daemon_if_necessary<GET_ALT_BLOCKS_HASHES_BIN>(req, res))
-    //   return res;
+    if (use_bootstrap_daemon_if_necessary<GET_ALT_BLOCKS_HASHES_BIN>(req, res))
+      return res;
 
     std::vector<block> blks;
 
@@ -498,8 +498,8 @@ namespace cryptonote::rpc {
     GET_BLOCKS_BY_HEIGHT_BIN::response res{};
 
     PERF_TIMER(on_get_blocks_by_height);
-    // if (use_bootstrap_daemon_if_necessary<GET_BLOCKS_BY_HEIGHT_BIN>(req, res))
-    //   return res;
+    if (use_bootstrap_daemon_if_necessary<GET_BLOCKS_BY_HEIGHT_BIN>(req, res))
+      return res;
 
     res.status = "Failed";
     res.blocks.clear();
@@ -532,8 +532,8 @@ namespace cryptonote::rpc {
     GET_HASHES_BIN::response res{};
 
     PERF_TIMER(on_get_hashes);
-    // if (use_bootstrap_daemon_if_necessary<GET_HASHES_BIN>(req, res))
-    //   return res;
+    if (use_bootstrap_daemon_if_necessary<GET_HASHES_BIN>(req, res))
+      return res;
 
     res.start_height = req.start_height;
     if(!m_core.get_blockchain_storage().find_blockchain_supplement(req.block_ids, res.m_block_ids, res.start_height, res.current_height, false))
@@ -551,8 +551,8 @@ namespace cryptonote::rpc {
     GET_OUTPUTS_BIN::response res{};
 
     PERF_TIMER(on_get_outs_bin);
-    // if (use_bootstrap_daemon_if_necessary<GET_OUTPUTS_BIN>(req, res))
-    //   return res;
+    if (use_bootstrap_daemon_if_necessary<GET_OUTPUTS_BIN>(req, res))
+      return res;
 
     if (!context.admin && req.outputs.size() > GET_OUTPUTS_BIN::MAX_COUNT)
       res.status = "Too many outs requested";
@@ -638,8 +638,8 @@ namespace cryptonote::rpc {
     GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN::response res{};
 
     PERF_TIMER(on_get_indexes);
-    // if (use_bootstrap_daemon_if_necessary<GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN>(req, res))
-    //   return res;
+    if (use_bootstrap_daemon_if_necessary<GET_TX_GLOBAL_OUTPUTS_INDEXES_BIN>(req, res))
+      return res;
 
     bool r = m_core.get_tx_outputs_gindexs(req.txid, res.o_indexes);
     if(!r)
@@ -1187,11 +1187,15 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(SUBMIT_TRANSACTION& tx, rpc_context context)
   {
     PERF_TIMER(on_submit_transaction);
-    /*
-    if (use_bootstrap_daemon_if_necessary<SUBMIT_TRANSACTION>(req, res))
-      return res;
-    */
 
+    // json params{
+    //   {"tx_as_hex", tx.request.tx},
+    //   {"flash", tx.request.flash}
+    // };
+    // std::cout << "Submitting tx: " << params.dump() << std::endl;
+    // if (use_bootstrap_daemon_if_necessary<SUBMIT_TRANSACTION>(params, tx.response))
+    //   return;
+    
     if (!check_core_ready()) {
       tx.response["status"] = STATUS_BUSY;
       return;
@@ -1418,8 +1422,8 @@ namespace cryptonote::rpc {
     GET_TRANSACTION_POOL_HASHES_BIN::response res{};
 
     PERF_TIMER(on_get_transaction_pool_hashes);
-    // if (use_bootstrap_daemon_if_necessary<GET_TRANSACTION_POOL_HASHES_BIN>(req, res))
-    //   return res;
+    if (use_bootstrap_daemon_if_necessary<GET_TRANSACTION_POOL_HASHES_BIN>(req, res))
+      return res;
 
     std::vector<crypto::hash> tx_pool_hashes;
     m_core.get_pool().get_transaction_hashes(tx_pool_hashes, context.admin, req.flashed_txs_only);
@@ -1508,8 +1512,8 @@ namespace cryptonote::rpc {
 
     PERF_TIMER(on_get_output_blacklist_bin);
 
-    // if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_BLACKLIST_BIN>(req, res))
-    //   return res;
+    if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_BLACKLIST_BIN>(req, res))
+      return res;
 
     try
     {
@@ -1694,6 +1698,24 @@ namespace cryptonote::rpc {
 
     m_was_bootstrap_ever_used = true;
     res["untrusted"] = true;
+    return true;
+  }
+
+  template <typename RPC>
+  bool core_rpc_server::use_bootstrap_daemon_if_necessary(const typename RPC::request& req, typename RPC::response& res)
+  {
+    res.untrusted = false; // If compilation fails here then the type being instantiated doesn't support using a bootstrap daemon
+    auto bs_lock = should_bootstrap_lock();
+    if (!bs_lock)
+      return false;
+
+    std::string command_name{RPC::names().front()};
+
+    if (!m_bootstrap_daemon->invoke<RPC>(req, res))
+      throw std::runtime_error{"Bootstrap request failed"};
+
+    m_was_bootstrap_ever_used = true;
+    res.untrusted = true;
     return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -2500,8 +2522,9 @@ namespace cryptonote::rpc {
       res.status = "Binary only call";
       return res;
     }
-    // if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_DISTRIBUTION>(req, res))
-    //   return res;
+
+    if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_DISTRIBUTION_BIN>(req, res))
+      return res;
 
     try
     {

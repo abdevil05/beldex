@@ -443,7 +443,7 @@ namespace cryptonote::rpc {
   ///   - `"flash"` -- the flash transaction failed (see `flash_status`)
   struct SUBMIT_TRANSACTION : PUBLIC, LEGACY
   {
-    static constexpr auto names() { return NAMES("submit_transaction", "send_raw_transaction", "sendrawtransaction"); }
+    static constexpr auto names() { return NAMES("send_raw_transaction", "sendrawtransaction", "submit_transaction"); }
 
     struct request_parameters
     {

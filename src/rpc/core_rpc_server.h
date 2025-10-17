@@ -270,6 +270,9 @@ private:
     template <typename COMMAND_TYPE>
     bool use_bootstrap_daemon_if_necessary(const nlohmann::json& req, nlohmann::json& res);
     
+    template <typename COMMAND_TYPE>
+    bool use_bootstrap_daemon_if_necessary(const typename COMMAND_TYPE::request& req, typename COMMAND_TYPE::response& res);
+
     core& m_core;
     nodetool::node_server<cryptonote::t_cryptonote_protocol_handler<cryptonote::core> >& m_p2p;
     std::shared_mutex m_bootstrap_daemon_mutex;
