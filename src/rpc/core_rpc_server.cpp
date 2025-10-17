@@ -1436,9 +1436,8 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_TRANSACTION_POOL_HASHES& get_transaction_pool_hashes, rpc_context context)
   {
     PERF_TIMER(on_get_transaction_pool_hashes);
-    //TODO handle bootstrap daemon with RPC
-    // if (use_bootstrap_daemon_if_necessary<GET_TRANSACTION_POOL_HASHES>(req, res))
-    //   return res;
+    if (use_bootstrap_daemon_if_necessary<GET_TRANSACTION_POOL_HASHES>({}, get_transaction_pool_hashes.response))
+      return;
 
     std::vector<crypto::hash> tx_hashes;
     m_core.get_pool().get_transaction_hashes(tx_hashes, context.admin);
@@ -1449,9 +1448,11 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_TRANSACTION_POOL_STATS& stats, rpc_context context)
   {
     PERF_TIMER(on_get_transaction_pool_stats);
-    //TODO handle bootstrap daemon
-    // if (use_bootstrap_daemon_if_necessary<GET_TRANSACTION_POOL_STATS>(req, res))
-    //   return res;
+    json params{
+      {"include_unrelayed", stats.request.include_unrelayed}
+    };
+    if (use_bootstrap_daemon_if_necessary<GET_TRANSACTION_POOL_STATS>(params, stats.response))
+      return;
 
     auto txpool = m_core.get_pool().get_transaction_stats(stats.request.include_unrelayed);
     json pool_stats{
@@ -1723,6 +1724,14 @@ namespace cryptonote::rpc {
   {
     PERF_TIMER(on_get_last_block_header);
 
+    json params{
+      {"fill_pow_hash", get_last_block_header.request.fill_pow_hash},
+      {"get_tx_hashes", get_last_block_header.request.get_tx_hashes}
+    };
+
+    if (use_bootstrap_daemon_if_necessary<GET_LAST_BLOCK_HEADER>(params, get_last_block_header.response))
+      return;
+
     if(!check_core_ready())
     { 
       get_last_block_header.response["status"] = STATUS_BUSY;
@@ -1747,7 +1756,19 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_BLOCK_HEADER_BY_HASH& get_block_header_by_hash, rpc_context context)
   {
     PERF_TIMER(on_get_block_header_by_hash);
+    
+    json params{
+      {"hash",get_block_header_by_hash.request.hash},
+      {"hashes", json::array()},
+      {"fill_pow_hash",get_block_header_by_hash.request.fill_pow_hash},
+      {"get_tx_hashes",get_block_header_by_hash.request.get_tx_hashes}
+    };
+    for (const auto& h: get_block_header_by_hash.request.hashes)
+      params["hashes"].push_back(h);
 
+    if (use_bootstrap_daemon_if_necessary<GET_BLOCK_HEADER_BY_HASH>(params, get_block_header_by_hash.response))
+      return;
+    
     auto get = [this, &get_block_header_by_hash, admin=context.admin](const std::string &hash, block_header_response &block_header) {
       crypto::hash block_hash;
       if (!tools::hex_to_type(hash, block_hash))
@@ -1782,6 +1803,15 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_BLOCK_HEADERS_RANGE& get_block_headers_range, rpc_context context)
   {
     PERF_TIMER(on_get_block_headers_range);
+    json params{
+      {"start_height", get_block_headers_range.request.start_height},
+      {"end_height", get_block_headers_range.request.end_height},
+      {"fill_pow_hash", get_block_headers_range.request.fill_pow_hash},
+      {"get_tx_hashes", get_block_headers_range.request.get_tx_hashes}
+    };
+    if (use_bootstrap_daemon_if_necessary<GET_BLOCK_HEADERS_RANGE>(params, get_block_headers_range.response))
+      return;
+ 
     const uint64_t bc_height = m_core.get_current_blockchain_height();
     uint64_t start_height = get_block_headers_range.request.start_height;
     uint64_t end_height = get_block_headers_range.request.end_height;
@@ -1820,6 +1850,19 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_BLOCK_HEADER_BY_HEIGHT& get_block_header_by_height, rpc_context context)
   {
     PERF_TIMER(on_get_block_header_by_height);
+
+    json params{
+      {"height",get_block_header_by_height.request.height},
+      {"heights", json::array()},
+      {"fill_pow_hash",get_block_header_by_height.request.fill_pow_hash},
+      {"get_tx_hashes",get_block_header_by_height.request.get_tx_hashes}
+    };
+    for (const auto& h: get_block_header_by_height.request.heights)
+      params["heights"].push_back(h);
+
+    if (use_bootstrap_daemon_if_necessary<GET_BLOCK_HEADER_BY_HEIGHT>(params, get_block_header_by_height.response))
+      return;
+    
     auto get = [this, curr_height=m_core.get_current_blockchain_height(), pow=get_block_header_by_height.request.fill_pow_hash && context.admin, tx_hashes=get_block_header_by_height.request.get_tx_hashes]
         (uint64_t height, block_header_response& bhr) {
       if (height >= curr_height)
@@ -1856,6 +1899,14 @@ namespace cryptonote::rpc {
     uint64_t block_height;
     bool orphan = false;
     crypto::hash block_hash;
+    json params{
+      {"hash", get_block.request.hash},
+      {"height", get_block.request.height},
+      {"fill_pow_hash", get_block.request.fill_pow_hash}
+    };
+    if (use_bootstrap_daemon_if_necessary<GET_BLOCK>(params, get_block.response))
+      return;
+
     if (!get_block.request.hash.empty())
     {
       if (!tools::hex_to_type(get_block.request.hash, block_hash))
@@ -2083,8 +2134,19 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_OUTPUT_HISTOGRAM& get_output_histogram, rpc_context context)
   {
     PERF_TIMER(on_get_output_histogram);
-    // if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_HISTOGRAM>(req, res))
-    //   return res;
+    json params{
+      {"amounts", json::array()},
+      {"min_count", get_output_histogram.request.min_count},
+      {"max_count", get_output_histogram.request.max_count},
+      {"unlocked", get_output_histogram.request.unlocked},
+      {"recent_cutoff", get_output_histogram.request.recent_cutoff}
+    };
+
+    for (const auto& amt : get_output_histogram.request.amounts)
+      params["amounts"].push_back(amt);
+
+    if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_HISTOGRAM>(params, get_output_histogram.response))
+      return;    
 
     if (!context.admin && get_output_histogram.request.recent_cutoff > 0 && get_output_histogram.request.recent_cutoff < (uint64_t)time(NULL) - OUTPUT_HISTOGRAM_RECENT_CUTOFF_RESTRICTION)
     {
@@ -2128,9 +2190,8 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_VERSION& version, rpc_context context)
   {
     PERF_TIMER(on_get_version);
-    //TODO how replace bootstrap daemon
-    //if (use_bootstrap_daemon_if_necessary<GET_VERSION>(req, res))
-      //return res;
+    if (use_bootstrap_daemon_if_necessary<GET_VERSION>({}, version.response))
+      return;   
 
     version.response["version"] = pack_version(VERSION);
     version.response["status"] = STATUS_OK;
@@ -2235,6 +2296,8 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_LIMIT& limit, rpc_context context)
   {
     PERF_TIMER(on_get_limit);
+    if (use_bootstrap_daemon_if_necessary<GET_LIMIT>({}, limit.response))
+      return;
 
     limit.response = {
       {"limit_down", epee::net_utils::connection_basic::get_rate_down_limit()},
@@ -2477,8 +2540,19 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_OUTPUT_DISTRIBUTION& get_output_distribution, rpc_context context)
   {
     PERF_TIMER(on_get_output_distribution);
-    // if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_DISTRIBUTION>(req, res))
-    //   return res;
+    json params{
+      {"amounts", json::array()},
+      {"from_height", get_output_distribution.request.from_height},
+      {"to_height", get_output_distribution.request.to_height},
+      {"cumulative", get_output_distribution.request.cumulative}
+    };
+   
+    for (const auto& amt : get_output_distribution.request.amounts)
+      params["amounts"].push_back(amt);
+   
+    if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_DISTRIBUTION>(params, get_output_distribution.response))
+      return;    
+
     try
     {
       // 0 is placeholder for the whole chain
