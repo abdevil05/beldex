@@ -2654,6 +2654,17 @@ namespace cryptonote::rpc {
   {
     PERF_TIMER(on_get_quorum_state);
 
+    json params;
+    if (get_quorum_state.request.start_height.has_value())
+      params["start_height"] = *get_quorum_state.request.start_height;
+    if (get_quorum_state.request.end_height.has_value())
+      params["end_height"] = *get_quorum_state.request.end_height;
+    if (get_quorum_state.request.quorum_type.has_value())
+      params["quorum_type"] = *get_quorum_state.request.quorum_type;
+
+    if (use_bootstrap_daemon_if_necessary<GET_QUORUM_STATE>(params, get_quorum_state.response))
+      return;
+
     const auto& quorum_type = get_quorum_state.request.quorum_type;
 
     auto is_requested_type = [&quorum_type](master_nodes::quorum_type type) {
@@ -3251,6 +3262,17 @@ namespace cryptonote::rpc {
     if (!context.admin)
       check_quantity_limit(get_checkpoints.request.count, GET_CHECKPOINTS::MAX_COUNT);
 
+    json params;
+    if (get_checkpoints.request.start_height.has_value())
+        params["start_height"] = *get_checkpoints.request.start_height;
+    if (get_checkpoints.request.end_height.has_value())
+        params["end_height"] = *get_checkpoints.request.end_height;
+    if (get_checkpoints.request.count.has_value())
+        params["count"] = *get_checkpoints.request.count;
+
+    if (use_bootstrap_daemon_if_necessary<GET_CHECKPOINTS>(params, get_checkpoints.response))
+        return;
+
     auto& start = get_checkpoints.request.start_height;
     auto& end = get_checkpoints.request.end_height;
     auto count = get_checkpoints.request.count.value_or(GET_CHECKPOINTS::NUM_CHECKPOINTS_TO_QUERY_BY_DEFAULT);
@@ -3281,6 +3303,14 @@ namespace cryptonote::rpc {
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_MN_STATE_CHANGES& get_mn_state_changes, rpc_context context)
   {
+    json params;
+    params["start_height"] = get_mn_state_changes.request.start_height;
+    if (get_mn_state_changes.request.end_height.has_value())
+        params["end_height"] = *get_mn_state_changes.request.end_height;
+
+    if (use_bootstrap_daemon_if_necessary<GET_MN_STATE_CHANGES>(params, get_mn_state_changes.response))
+        return;
+
     using blob_t = cryptonote::blobdata;
     using block_pair_t = std::pair<blob_t, block>;
     std::vector<block_pair_t> blocks;
@@ -3402,9 +3432,17 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(BNS_NAMES_TO_OWNERS& names_to_owners, rpc_context context)
   {
     if (!context.admin)
-    {
       check_quantity_limit(names_to_owners.request.name_hash.size(), BNS_NAMES_TO_OWNERS::MAX_REQUEST_ENTRIES);
-    }
+
+    json params{
+      {"name_hash", json::array()},
+      {"include_expired", names_to_owners.request.include_expired},
+    };
+    for (const auto& name_hash: names_to_owners.request.name_hash)
+      params["name_hash"].push_back(name_hash);
+
+    if (use_bootstrap_daemon_if_necessary<BNS_NAMES_TO_OWNERS>(params, names_to_owners.response))
+        return;
 
     std::optional<uint64_t> height = m_core.get_current_blockchain_height();
     auto hf_version = get_network_version(nettype(), *height);
@@ -3446,6 +3484,16 @@ namespace cryptonote::rpc {
   {
     if (!context.admin)
       check_quantity_limit(owners_to_names.request.entries.size(), BNS_OWNERS_TO_NAMES::MAX_REQUEST_ENTRIES);
+    
+    json params{
+      {"entries", json::array()},
+      {"include_expired", owners_to_names.request.include_expired},
+    };
+    for (const auto& name_hash: owners_to_names.request.entries)
+      params["entries"].push_back(name_hash);
+
+    if (use_bootstrap_daemon_if_necessary<BNS_OWNERS_TO_NAMES>(params, owners_to_names.response))
+        return;
 
     std::unordered_map<bns::generic_owner, size_t> owner_to_request_index;
     std::vector<bns::generic_owner> owners;
@@ -3516,6 +3564,13 @@ namespace cryptonote::rpc {
     if (!name_hash)
       throw rpc_error{ERROR_WRONG_PARAM, "Unable to resolve BNS address: invalid 'name_hash' value '" + req.name_hash + "'"};
 
+    json params{
+      {"type", resolve.request.type},
+      {"name_hash", *name_hash},
+    };
+
+    if (use_bootstrap_daemon_if_necessary<BNS_RESOLVE>(params, resolve.response))
+      return;
 
     auto hf_version = m_core.get_blockchain_storage().get_network_version();
     auto type = static_cast<bns::mapping_type>(req.type);
@@ -3535,7 +3590,12 @@ namespace cryptonote::rpc {
   {
 
     std::string name = tools::lowercase_ascii_string(std::move(lookup.request.name));
-    
+    json params{
+      {"name", lookup.request.name}
+    };
+    if (use_bootstrap_daemon_if_necessary<BNS_LOOKUP>(params, lookup.response))
+      return;
+
     BNS_NAMES_TO_OWNERS name_to_owner{};
     name_to_owner.request.name_hash.push_back(bns::name_to_base64_hash(name));   
     invoke(name_to_owner, context);
@@ -3560,14 +3620,18 @@ namespace cryptonote::rpc {
           {"wallet", "encrypted_wallet_value"},
           {"eth_addr", "encrypted_eth_addr_value"}})
       {
-        if (!entries[key].empty()) {
-          BNS_VALUE_DECRYPT value_decrypt;
-          value_decrypt.request = {name, type, entries[key]};
-          invoke(value_decrypt, context);
-          lookup.response[type + "_value"] = value_decrypt.response["value"];
+        if (entries.contains(key) && !entries[key].get<std::string>().empty()) {
+           BNS_VALUE_DECRYPT value_decrypt;
+           value_decrypt.request = {name, type, entries[key].get<std::string>()};
+           try {
+               invoke(value_decrypt, context);
+               lookup.response[type + "_value"] = value_decrypt.response["value"];
+           } catch (const rpc_error& e) {
+               MERROR("Value decryption failed for type " << type << ": " << e.what());
+           }
         }
+      }    
       }
-    }
 
     lookup.response["status"] = STATUS_OK;
   }
@@ -3581,6 +3645,14 @@ namespace cryptonote::rpc {
     // Validate encrypted value
     //
     // ---------------------------------------------------------------------------------------------
+    json params{
+      {"name", req.name},
+      {"type", req.type},
+      {"encrypted_value", req.encrypted_value},
+    };
+    if (use_bootstrap_daemon_if_necessary<BNS_VALUE_DECRYPT>(params, value_decrypt.response))
+      return;
+
     if (req.encrypted_value.size() % 2 != 0)
       throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Value length not divisible by 2, length=" + std::to_string(req.encrypted_value.size())};
 
