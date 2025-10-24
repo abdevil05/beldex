@@ -1188,13 +1188,12 @@ namespace cryptonote::rpc {
   {
     PERF_TIMER(on_submit_transaction);
 
-    // json params{
-    //   {"tx_as_hex", tx.request.tx},
-    //   {"flash", tx.request.flash}
-    // };
-    // std::cout << "Submitting tx: " << params.dump() << std::endl;
-    // if (use_bootstrap_daemon_if_necessary<SUBMIT_TRANSACTION>(params, tx.response))
-    //   return;
+    json params{
+      {"tx_as_hex", oxenc::to_hex(tx.request.tx)},
+      {"flash", tx.request.flash}
+    };
+    if (use_bootstrap_daemon_if_necessary<SUBMIT_TRANSACTION>(params, tx.response))
+      return;
     
     if (!check_core_ready()) {
       tx.response["status"] = STATUS_BUSY;
@@ -3645,14 +3644,6 @@ namespace cryptonote::rpc {
     // Validate encrypted value
     //
     // ---------------------------------------------------------------------------------------------
-    json params{
-      {"name", req.name},
-      {"type", req.type},
-      {"encrypted_value", req.encrypted_value},
-    };
-    if (use_bootstrap_daemon_if_necessary<BNS_VALUE_DECRYPT>(params, value_decrypt.response))
-      return;
-
     if (req.encrypted_value.size() % 2 != 0)
       throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Value length not divisible by 2, length=" + std::to_string(req.encrypted_value.size())};
 
