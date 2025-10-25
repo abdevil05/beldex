@@ -223,8 +223,8 @@ namespace master_nodes {
   // blocks out of sync and sending something that it thinks is legit.
   inline constexpr uint64_t VOTE_OR_TX_VERIFY_HEIGHT_BUFFER    = 5;
 
-  inline constexpr std::array<uint16_t, 3> MIN_STORAGE_SERVER_VERSION{{2, 3, 0}};
-  inline constexpr std::array<uint16_t, 3> MIN_BELNET_VERSION{{0, 9, 7}};
+  inline constexpr std::array<uint16_t, 3> MIN_STORAGE_SERVER_VERSION{{2, 4, 0}};
+  inline constexpr std::array<uint16_t, 3> MIN_BELNET_VERSION{{0, 9, 8}};
 
   // The minimum accepted version number, broadcasted by Master Nodes via uptime proofs for each hardfork
  struct proof_version
@@ -236,6 +236,7 @@ namespace master_nodes {
   };
 
   inline constexpr proof_version MIN_UPTIME_PROOF_VERSIONS[] = {
+    proof_version{{cryptonote::hf::hf20_bulletproof_plus,   0}, {7,0,0}, {0,9,8}, {2,4,0}},
     proof_version{{cryptonote::hf::hf19_enhance_bns,        0}, {6,0,0}, {0,9,7}, {2,3,0}},
     proof_version{{cryptonote::hf::hf18_bns,                0}, {5,0,0}, {0,9,7}, {2,3,0}},
     proof_version{{cryptonote::hf::hf17_POS,                0}, {4,0,0}, {0,9,5}, {2,2,0}},

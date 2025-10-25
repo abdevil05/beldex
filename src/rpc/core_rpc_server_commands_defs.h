@@ -443,7 +443,7 @@ namespace cryptonote::rpc {
   ///   - `"flash"` -- the flash transaction failed (see `flash_status`)
   struct SUBMIT_TRANSACTION : PUBLIC, LEGACY
   {
-    static constexpr auto names() { return NAMES("submit_transaction", "send_raw_transaction", "sendrawtransaction"); }
+    static constexpr auto names() { return NAMES("send_raw_transaction", "sendrawtransaction", "submit_transaction"); }
 
     struct request_parameters
     {
@@ -1179,23 +1179,17 @@ namespace cryptonote::rpc {
     } request;
   };
 
-  // BELDEX_RPC_DOC_INTROSPECT
-  // // Set the bootstrap daemon to use for data on the blockchain whilst syncing the chain.
-  // struct SET_BOOTSTRAP_DAEMON : RPC_COMMAND
-  // {
-  //   static constexpr auto names() { return NAMES("set_bootstrap_daemon"); }
-  //   struct request
-  //   {
-
-  //     std::string address;
-  //     std::string username;
-  //     std::string password;
-
-  //     KV_MAP_SERIALIZABLE
-  //   };
-
-  //   struct response : STATUS {};
-  // };
+  // Set the bootstrap daemon to use for data on the blockchain whilst syncing the chain.
+  struct SET_BOOTSTRAP_DAEMON : RPC_COMMAND
+  {
+    static constexpr auto names() { return NAMES("set_bootstrap_daemon"); }
+    struct request_parameters
+    {
+      std::string address;
+      std::string username;
+      std::string password;
+    } request;
+  };
 
   /// RPC: daemon/stop_daemon
   ///
@@ -2737,7 +2731,8 @@ namespace cryptonote::rpc {
     SUBMIT_TRANSACTION,
     SYNC_INFO,
     TEST_TRIGGER_P2P_RESYNC,
-    TEST_TRIGGER_UPTIME_PROOF
+    TEST_TRIGGER_UPTIME_PROOF,
+    SET_BOOTSTRAP_DAEMON
   >;
   using FIXME_old_rpc_types = tools::type_list<
     RELAY_TX
