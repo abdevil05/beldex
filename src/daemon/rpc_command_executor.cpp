@@ -510,7 +510,7 @@ bool rpc_command_executor::show_status() {
 
   uint64_t height = info["height"].get<uint64_t>();
   uint64_t net_height = std::max(info["target_height"].get<uint64_t>(), height);
-  // std::string bootstrap_msg;
+  std::string bootstrap_msg;
 
   std::ostringstream str;
   str << "Height: " << height;
@@ -524,16 +524,16 @@ bool rpc_command_executor::show_status() {
   if (height < net_height)
     str << ", syncing";
 
-  // if (info.value("was_bootstrap_ever_used", false))
-  // {
-  //   str << ", bootstrap " << info["bootstrap_daemon_address"].get<std::string_view>();
-  //   if (info.value("untrusted", false)){
-  //     auto hwb = info["height_without_bootstrap"].get<uint64_t>();
-  //     str << fmt::format(", local height: {} ({:.1f}%)", hwb, get_sync_percentage(hwb, net_height));
-  //   }
-  //   else
-  //     str << " was used";
-  // }
+  if (info.value("was_bootstrap_ever_used", false))
+  {
+    str << ", bootstrap " << info["bootstrap_daemon_address"].get<std::string_view>();
+    if (info.value("untrusted", false)){
+      auto hwb = info["height_without_bootstrap"].get<uint64_t>();
+      str << fmt::format(", local height: {} ({:.1f}%)", hwb, get_sync_percentage(hwb, net_height));
+    }
+    else
+      str << " was used";
+  }
 
   auto hf_version = hfinfo["version"].get<cryptonote::hf>();
   if (hf_version < cryptonote::feature::POS && !has_mining_info)
@@ -2565,25 +2565,30 @@ bool rpc_command_executor::check_blockchain_pruning()
     return true;
 }
 
-// bool rpc_command_executor::set_bootstrap_daemon(
-//   const std::string &address,
-//   const std::string &username,
-//   const std::string &password)
-// {
-//     SET_BOOTSTRAP_DAEMON::request req{};
-//     req.address = address;
-//     req.username = username;
-//     req.password = password;
+bool rpc_command_executor::set_bootstrap_daemon(
+  const std::string &address,
+  const std::string &username,
+  const std::string &password)
+{
 
-//     SET_BOOTSTRAP_DAEMON::response res{};
-//     if (!invoke<SET_BOOTSTRAP_DAEMON>(std::move(req), res, "Failed to set bootstrap daemon to: " + address))
-//         return false;
+    auto maybe_set_bootstrap = try_running([&] {
+    json params{
+        {"address", address},
+        {"username", username},
+        {"password", password}
+    };
+    return invoke<SET_BOOTSTRAP_DAEMON>(std::move(params)); }, "Failed to query master node state changes");
+  
+    if (!maybe_set_bootstrap)
+      return false;
 
-//     tools::success_msg_writer()
-//       << "Successfully set bootstrap daemon address to "
-//       << (!req.address.empty() ? req.address : "none");
-//     return true;
-// }
+    auto set_bootstrap_daemon = *maybe_set_bootstrap;
+
+    tools::success_msg_writer()
+      << "Successfully set bootstrap daemon address to "
+      << (!address.empty() ? address : "none");
+    return true;
+}
 
 bool rpc_command_executor::version()
 {

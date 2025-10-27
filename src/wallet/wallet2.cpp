@@ -808,7 +808,7 @@ size_t estimate_rct_tx_size(int n_inputs, int mixin, int n_outputs, size_t extra
 uint64_t estimate_tx_weight(int n_inputs, int mixin, int n_outputs, size_t extra_size, bool clsag, bool bulletproof_plus)
 {
   size_t size = estimate_rct_tx_size(n_inputs, mixin, n_outputs, extra_size, clsag, bulletproof_plus);
-  if (n_outputs > 2)    //need to check this condition "check" later
+  if (n_outputs > 2)    
   {
     const uint64_t bp_base = (32 * ((bulletproof_plus ? 6 : 9) + 7 * 2)) / 2; // notional size of a 2 output proof, normalized to 1 proof (ie, divided by 2)
     size_t log_padded_outputs = 2;
@@ -6509,9 +6509,9 @@ std::optional<std::string> wallet2::resolve_address(std::string address, uint64_
         {"name_hash", b64_hashed_name}
       };
       auto [success, addr_response] = resolve(req_params);
-      if (success && addr_response["encrypted_value"])
+      if (success && addr_response.contains("encrypted_value") && addr_response["encrypted_value"].is_string())
       {
-        std::optional<cryptonote::address_parse_info> addr_info = bns::encrypted_wallet_value_to_info(name, addr_response["encrypted_value"], addr_response["nonce"]);
+        std::optional<cryptonote::address_parse_info> addr_info = bns::encrypted_wallet_value_to_info(name, addr_response["encrypted_value"].get<std::string>(), addr_response["nonce"].get<std::string>());
         if (addr_info)
         {
           info = std::move(*addr_info);
@@ -8873,7 +8873,7 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
         {
           if (reason)
           {
-            *reason = "Signature requested when preparing ONS TX, but this wallet is not the owner of the record owner=" + rowner;
+            *reason = "Signature requested when preparing BNS TX, but this wallet is not the owner of the record owner=" + rowner;
             if (rbackup_owner.empty()) *reason += ", backup_owner=" + rbackup_owner;
           }
           return result;
@@ -10284,7 +10284,9 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
   ptx.construction_data.hf_version = tx_params.hf_version;
   ptx.construction_data.rct_config = {
     rct::RangeProofType::PaddedBulletproof,
-    use_fork_rules(cryptonote::feature::BULLETPROOF_PLUS, 0) ? 4 : 3
+    (tx_params.hf_version >= hf::hf20_bulletproof_plus)
+        ? (use_fork_rules(cryptonote::feature::BULLETPROOF_PLUS, 0) ? 4 : 3)
+        : (use_fork_rules(cryptonote::feature::CLSAG, 0) ? 3 : 2)
   };
   ptx.construction_data.dests = dsts;
   // record which subaddress indices are being used as inputs
@@ -11040,7 +11042,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   uint64_t needed_fee, available_for_fee = 0;
   uint64_t upper_transaction_weight_limit = get_upper_transaction_weight_limit();
   const bool clsag = use_fork_rules(feature::CLSAG, 0);
-  const bool bulletproof_plus = use_fork_rules(cryptonote::feature::BULLETPROOF_PLUS, 0);
+  const bool bulletproof_plus = (tx_params.hf_version >= hf::hf20_bulletproof_plus) ? use_fork_rules(cryptonote::feature::BULLETPROOF_PLUS, 0) : false;
   const rct::RCTConfig rct_config{rct::RangeProofType::PaddedBulletproof, bulletproof_plus ? 4 : 3};
   const auto base_fee = get_base_fees();
   const uint64_t fee_percent = get_fee_percent(priority, tx_params.tx_type);
@@ -11775,17 +11777,17 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
   uint64_t upper_transaction_weight_limit = get_upper_transaction_weight_limit();
   std::vector<std::vector<get_outs_entry>> outs;
 
+  auto hf_version = get_hard_fork_version();
+  THROW_WALLET_EXCEPTION_IF(!hf_version, error::get_hard_fork_version_error, "Failed to query current hard fork version");
+
   const bool clsag = use_fork_rules(feature::CLSAG, 0);
-  const bool bulletproof_plus = use_fork_rules(cryptonote::feature::BULLETPROOF_PLUS, 0);
+  const bool bulletproof_plus = (*hf_version >= hf::hf20_bulletproof_plus) ? use_fork_rules(cryptonote::feature::BULLETPROOF_PLUS, 0) : false;
   const rct::RCTConfig rct_config{rct::RangeProofType::PaddedBulletproof, bulletproof_plus ? 4 : 3};
   const auto base_fee = get_base_fees();
   const uint64_t fee_percent = get_fee_percent(priority, tx_type);
   const uint64_t fee_quantization_mask = get_fee_quantization_mask();
   uint64_t fixed_fee = 0;
  
-  auto hf_version = get_hard_fork_version();
-  THROW_WALLET_EXCEPTION_IF(!hf_version, error::get_hard_fork_version_error, "Failed to query current hard fork version");
-
   beldex_construct_tx_params beldex_tx_params = tools::wallet2::construct_params(*hf_version, tx_type, priority);
   uint64_t burn_fixed = 0, burn_percent = 0;
 
@@ -11971,16 +11973,16 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const crypton
   uint64_t upper_transaction_weight_limit = get_upper_transaction_weight_limit();
   std::vector<std::vector<get_outs_entry>> outs;
 
+  auto hf_version = get_hard_fork_version();
+  THROW_WALLET_EXCEPTION_IF(!hf_version, error::get_hard_fork_version_error, "Failed to query current hard fork version");
+
   const bool clsag = use_fork_rules(feature::CLSAG, 0);
-  const bool bulletproof_plus = use_fork_rules(cryptonote::feature::BULLETPROOF_PLUS, 0);
+  const bool bulletproof_plus = (*hf_version >= hf::hf20_bulletproof_plus) ? use_fork_rules(cryptonote::feature::BULLETPROOF_PLUS, 0) : false;
   const rct::RCTConfig rct_config{rct::RangeProofType::PaddedBulletproof, bulletproof_plus ? 4 : 3};
   const auto base_fee = get_base_fees();
   const uint64_t fee_percent = get_fee_percent(priority, tx_type);
   const uint64_t fee_quantization_mask = get_fee_quantization_mask();
   uint64_t fixed_fee = 0;
-
-  auto hf_version = get_hard_fork_version();
-  THROW_WALLET_EXCEPTION_IF(!hf_version, error::get_hard_fork_version_error, "Failed to query current hard fork version");
 
   beldex_construct_tx_params beldex_tx_params = tools::wallet2::construct_params(*hf_version, tx_type, priority);
   uint64_t burn_fixed = 0, burn_percent = 0;
@@ -12203,13 +12205,17 @@ void wallet2::cold_sign_tx(const std::vector<pending_tx>& ptx_vector, signed_tx_
   auto dev_cold = dynamic_cast<::hw::device_cold*>(&hwdev);
   CHECK_AND_ASSERT_THROW_MES(dev_cold, "Device does not implement cold signing interface");
 
+  auto hf_version = get_hard_fork_version();
+  CHECK_AND_ASSERT_THROW_MES(hf_version, "Failed to query hard fork");
+
   hw::tx_aux_data aux_data;
   hw::wallet_shim wallet_shim;
   setup_shim(&wallet_shim, this);
   aux_data.tx_recipients = dsts_info;
-  aux_data.bp_version = use_fork_rules(cryptonote::feature::BULLETPROOF_PLUS , 0) ? 4 : 3;
-  auto hf_version = get_hard_fork_version();
-  CHECK_AND_ASSERT_THROW_MES(hf_version, "Failed to query hard fork");
+  aux_data.bp_version = (*hf_version >= hf::hf20_bulletproof_plus)
+        ? (use_fork_rules(cryptonote::feature::BULLETPROOF_PLUS, 0) ? 4 : 3)
+        : (use_fork_rules(cryptonote::feature::CLSAG, 0) ? 3 : 2);
+
   aux_data.hard_fork = static_cast<uint8_t>(*hf_version);
   dev_cold->tx_sign(&wallet_shim, txs, exported_txs, aux_data);
   tx_device_aux = aux_data.tx_device_aux;

@@ -3189,7 +3189,7 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
     return false;
   }
 
-  // allow bulletproofs plus
+  // Don't allow bulletproofs plus before V20
   if (hf_version < cryptonote::feature::BULLETPROOF_PLUS) {
     if (tx.version >= txversion::v4_tx_types && tx.is_transfer()) {
       const bool bulletproof_plus = rct::is_rct_bulletproof_plus(tx.rct_signatures.type);
@@ -3202,7 +3202,7 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
     }
   }
 
-  // forbid bulletproofs
+  // forbid bulletproofs from v20
   if (hf_version >= cryptonote::feature::BULLETPROOF_PLUS) {
     if (tx.version >= txversion::v4_tx_types && tx.is_transfer()) {
       const bool bulletproof = rct::is_rct_bulletproof(tx.rct_signatures.type);
