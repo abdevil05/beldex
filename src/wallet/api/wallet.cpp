@@ -2303,48 +2303,40 @@ std::vector<bnsInfo>* WalletImpl::MyBns() const
     for (auto const &entry : result["entries"])
     {
         std::string_view name;
-        std::string value_bchat, value_wallet, value_belnet, value_eth_addr;
+        std::string value_bchat, value_wallet, value_belnet, value_eth;
         if (auto got = cache.find(entry["name_hash"]); got != cache.end())
         {
             name = got->second.name;
-            // BCHAT
-            {
+
+            auto decrypt_value = [&](std::string_view key, bns::mapping_type type, std::string& out) {
+                auto it = entry.find(key);
+                if (it != entry.end() && !it->empty())
+                {
                 bns::mapping_value mv;
-                const auto type = bns::mapping_type::bchat;
-                if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry["encrypted_bchat_value"].get<std::string>()), &mv) && mv.decrypt(name, type))
-                    value_bchat = mv.to_readable_value(nettype, type);
-            }
-            // ETH_ADDRESS
-            {
-                bns::mapping_value mv;
-                const auto type = bns::mapping_type::eth_addr;
-                if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry["encrypted_eth_addr_value"].get<std::string>()), &mv) && mv.decrypt(name, type))
-                    value_eth_addr = mv.to_readable_value(nettype, type);
-            }
-            // WALLET
-            {
-                bns::mapping_value mv;
-                const auto type = bns::mapping_type::wallet;
-                if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry["encrypted_wallet_value"].get<std::string>()), &mv) && mv.decrypt(name, type))
-                    value_wallet = mv.to_readable_value(nettype, type);
-            }
-            // BELNET
-            {
-                bns::mapping_value mv;
-                const auto type = bns::mapping_type::belnet;
-                if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry["encrypted_belnet_value"].get<std::string>()), &mv) && mv.decrypt(name, type))
-                    value_belnet = mv.to_readable_value(nettype, type);
-            }
+                const auto& hex_str = it->get_ref<const std::string&>();
+                if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(hex_str), &mv) &&
+                    mv.decrypt(name, type))
+                {
+                    out = mv.to_readable_value(nettype, type);
+                }
+                }
+            };
+
+            decrypt_value("encrypted_bchat_value", bns::mapping_type::bchat, value_bchat);
+            decrypt_value("encrypted_wallet_value", bns::mapping_type::wallet, value_wallet);
+            decrypt_value("encrypted_belnet_value", bns::mapping_type::belnet, value_belnet);
+            decrypt_value("encrypted_eth_addr_value", bns::mapping_type::eth_addr, value_eth);
         }
+
         auto &info = my_bns->emplace_back();
         info.name_hash = entry["name_hash"];
         info.name = name.empty() ? "(none)" : std::string(name);
         info.value_bchat = value_bchat.empty() ? "(none)" : value_bchat;
         info.value_wallet = value_wallet.empty() ? "(none)" : value_wallet;
         info.value_belnet = value_belnet.empty() ? "(none)" : value_belnet;
-        info.value_eth_addr = value_eth_addr.empty() ? "(none)" : value_eth_addr;
+        info.value_eth_addr = value_eth.empty() ? "(none)" : value_eth;
         info.owner = entry["owner"];
-        if (auto got = entry.find("backup_owner"); got != entry.end())
+        if (entry.contains("backup_owner") && !entry["backup_owner"].is_null())
             info.backup_owner =  entry["backup_owner"];
         else
             info.backup_owner = "(none)";
