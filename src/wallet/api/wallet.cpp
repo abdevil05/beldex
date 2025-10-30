@@ -2307,18 +2307,17 @@ std::vector<bnsInfo>* WalletImpl::MyBns() const
         if (auto got = cache.find(entry["name_hash"]); got != cache.end())
         {
             name = got->second.name;
-
             auto decrypt_value = [&](std::string_view key, bns::mapping_type type, std::string& out) {
                 auto it = entry.find(key);
                 if (it != entry.end() && !it->empty())
                 {
-                bns::mapping_value mv;
-                const auto& hex_str = it->get_ref<const std::string&>();
-                if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(hex_str), &mv) &&
-                    mv.decrypt(name, type))
-                {
-                    out = mv.to_readable_value(nettype, type);
-                }
+                    bns::mapping_value mv;
+                    const auto& hex_str = it->get_ref<const std::string&>();
+                    if (!hex_str.empty() && bns::mapping_value::validate_encrypted(type, oxenc::from_hex(hex_str), &mv) &&
+                        mv.decrypt(name, type))
+                    {
+                        out = mv.to_readable_value(nettype, type);
+                    }
                 }
             };
 
@@ -2342,10 +2341,11 @@ std::vector<bnsInfo>* WalletImpl::MyBns() const
             info.backup_owner = "(none)";
         info.update_height = entry["update_height"];
         info.expiration_height = entry["expiration_height"];
-        info.encrypted_bchat_value = entry["encrypted_bchat_value"].empty() ? "(none)" : entry["encrypted_bchat_value"];
-        info.encrypted_wallet_value = entry["encrypted_wallet_value"].empty() ? "(none)" : entry["encrypted_wallet_value"];
-        info.encrypted_belnet_value = entry["encrypted_belnet_value"].empty() ? "(none)" : entry["encrypted_belnet_value"];
-        info.encrypted_eth_addr_value = entry["encrypted_eth_addr_value"].empty() ? "(none)" : entry["encrypted_eth_addr_value"];
+    
+        info.encrypted_bchat_value = entry["encrypted_bchat_value"].get<std::string>().empty() ? "(none)" : entry["encrypted_bchat_value"];
+        info.encrypted_wallet_value = entry["encrypted_wallet_value"].get<std::string>().empty() ? "(none)" : entry["encrypted_wallet_value"];
+        info.encrypted_belnet_value = entry["encrypted_belnet_value"].get<std::string>().empty() ? "(none)" : entry["encrypted_belnet_value"];
+        info.encrypted_eth_addr_value = entry["encrypted_eth_addr_value"].get<std::string>().empty() ? "(none)" : entry["encrypted_eth_addr_value"];
     }
     return my_bns;
 }
