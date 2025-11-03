@@ -1068,7 +1068,7 @@ int WalletImpl::countBns()
     auto w = wallet();
 
     nlohmann::json req_params{
-        {"entries", {}}
+        {"entries", nlohmann::json::array()}
     };
         
     for (uint32_t index = 0; index < w->get_num_subaddresses(0); ++index)
@@ -2282,7 +2282,7 @@ std::vector<bnsInfo>* WalletImpl::MyBns() const
     auto w = wallet();
 
     nlohmann::json req_params{
-        {"entries", {}}
+        {"entries", nlohmann::json::array()}
     };
 
     std::unordered_map<std::string, tools::wallet2::bns_detail> cache = w->get_bns_cache();
