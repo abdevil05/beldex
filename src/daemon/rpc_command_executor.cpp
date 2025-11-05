@@ -1731,7 +1731,7 @@ static void append_printable_master_node_list_entry(cryptonote::network_type net
     stream << indent2 << "Storage Server / Belnet Router versions: "
       << show_component_version(entry["storage_server_version"], "Storage Server")
       << " / "
-      << show_component_version(entry["storage_server_version"], "Belnet")
+      << show_component_version(entry["belnet_version"], "Belnet")
       << "\n";
 
     //
