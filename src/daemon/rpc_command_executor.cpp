@@ -1724,7 +1724,7 @@ static void append_printable_master_node_list_entry(cryptonote::network_type net
     // NOTE: Component Versions
     //
     auto show_component_version = [] (const json& j, std::string_view name) {
-      if (!j.is_array() || j.front().get<int>() == 0)
+      if (!j.is_array() || j.empty())
         return "("s + std::string{name} + " ping not yet received)"s;
       return tools::join(".", j.get<std::array<int, 3>>());
     };
