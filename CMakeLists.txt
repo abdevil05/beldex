@@ -535,7 +535,7 @@ else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${ARCH_FLAG}")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${ARCH_FLAG}")
 
-  set(WARNINGS "-Wall -Wextra -Wpointer-arith -Wwrite-strings -Wno-error=extra -Wno-error=deprecated-declarations -Wno-unused-parameter -Wno-unused-variable -Wno-error=unused-variable -Wno-error=uninitialized")
+  set(WARNINGS "-Wall -Wextra -Wpointer-arith -Wwrite-strings -Wno-error=extra -Wno-error=deprecated-declarations -Wno-unused-parameter -Wno-unused-variable -Wno-error=unused-variable -Wno-error=uninitialized -Wno-error=attributes -Wno-error=unused-but-set-variable")
 
   option(WARNINGS_AS_ERRORS "Enable warning as errors" OFF)
   if(NOT MINGW AND WARNINGS_AS_ERRORS)
