@@ -952,7 +952,7 @@ namespace lws
         const auto flags = req.generated_locally ? db::account_generated_locally : db::default_account;
         // MONERO_CHECK(disk.creation_request(req.creds.address, req.creds.key, flags));
         MONERO_UNWRAP(disk.add_account(req.creds.address, req.creds.key));
-        std::cout <<"add_account called\n";
+        // std::cout <<"add_account called\n";
         return response{true, req.generated_locally};
       }
     };//login
