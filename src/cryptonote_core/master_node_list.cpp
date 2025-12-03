@@ -53,8 +53,12 @@ extern "C" {
 #include "common/random.h"
 #include "common/lock.h"
 #include "common/hex.h"
+#include "common/threadpool.h"
+#include "common/tracy_shim.h"
 #include "blockchain.h"
 #include "master_node_quorum_cop.h"
+#include "serialization/deque.h"
+#include "serialization/string.h"
 
 #include "pos.h"
 #include "master_node_list.h"
@@ -1605,7 +1609,7 @@ namespace master_nodes
       throw std::runtime_error{fmt::format("Failed to verify block components for incoming {} at height {}",block_type, height)};
   }
 
-  void master_node_list::block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint)
+  void master_node_list::block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint , const std::optional<rescan_context>& rescan)
   {
     if (block.major_version < hf::hf9_master_nodes)
       return;

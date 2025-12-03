@@ -72,3 +72,7 @@ target_link_libraries(common
   PRIVATE
     sodium
     extra)
+
+if (TRACY_ENABLE)
+  target_link_libraries(common PUBLIC Tracy::TracyClient)
+endif()

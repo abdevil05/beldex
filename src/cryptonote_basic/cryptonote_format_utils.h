@@ -38,6 +38,7 @@
 #include "crypto/hash.h"
 #include "common/meta.h"
 #include "common/string_util.h"
+#include "common/tracy_shim.h"
 #include "serialization/binary_utils.h"
 #include "serialization/json_archive.h"
 #include <unordered_map>
@@ -71,6 +72,7 @@ namespace cryptonote
   template<typename T>
   bool find_tx_extra_field_by_type(const std::vector<tx_extra_field>& tx_extra_fields, T& field, size_t skip_fields = 0)
   {
+    ZoneScoped;
     if (skip_fields >= tx_extra_fields.size())
       return false;
 

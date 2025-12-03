@@ -55,6 +55,11 @@ namespace uptime_proof
 namespace master_nodes
 {
   constexpr uint64_t INVALID_HEIGHT = static_cast<uint64_t>(-1);
+  struct rescan_context
+  {
+    bool skip_verify;
+    uint64_t top_block_height;
+  };
 
   struct checkpoint_participation_entry
   {
@@ -424,7 +429,7 @@ namespace master_nodes
     master_node_list(const master_node_list &) = delete;
     master_node_list &operator=(const master_node_list &) = delete;
 
-    void block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, const cryptonote::checkpoint_t* checkpoint);
+    void block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, const cryptonote::checkpoint_t* checkpoint,const std::optional<rescan_context>& rescan = std::nullopt);
     void blockchain_detached(uint64_t height);
     void init();
     void validate_miner_tx(const cryptonote::miner_tx_info& info) const;

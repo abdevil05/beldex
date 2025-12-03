@@ -43,6 +43,7 @@
 #include "serialization/binary_utils.h"
 #include "cryptonote_format_utils.h"
 #include "cryptonote_config.h"
+#include "common/tracy_shim.h"
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
 #include "ringct/rctSigs.h"
@@ -563,6 +564,7 @@ namespace cryptonote
   //---------------------------------------------------------------
   [[nodiscard]] bool parse_tx_extra(const std::vector<uint8_t>& tx_extra, std::vector<tx_extra_field>& tx_extra_fields)
   {
+    ZoneScoped
     tx_extra_fields.clear();
 
     if(tx_extra.empty())
@@ -696,6 +698,7 @@ namespace cryptonote
   //---------------------------------------------------------------
   bool get_master_node_pubkey_from_tx_extra(const std::vector<uint8_t>& tx_extra, crypto::public_key& pubkey)
   {
+     ZoneScoped;
     tx_extra_master_node_pubkey pk;
     if (!get_field_from_tx_extra(tx_extra, pk))
       return false;
@@ -710,6 +713,7 @@ namespace cryptonote
   //---------------------------------------------------------------
   bool get_tx_secret_key_from_tx_extra(const std::vector<uint8_t>& tx_extra, crypto::secret_key& key)
   {
+    ZoneScoped
     tx_extra_tx_secret_key seckey;
     if (!get_field_from_tx_extra(tx_extra, seckey))
       return false;
@@ -792,6 +796,7 @@ namespace cryptonote
   //---------------------------------------------------------------
   bool get_master_node_contributor_from_tx_extra(const std::vector<uint8_t>& tx_extra, cryptonote::account_public_address& address)
   {
+    ZoneScoped;
     tx_extra_master_node_contributor contributor;
     if (!get_field_from_tx_extra(tx_extra, contributor))
       return false;
