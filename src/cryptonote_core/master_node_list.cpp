@@ -1635,13 +1635,15 @@ namespace master_nodes
     //
     std::shared_ptr<const quorum>              POS_quorum;
     std::vector<std::shared_ptr<const quorum>> alt_POS_quorums;
-    bool POS_hf = block.major_version >= hf::hf17_POS;
+    // bool POS_hf = block.major_version >= hf::hf17_POS;
+    bool POS_hf = m_blockchain.get_network_version(height) >= hf::hf17_POS;
     
     if (POS_hf)
     {
+      bool include_historical = m_rescanning;
       POS_quorum = get_quorum(quorum_type::POS,
                                 height,
-                                false /*include historical quorums*/,
+                                include_historical /*include historical quorums*/,
                                 alt_block ? &alt_POS_quorums : nullptr);
     }
 
@@ -1671,10 +1673,24 @@ namespace master_nodes
     }
     else
     {
-      // NOTE: No POS quorums are generated when the network has insufficient nodes to generate quorums
-      //       Or, block specifies time after all the rounds have timed out
-      bool miner_block = !POS_hf || !POS_quorum;
-      // std::cout << "miner_block : " << miner_block << std::endl;
+
+      bool POS_block = cryptonote::block_has_POS_components(block);
+
+      // ADD THIS CHECK FIRST - Trust historical POS blocks during rescan when quorum unavailable
+      if (POS_block && !POS_quorum)
+      {
+        // Check if this is a historical block (not at chain tip)
+        uint64_t current_height = m_blockchain.get_current_blockchain_height();
+        bool is_historical = (height < current_height) || m_rescanning;
+
+        if (is_historical)
+        {
+          MDEBUG("Trusting historical POS block " << height << " (current height: " << current_height << ", rescanning: " << m_rescanning << ")");
+          return; // Skip verification - trust the historical block
+        }
+      }
+
+      bool miner_block = !POS_hf || (!POS_quorum && !POS_block);
 
       result = verify_block_components(m_blockchain.nettype(),
                                        block,
@@ -1697,11 +1713,16 @@ namespace master_nodes
       return;
 
     std::lock_guard lock(m_mn_mutex);
+    if (rescan)
+        m_rescanning = true;
 
     result = process_block(block, txs);
 
     if (!rescan || !rescan->skip_verify)
       verify_block(block, false /*alt_block*/, checkpoint);
+
+    if (rescan)
+        m_rescanning = false;  
 
     if (cryptonote::block_has_POS_components(block))
     {
@@ -1718,6 +1739,13 @@ namespace master_nodes
       if (newest_block && (now >= earliest_time && now <= latest_time))
       {
         std::shared_ptr<const quorum> quorum = get_quorum(quorum_type::POS, block_height, false, nullptr);
+
+        if (!quorum || quorum->validators.empty())
+        {
+          MDEBUG("Skipping POS participation recording for block " << block_height << " - quorum unavailable");
+          return;
+        }
+
         if (!quorum || quorum->validators.empty())
         {
           throw std::runtime_error{fmt::format("Unexpected POS error {}" ,quorum ? " quorum was not generated" : " quorum was empty")};
@@ -2681,80 +2709,80 @@ std::vector<crypto::hash> POS_entropy_feeder::get_window() const {
     history.erase(it);
   }
 
-  // std::vector<crypto::public_key> master_node_list::state_t::get_expired_nodes(cryptonote::BlockchainDB const &db,
-  //                                                                              cryptonote::network_type nettype,
-  //                                                                              cryptonote::hf hf_version,
-  //                                                                              uint64_t block_height) const
-  // {
-  //   std::vector<crypto::public_key> expired_nodes;
-  //   uint64_t const lock_blocks = staking_num_lock_blocks(nettype,hf_version);
+  std::vector<crypto::public_key> master_node_list::state_t::get_expired_nodes(cryptonote::BlockchainDB const &db,
+                                                                               cryptonote::network_type nettype,
+                                                                               cryptonote::hf hf_version,
+                                                                               uint64_t block_height) const
+  {
+    std::vector<crypto::public_key> expired_nodes;
+    uint64_t const lock_blocks = staking_num_lock_blocks(nettype,hf_version);
 
-  //   // TODO(beldex): This should really use the registration height instead of getting the block and expiring nodes.
-  //   // But there's something subtly off when using registration height causing syncing problems.
-  //   if (hf_version == hf::hf9_master_nodes)
-  //   {
-  //     if (block_height <= lock_blocks)
-  //       return expired_nodes;
+    // TODO(beldex): This should really use the registration height instead of getting the block and expiring nodes.
+    // But there's something subtly off when using registration height causing syncing problems.
+    if (hf_version == hf::hf9_master_nodes)
+    {
+      if (block_height <= lock_blocks)
+        return expired_nodes;
 
-  //     const uint64_t expired_nodes_block_height = block_height - lock_blocks;
-  //     cryptonote::block block                   = {};
-  //     try
-  //     {
-  //       block = db.get_block_from_height(expired_nodes_block_height);
-  //     }
-  //     catch (std::exception const &e)
-  //     {
-  //       LOG_ERROR("Failed to get historical block to find expired nodes in v9: " << e.what());
-  //       return expired_nodes;
-  //     }
+      const uint64_t expired_nodes_block_height = block_height - lock_blocks;
+      cryptonote::block block                   = {};
+      try
+      {
+        block = db.get_block_from_height(expired_nodes_block_height);
+      }
+      catch (std::exception const &e)
+      {
+        LOG_ERROR("Failed to get historical block to find expired nodes in v9: " << e.what());
+        return expired_nodes;
+      }
 
-  //     if (block.major_version < hf::hf9_master_nodes)
-  //       return expired_nodes;
+      if (block.major_version < hf::hf9_master_nodes)
+        return expired_nodes;
 
-  //     for (crypto::hash const &hash : block.tx_hashes)
-  //     {
-  //       cryptonote::transaction tx;
-  //       if (!db.get_tx(hash, tx))
-  //       {
-  //         LOG_ERROR("Failed to get historical tx to find expired master nodes in v9");
-  //         continue;
-  //       }
+      for (crypto::hash const &hash : block.tx_hashes)
+      {
+        cryptonote::transaction tx;
+        if (!db.get_tx(hash, tx))
+        {
+          LOG_ERROR("Failed to get historical tx to find expired master nodes in v9");
+          continue;
+        }
 
-  //       uint32_t index = 0;
-  //       crypto::public_key key;
-  //       master_node_info info = {};
-  //       if (is_registration_tx(nettype, hf::hf9_master_nodes, tx, block.timestamp, expired_nodes_block_height, index, key, info))
-  //         expired_nodes.push_back(key);
-  //       index++;
-  //     }
+        uint32_t index = 0;
+        crypto::public_key key;
+        master_node_info info = {};
+        if (is_registration_tx(nettype, hf::hf9_master_nodes, tx, block.timestamp, expired_nodes_block_height, index, key, info))
+          expired_nodes.push_back(key);
+        index++;
+      }
 
-  //   }
-  //   else
-  //   {
-  //     for (auto it = master_nodes_infos.begin(); it != master_nodes_infos.end(); it++)
-  //     {
-  //       crypto::public_key const &mnode_key = it->first;
-  //       const master_node_info &info       = *it->second;
-  //       if (info.registration_hf_version >= hf::hf11_infinite_staking)
-  //       {
-  //         if (info.requested_unlock_height != KEY_IMAGE_AWAITING_UNLOCK_HEIGHT && block_height > info.requested_unlock_height)
-  //           expired_nodes.push_back(mnode_key);
-  //       }
-  //       else // Version 10 Bulletproofs
-  //       {
-  //         /// Note: this code exhibits a subtle unintended behaviour: a mnode that
-  //         /// registered in hardfork 9 and was scheduled for deregistration in hardfork 10
-  //         /// will have its life is slightly prolonged by the "grace period", although it might
-  //         /// look like we use the registration height to determine the expiry height.
-  //         uint64_t node_expiry_height = info.registration_height + lock_blocks + cryptonote::old::STAKING_REQUIREMENT_LOCK_BLOCKS_EXCESS;
-  //         if (block_height > node_expiry_height)
-  //           expired_nodes.push_back(mnode_key);
-  //       }
-  //     }
-  //   }
+    }
+    else
+    {
+      for (auto it = master_nodes_infos.begin(); it != master_nodes_infos.end(); it++)
+      {
+        crypto::public_key const &mnode_key = it->first;
+        const master_node_info &info       = *it->second;
+        if (info.registration_hf_version >= hf::hf11_infinite_staking)
+        {
+          if (info.requested_unlock_height != KEY_IMAGE_AWAITING_UNLOCK_HEIGHT && block_height > info.requested_unlock_height)
+            expired_nodes.push_back(mnode_key);
+        }
+        else // Version 10 Bulletproofs
+        {
+          /// Note: this code exhibits a subtle unintended behaviour: a mnode that
+          /// registered in hardfork 9 and was scheduled for deregistration in hardfork 10
+          /// will have its life is slightly prolonged by the "grace period", although it might
+          /// look like we use the registration height to determine the expiry height.
+          uint64_t node_expiry_height = info.registration_height + lock_blocks + cryptonote::old::STAKING_REQUIREMENT_LOCK_BLOCKS_EXCESS;
+          if (block_height > node_expiry_height)
+            expired_nodes.push_back(mnode_key);
+        }
+      }
+    }
 
-  //   return expired_nodes;
-  // }
+    return expired_nodes;
+  }
 
   master_nodes::payout master_node_list::state_t::get_block_leader() const
   {
@@ -4139,6 +4167,7 @@ static try_load_blobs_result try_load_as_new_style_blobs(
 bool master_node_list::load(const uint64_t current_height) {
     ZoneScoped;
     LOG_PRINT_L2("master_node_list::load()");
+    m_rescanning = true;
     reset(false);
     if (!m_blockchain.has_db()) {
         return false;
@@ -4203,7 +4232,7 @@ bool master_node_list::load(const uint64_t current_height) {
         load_result.archive_with_quorums_only,
         tools::get_human_readable_bytes(load_result.bytes_loaded),
         m_state.height));
-
+    m_rescanning = false;
     return true;
 }
 
