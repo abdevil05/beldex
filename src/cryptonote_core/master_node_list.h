@@ -452,7 +452,7 @@ namespace master_nodes
     master_node_list(const master_node_list &) = delete;
     master_node_list &operator=(const master_node_list &) = delete;
 
-    void block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, const cryptonote::checkpoint_t* checkpoint,const std::optional<rescan_context>& rescan = std::nullopt);
+    void block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, const cryptonote::checkpoint_t* checkpoint);
     void blockchain_detached(uint64_t height);
     void init();
     void validate_miner_tx(const cryptonote::miner_tx_info& info) const;
@@ -690,7 +690,7 @@ namespace master_nodes
       std::vector<pubkey_and_mninfo>  active_master_nodes_infos() const;
       std::vector<pubkey_and_mninfo>  decommissioned_master_nodes_infos() const; // return: All nodes that are fully funded *and* decommissioned.
       std::vector<crypto::public_key> get_expired_nodes(cryptonote::BlockchainDB const &db, cryptonote::network_type nettype, cryptonote::hf hf_version, uint64_t block_height) const;
-      block_add_result update_from_block(
+      void update_from_block(
           cryptonote::BlockchainDB const &db,
           cryptonote::network_type nettype,
           state_set const &state_history,
@@ -698,8 +698,7 @@ namespace master_nodes
           std::unordered_map<crypto::hash, state_t> const &alt_states,
           const cryptonote::block& block,
           const std::vector<cryptonote::transaction>& txs,
-          const master_node_keys *my_keys,
-          const POS_entropy_feeder* entropy_window);
+          const master_node_keys *my_keys);
 
       // Returns true if there was a registration:
       bool process_registration_tx(cryptonote::network_type nettype, cryptonote::block const &block, const cryptonote::transaction& tx, uint32_t index, const master_node_keys *my_keys);
@@ -729,7 +728,7 @@ namespace master_nodes
   public:
     // Note(maxim): private methods don't have to be protected the mutex
     bool m_rescanning = false; /* set to true when doing a rescan so we know not to reset proofs */
-    block_add_result process_block(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs);
+    void process_block(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs);
     void record_POS_participation(crypto::public_key const &pubkey, uint64_t height, uint8_t round, bool participated);
 
     // Verify block against Master Node state that has just been called with 'state.update_from_block(block)'.

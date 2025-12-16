@@ -679,7 +679,7 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
                     checkpoint_ptr = &checkpoint;
 
                 try {
-                    m_master_node_list.block_add(blk, txs, checkpoint_ptr, rescan);
+                    m_master_node_list.block_add(blk, txs, checkpoint_ptr);
                 } catch (const std::exception& e) {
                     MFATAL("Unable to process block " << block_height << " for updating master node list: " << e.what());
                     return false;
