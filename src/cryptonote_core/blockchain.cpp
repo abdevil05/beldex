@@ -553,6 +553,12 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
     uint64_t work_blocks = 0;
     uint64_t total_bytes = 0, work_bytes = 0;
 
+    // We skip verification here because the fact that this block is already in the
+    // lmdb means it has already been verified:
+    master_nodes::rescan_context rescan = {};
+    rescan.top_block_height = end_height;
+    rescan.skip_verify = true;
+
     // Main processing loop: pull chunks and feed to subsystems
     while (true) {
         ZoneScopedN("Load blocks into subsystem");
@@ -661,9 +667,6 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
         work_blocks += chunk.blocks.size();
         work_bytes += chunk.size;
 
-        master_nodes::rescan_context rescan = {};
-        rescan.top_block_height = end_height;
-
         TracyCZoneN(add_block_chunk_to_subsystems, "Add block chunk to subsystems", true);
         for (size_t i = 0; i < chunk.blocks.size(); i++) {
             const auto& blk = chunk.blocks[i];
@@ -679,7 +682,7 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
                     checkpoint_ptr = &checkpoint;
 
                 try {
-                    m_master_node_list.block_add(blk, txs, checkpoint_ptr);
+                    m_master_node_list.block_add(blk, txs, checkpoint_ptr, rescan);
                 } catch (const std::exception& e) {
                     MFATAL("Unable to process block " << block_height << " for updating master node list: " << e.what());
                     return false;

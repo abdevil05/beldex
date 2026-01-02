@@ -199,12 +199,12 @@ namespace master_nodes
       FIELD(quorum_index)
     END_SERIALIZE()
   };
-  struct block_add_result
-  {
-    // List of payable nodes. Populated when the block height is >= HF19, empty
-    // otherwise
-    std::vector<crypto::public_key> payable_nodes_hf19_onwards;
-  };
+  // struct block_add_result
+  // {
+  //   // List of payable nodes. Populated when the block height is >= HF19, empty
+  //   // otherwise
+  //   std::vector<crypto::public_key> payable_nodes_hf19_onwards;
+  // };
 
   struct master_node_info // registration information
   {
@@ -434,15 +434,15 @@ namespace master_nodes
   //
   // If `add_block` fails then the window is not initialised and no hashes will be returned when
   // queried.
-  struct POS_entropy_feeder
-  {
-    bool init = false;
-    uint8_t POS_round = 0;
-    crypto::hash last_hash = {};
-    crypto::hash data[POS_QUORUM_ENTROPY_LAG + 2] = {};
-    bool add_block(const cryptonote::BlockchainDB &db, const cryptonote::block &block);
-    std::vector<crypto::hash> get_window() const;
-  };
+  // struct POS_entropy_feeder
+  // {
+  //   bool init = false;
+  //   uint8_t POS_round = 0;
+  //   crypto::hash last_hash = {};
+  //   crypto::hash data[POS_QUORUM_ENTROPY_LAG + 2] = {};
+  //   bool add_block(const cryptonote::BlockchainDB &db, const cryptonote::block &block);
+  //   std::vector<crypto::hash> get_window() const;
+  // };
   
   class master_node_list
   {
@@ -452,7 +452,7 @@ namespace master_nodes
     master_node_list(const master_node_list &) = delete;
     master_node_list &operator=(const master_node_list &) = delete;
 
-    void block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, const cryptonote::checkpoint_t* checkpoint);
+    void block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, const cryptonote::checkpoint_t* checkpoint,const std::optional<rescan_context>& rescan = std::nullopt);
     void blockchain_detached(uint64_t height);
     void init();
     void validate_miner_tx(const cryptonote::miner_tx_info& info) const;
@@ -781,7 +781,7 @@ namespace master_nodes
     const transient_t& get_transient() const { return m_transient; }
 
     state_t m_state; // NOTE: Not in m_transient due to the non-trivial constructor. We can't blanket initialise using = {}; needs to be reset in ::reset(...) manually
-    POS_entropy_feeder POS_entropy_feed;
+    // POS_entropy_feeder POS_entropy_feed;
   };
 
   struct staking_components

@@ -1641,7 +1641,7 @@ namespace master_nodes
       throw std::runtime_error{fmt::format("Failed to verify block components for incoming {} at height {}",block_type, height)};
   }
 
-  void master_node_list::block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint)
+  void master_node_list::block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint,const std::optional<rescan_context>& rescan)
   {
     if (block.major_version < hf::hf9_master_nodes)
       return;
@@ -1649,6 +1649,7 @@ namespace master_nodes
     std::lock_guard lock(m_mn_mutex);
     process_block(block, txs);
 
+    if (!rescan || !rescan->skip_verify)
       verify_block(block, false /*alt_block*/, checkpoint);
 
     if (cryptonote::block_has_POS_components(block))
