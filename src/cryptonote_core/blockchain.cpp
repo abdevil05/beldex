@@ -54,7 +54,6 @@
 #include "epee/time_helper.h"
 #include "epee/string_tools.h"
 #include "common/threadpool.h"
-#include "common/tracy_shim.h"
 #include "common/boost_serialization_helper.h"
 #include "epee/warnings.h"
 #include "crypto/hash.h"
@@ -322,7 +321,6 @@ struct block_load_context
 };
 //------------------------------------------------------------------
 bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bool>* abort, bool use_threaded_load) {
-    ZoneScoped;
 
     // Heights for subsystems (Beldex)
     uint64_t const mnl_height =
@@ -349,24 +347,12 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
 
     // Helper: fetch chunk of blocks + parallel fetch of txs
     auto get_block_data = [&](uint64_t height, uint64_t end_height) -> block_data {
-        ZoneScopedN("Get block chunk data");
         block_data next_chunk{};
         next_chunk.height = height;
 
         // 1) Load blocks
         {
             size_t blocks_size;
-            ZoneScopedN("Get blocks");
-            // bool ok = _get_blocks_only(height, block_load_context::CHUNK_SIZE,
-            //                    next_chunk.blocks, &blocks_size);
-
-            // std::cout << std::boolalpha
-            //   << "[DEBUG] _get_blocks_only(height=" << height
-            //   << ", count=" << block_load_context::CHUNK_SIZE
-            //   << ") returned = " << ok
-            //   << ", blocks_size=" << blocks_size
-            //   << ", blocks_loaded=" << next_chunk.blocks.size()
-            //   << std::endl;
                    
             if (!_get_blocks_only(height, block_load_context::CHUNK_SIZE, next_chunk.blocks, &blocks_size)) {
                 LOG_ERROR("Unable to get checkpointed historical blocks [" << height << "-" <<
@@ -433,13 +419,9 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
         return next_chunk;
     };
 
-    // std::cout << "Starting to load " << total_blocks << " blocks into beldex subsystems..." << std::endl;
-
     // If using a threaded loader, spawn loader thread that preloads chunks
     if (use_threaded_load) {
         load_context.thread = std::thread{[&] {
-            ZoneScopedN("Block loading thread");
-
             // Always set finished=true and notify on any exit of this thread
             auto finish_on_exit = beldex::defer([&] {
                 std::unique_lock lock{load_context.block_mut};
@@ -449,14 +431,10 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
 
             // deferred failure propagator (keeps existing behaviour)
             auto failure_propagator = beldex::defer([&] {
-                std::cout << "Block loading thread failed." << std::endl;
                 std::unique_lock lock{load_context.block_mut};
                 load_context.failed = true;
                 load_context.block_cv.notify_all();
             });
-
-            // Throttled debug counter to avoid log spam
-            // size_t debug_loop_counter = 0;
 
             while (load_context.height < end_height) {
                 // Wait for queue space (predicate must be pure - no logs, no side-effects)
@@ -468,7 +446,6 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
                     });
 
                     if (load_context.failed || (abort && *abort)) {
-                        // std::cout << "Block loading thread: aborting due to failure/abort" << std::endl;
                         return;
                     }
 
@@ -499,12 +476,6 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
                 // Advance to next chunk
                 load_context.height += block_load_context::CHUNK_SIZE;
 
-                // // throttled debug print so we don't spam logs
-                // if ((++debug_loop_counter % 200) == 0) {
-                //     std::cout << "Loader: height=" << load_context.height << " queue_size="
-                //               << load_context.next_blocks.size() << std::endl;
-                // }
-
                 // If we've passed or reached end_height, set finished and break
                 if (load_context.height >= end_height) {
                     std::unique_lock lock{load_context.block_mut};
@@ -523,9 +494,6 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
                 load_context.finished = true;
             }
             load_context.block_cv.notify_all();
-
-            // std::cout << "Block loading thread: exiting loop. Final height: "
-            //           << load_context.height << ", end_height: " << end_height << std::endl;
         }};
     }
 
@@ -561,25 +529,18 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
 
     // Main processing loop: pull chunks and feed to subsystems
     while (true) {
-        ZoneScopedN("Load blocks into subsystem");
-
         auto get_block_data_start = clock::now();
         block_data chunk;
 
         if (use_threaded_load) {
             {
-              // std::cout<<"----------------Parallel block loading ------ " << std::endl;
                 std::unique_lock lock{load_context.block_mut};
 
                 // Use wait_for here for debug visibility; predicate still pure
                 if (!load_context.block_cv.wait_for(lock, 30s, [&] {
                         return load_context.failed || (abort && *abort) ||
                                load_context.finished || !load_context.next_blocks.empty();
-                    })) {
-                    // only a debug log on timeout — does not affect predicate
-                    // std::cout << "Main thread: timeout waiting for loader thread; finished="
-                    //           << load_context.finished << " queue_size=" << load_context.next_blocks.size() << std::endl;
-                }
+                    }))
 
                 if (load_context.failed || (abort && *abort)) {
                     return false;
@@ -599,26 +560,13 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
                     // spurious wake or timed out — continue to wait again
                     continue;
                 }
-
-                // static uint64_t main_chunk_counter = 0;
-                // if (++main_chunk_counter % 200 == 0)
-                // { // only every 200 chunks
-                //   std::cout << "Main: got chunk height=" << chunk.height
-                //             << " chunk_size=" << chunk.blocks.size()
-                //             << " queue_size=" << load_context.next_blocks.size()
-                //             << " processed_chunks=" << main_chunk_counter << std::endl;
-                // }
             }
         } else {
-            ZoneScopedN("Get block data (serial)");
             chunk = get_block_data(load_context.height, end_height);
             if (load_context.height >= end_height || chunk.blocks.empty() || (abort && *abort))
                 break;
             load_context.height += block_load_context::CHUNK_SIZE;
         }
-
-        // Process chunk...
-        // std::cout << "----------------After threaded------ " << std::endl;
 
         auto now = clock::now();
         get_block_data_interval_duration += now - get_block_data_start;
@@ -627,8 +575,6 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
         uint64_t height = chunk.height;
 
         if (height + chunk.blocks.size() >= end_height || every_10s) {
-            ZoneScopedN("Rescan progress update");
-
             store_accumulator += interval_duration;
             if (store_accumulator >= 60s) {
                 store_accumulator -= 60s;
@@ -660,14 +606,12 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
             work_start = now;
             get_block_data_interval_duration = mnl_interval_duration = bns_interval_duration = 0s;
             work_blocks = work_bytes = 0;
-            // std::cout << "Rescan progress updated." << std::endl;
         }
 
         // Feed subsystem processing
         work_blocks += chunk.blocks.size();
         work_bytes += chunk.size;
 
-        TracyCZoneN(add_block_chunk_to_subsystems, "Add block chunk to subsystems", true);
         for (size_t i = 0; i < chunk.blocks.size(); i++) {
             const auto& blk = chunk.blocks[i];
             uint64_t block_height = get_block_height(blk);
@@ -700,11 +644,7 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
             }
         }
 
-        // std::cout << "^^^^^^^^^^^^^After for loop^^^^^^ " << std::endl;
-        TracyCZoneEnd(add_block_chunk_to_subsystems);
     } // end main while
-
-    // std::cout << "Finished loading blocks into beldex subsystems." << std::endl;
 
     auto end = clock::now();
 
@@ -721,7 +661,6 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
         dseconds duration{end - scan_start};
         float blocks_per_s = static_cast<float>(total_blocks) / std::max<double>(1e-9, duration.count());
         float bytes_per_s = static_cast<float>(total_bytes) / std::max<double>(1e-9, duration.count());
-        // std::cout << "Total bytes loaded into subsystems: " << total_bytes << std::endl;
         MGINFO(fmt::format("Done recalculating beldex subsystems in {:.2f}s (get blks: {:.2f}s; mnl: {:.2f}s; bns: {:.2f}s; {:.1f} blks/s; {}/s)",
                            duration.count(),
                            get_block_data_duration.count(),
@@ -767,7 +706,6 @@ static bool exec_detach_hooks(
 //       dereferencing a null BlockchainDB pointer
 bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nettype, bool offline, const cryptonote::test_options *test_options, difficulty_type fixed_difficulty, const GetCheckpointsCallback& get_checkpoints/* = nullptr*/)
 {
-  ZoneScoped;
   LOG_PRINT_L3("Blockchain::" << __func__);
 
   CHECK_AND_ASSERT_MES(nettype != network_type::FAKECHAIN || test_options, false, "fake chain network type used without options");
@@ -1012,7 +950,6 @@ bool Blockchain::deinit()
 // It starts a batch and calls private method pop_block_from_blockchain().
 void Blockchain::pop_blocks(uint64_t nblocks)
 {
-  ZoneScoped;
   uint64_t i = 0;
   auto lock = tools::unique_locks(m_tx_pool, *this);
 
@@ -1058,7 +995,6 @@ void Blockchain::pop_blocks(uint64_t nblocks)
 // from it to the tx_pool
 block Blockchain::pop_block_from_blockchain()
 {
-  ZoneScoped;
   LOG_PRINT_L3("Blockchain::" << __func__);
   std::unique_lock lock{*this};
 
@@ -1635,7 +1571,6 @@ bool Blockchain::prevalidate_miner_transaction(const block& b, uint64_t height, 
 // This function validates the miner transaction reward
 bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_block_weight, uint64_t fee, uint64_t& base_reward, uint64_t already_generated_coins, hf version)
 {
-  ZoneScoped;
   LOG_PRINT_L3("Blockchain::" << __func__);
   //validate reward
   uint64_t const money_in_use = get_outs_money_amount(b.miner_tx);
@@ -1813,7 +1748,6 @@ uint64_t Blockchain::get_current_cumulative_block_weight_median() const
 // This function makes a new block for a miner to mine the hash for
 bool Blockchain::create_block_template_internal(block& b, const crypto::hash *from_block, const block_template_info& info, difficulty_type& diffic, uint64_t& height, uint64_t& expected_reward, const blobdata& ex_nonce)
 {
-  ZoneScoped;
   LOG_PRINT_L3("Blockchain::" << __func__);
   size_t median_weight;
   uint64_t already_generated_coins;
@@ -2527,7 +2461,6 @@ bool Blockchain::_get_blocks_only(
     std::vector<block> &blocks,
     size_t *size_loaded) const
 {
-  ZoneScoped;
   const uint64_t height = m_db->height();
   if (size_loaded)
     *size_loaded = 0;
@@ -2536,11 +2469,8 @@ bool Blockchain::_get_blocks_only(
     return false;
 
   const size_t num_blocks = std::min<uint64_t>(height - start_offset, count);
-  TracyCZoneN(alloc, "Allocate block storage", true);
   blocks.reserve(blocks.size() + num_blocks);
-  TracyCZoneEnd(alloc);
 
-  TracyCZoneN(load_blocks, "Load blocks from DB", true);
   for (size_t i = 0; i < num_blocks; i++)
   {
     try
@@ -2549,8 +2479,6 @@ bool Blockchain::_get_blocks_only(
 
       // Load mainchain block by height
       block blk = m_db->get_block_from_height(start_offset + i, &block_size);
-      // std::cout << " size = " << block_size << std::endl;
-
 
       blocks.emplace_back(std::move(blk));
 
@@ -2564,7 +2492,6 @@ bool Blockchain::_get_blocks_only(
     }
   }
 
-  TracyCZoneEnd(load_blocks);
   return true;
 }
 //------------------------------------------------------------------
@@ -2577,11 +2504,8 @@ bool Blockchain::get_blocks_only(uint64_t start_offset, size_t count, std::vecto
     return false;
 
   const size_t num_blocks = std::min<uint64_t>(height - start_offset, count);
-  TracyCZoneN(alloc, "Allocate block storage", true);
   blocks.reserve(blocks.size() + num_blocks);
-  TracyCZoneEnd(alloc);
 
-  TracyCZoneN(load_blocks, "Load blocks from DB", true);
   for(size_t i = 0; i < num_blocks; i++)
   {
     try
@@ -2604,7 +2528,6 @@ bool Blockchain::get_blocks_only(uint64_t start_offset, size_t count, std::vecto
       CHECK_AND_ASSERT_MES(!missed_ids.size(), false, "has missed transactions in own block in main blockchain");
     }
   }
-  TracyCZoneEnd(load_blocks);
 
   return true;
 }
@@ -2613,7 +2536,6 @@ bool Blockchain::get_blocks(uint64_t start_offset, size_t count, std::vector<std
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   std::unique_lock lock{*this};
-  ZoneScoped;
   if(start_offset >= m_db->height())
     return false;
 
@@ -2636,7 +2558,6 @@ bool Blockchain::get_blocks(uint64_t start_offset, size_t count, std::vector<std
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   std::unique_lock lock{*this};
-  ZoneScoped;
   const uint64_t height = m_db->height();
   if(start_offset >= height)
     return false;
@@ -2664,7 +2585,6 @@ bool Blockchain::get_blocks(uint64_t start_offset, size_t count, std::vector<std
 //       are missing.
 bool Blockchain::handle_get_blocks(NOTIFY_REQUEST_GET_BLOCKS::request& arg, NOTIFY_RESPONSE_GET_BLOCKS::request& rsp)
 {
-  ZoneScoped;
   LOG_PRINT_L3("Blockchain::" << __func__);
   std::unique_lock blockchain_lock{m_blockchain_lock, std::defer_lock};
   auto flash_lock = m_tx_pool.flash_shared_lock(std::defer_lock);
@@ -2752,7 +2672,6 @@ bool Blockchain::handle_get_blocks(NOTIFY_REQUEST_GET_BLOCKS::request& arg, NOTI
 //------------------------------------------------------------------
 bool Blockchain::handle_get_txs(NOTIFY_REQUEST_GET_TXS::request& arg, NOTIFY_NEW_TRANSACTIONS::request& rsp)
 {
-  ZoneScoped;
   LOG_PRINT_L3("Blockchain::" << __func__);
   std::unique_lock blockchain_lock{m_blockchain_lock, std::defer_lock};
   auto flash_lock = m_tx_pool.flash_shared_lock(std::defer_lock);
@@ -3132,18 +3051,14 @@ bool Blockchain::_get_transactions(
         std::vector<transaction>& txs,
         std::unordered_set<crypto::hash>* missed_txs,
         size_t* total_size) const {
-    ZoneScoped;
     LOG_PRINT_L3("Blockchain::" << __func__);
 
-    TracyCZoneN(alloc, "Allocate TX storage", true);
     txs.reserve(txs_ids.size());
-    TracyCZoneEnd(alloc);
 
     std::string blob;
     if (total_size)
         *total_size = 0;
 
-    TracyCZoneN(load_txs, "Load transactions", true);
     for (const auto& tx_hash : txs_ids) {
         blob.clear();
         try {
@@ -3163,18 +3078,14 @@ bool Blockchain::_get_transactions(
             return false;
         }
     }
-    TracyCZoneEnd(load_txs);
     return true;
 }
 //------------------------------------------------------------------
 bool Blockchain::get_transactions(const std::vector<crypto::hash>& txs_ids, std::vector<transaction>& txs, std::unordered_set<crypto::hash>* missed_txs) const
 {
-  ZoneScoped;
   LOG_PRINT_L3("Blockchain::" << __func__);
-  TracyCZoneN(alloc, "Allocate TX storage", true);
   std::unique_lock lock{*this};
   txs.reserve(txs_ids.size());
-  TracyCZoneEnd(alloc);
   cryptonote::blobdata tx;
   for (const auto& tx_hash : txs_ids)
   {
@@ -3200,7 +3111,6 @@ bool Blockchain::get_transactions(const std::vector<crypto::hash>& txs_ids, std:
       return false;
     }
   }
-  TracyCZoneEnd(load_txs);
   return true;
 }
 //------------------------------------------------------------------
@@ -3209,7 +3119,6 @@ bool Blockchain::get_transactions(const std::vector<crypto::hash>& txs_ids, std:
 // BLOCKS_IDS_SYNCHRONIZING_DEFAULT_COUNT additional (more recent) hashes.
 bool Blockchain::find_blockchain_supplement(const std::list<crypto::hash>& qblock_ids, std::vector<crypto::hash>& hashes, uint64_t& start_height, uint64_t& current_height, bool clip_pruned) const
 {
-  ZoneScoped;
   std::unique_lock lock{*this};
 
   // if we can't find the split point, return false
@@ -3475,7 +3384,6 @@ void Blockchain::on_new_tx_from_block(const cryptonote::transaction &tx)
 // as a return-by-reference.
 bool Blockchain::check_tx_inputs(transaction& tx, uint64_t& max_used_block_height, crypto::hash& max_used_block_id, tx_verification_context &tvc, bool kept_by_block, std::unordered_set<crypto::key_image>* key_image_conflicts)
 {
-  ZoneScoped;
   LOG_PRINT_L3("Blockchain::" << __func__);
   std::unique_lock lock{*this};
 
@@ -4715,7 +4623,6 @@ bool Blockchain::basic_block_checks(cryptonote::block const &blk, bool alt_block
 //      m_db->add_block()
 bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash& id, block_verification_context& bvc, checkpoint_t const *checkpoint, bool notify)
 {
-  ZoneScoped;
   LOG_PRINT_L3("Blockchain::" << __func__);
 
   auto block_processing_start = std::chrono::steady_clock::now();
@@ -5342,7 +5249,6 @@ void Blockchain::block_longhash_worker(uint64_t height, const epee::span<const b
 //------------------------------------------------------------------
 bool Blockchain::cleanup_handle_incoming_blocks(bool force_sync)
 {
-  ZoneScoped;
   bool success = false;
 
   MTRACE("Blockchain::" << __func__);
@@ -5588,7 +5494,6 @@ bool Blockchain::calc_batched_governance_reward(uint64_t height, uint64_t &rewar
 //    keys.
 bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete_entry> &blocks_entry, std::vector<block> &blocks)
 {
-  ZoneScoped;
   MTRACE("Blockchain::" << __func__);
   auto prepare = std::chrono::steady_clock::now();
   uint64_t bytes = 0;

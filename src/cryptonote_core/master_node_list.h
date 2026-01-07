@@ -199,12 +199,6 @@ namespace master_nodes
       FIELD(quorum_index)
     END_SERIALIZE()
   };
-  // struct block_add_result
-  // {
-  //   // List of payable nodes. Populated when the block height is >= HF19, empty
-  //   // otherwise
-  //   std::vector<crypto::public_key> payable_nodes_hf19_onwards;
-  // };
 
   struct master_node_info // registration information
   {
@@ -426,27 +420,17 @@ namespace master_nodes
     crypto::x25519_secret_key key_x25519;
     crypto::x25519_public_key pub_x25519;
   };
-
-  // Caches the window of block entropy for deriving POS quorums of blocks for forming POS
-  // quorums. This prevents having to pull blocks from the DB and instead have them sitting in memory.
-  // The entropy for `block` is defined as the first `POS_QUORUM_SIZE` hashes from `data` after
-  // `add_block` is called at-least once for a block.
-  //
-  // If `add_block` fails then the window is not initialised and no hashes will be returned when
-  // queried.
-  // struct POS_entropy_feeder
-  // {
-  //   bool init = false;
-  //   uint8_t POS_round = 0;
-  //   crypto::hash last_hash = {};
-  //   crypto::hash data[POS_QUORUM_ENTROPY_LAG + 2] = {};
-  //   bool add_block(const cryptonote::BlockchainDB &db, const cryptonote::block &block);
-  //   std::vector<crypto::hash> get_window() const;
-  // };
   
   class master_node_list
   {
   public:
+    void add_old_quorum_state(uint64_t height, quorum_manager q);
+    // Serialize/deserialize quorum history without exposing the type
+    template <typename Archive>
+    void serialize_quorum_states(Archive &ar);
+
+    template <typename Archive>
+    void deserialize_quorum_states(Archive &ar);
     explicit master_node_list(cryptonote::Blockchain& blockchain);
     // non-copyable:
     master_node_list(const master_node_list &) = delete;
@@ -717,7 +701,6 @@ namespace master_nodes
       payout get_block_leader() const;
       payout get_block_producer(uint8_t POS_round) const;
       master_node_info get_master_node_details(crypto::public_key mnode_key);
-      // mutable std::optional<service_nodes::payout> next_block_leader_cache;
     };
 
     // Can be set to true (via --dev-allow-local-ips) for debugging a new testnet on a local private network.
@@ -725,7 +708,7 @@ namespace master_nodes
     void record_timestamp_participation(crypto::public_key const &pubkey, bool participated);
     void record_timesync_status(crypto::public_key const &pubkey, bool synced);
     master_node_info get_master_node_details(crypto::public_key mnode_key){return m_state.get_master_node_details(mnode_key);}
-  public:
+  private:
     // Note(maxim): private methods don't have to be protected the mutex
     bool m_rescanning = false; /* set to true when doing a rescan so we know not to reset proofs */
     void process_block(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs);
@@ -771,8 +754,6 @@ namespace master_nodes
       state_set                                 state_archive; // Store state_t's where ((height < m_state_history.first()) && (height % STORE_LONG_TERM_STATE_INTERVAL))
       std::unordered_map<crypto::hash, state_t> alt_state;
       bool                                      state_added_to_archive;
-      // data_for_serialization                    cache_long_term_data;
-      // data_for_serialization                    cache_short_term_data;
       std::string                               cache_data_blob;
     } m_transient = {};
 
@@ -781,7 +762,6 @@ namespace master_nodes
     const transient_t& get_transient() const { return m_transient; }
 
     state_t m_state; // NOTE: Not in m_transient due to the non-trivial constructor. We can't blanket initialise using = {}; needs to be reset in ::reset(...) manually
-    // POS_entropy_feeder POS_entropy_feed;
   };
 
   struct staking_components

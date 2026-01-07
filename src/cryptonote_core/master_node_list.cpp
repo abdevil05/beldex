@@ -54,7 +54,6 @@ extern "C" {
 #include "common/lock.h"
 #include "common/hex.h"
 #include "common/threadpool.h"
-#include "common/tracy_shim.h"
 #include "blockchain.h"
 #include "master_node_quorum_cop.h"
 #include "serialization/deque.h"
@@ -79,19 +78,6 @@ namespace master_nodes
   constexpr auto X25519_MAP_PRUNING_INTERVAL = 5min;
   constexpr auto X25519_MAP_PRUNING_LAG = 24h;
   static_assert(X25519_MAP_PRUNING_LAG > cryptonote::config::UPTIME_PROOF_VALIDITY, "x25519 map pruning lag is too short!");
-
-  // static uint64_t short_term_state_cull_height(hf hf_version, uint64_t block_height)
-  // {
-  //   size_t constexpr DEFAULT_SHORT_TERM_STATE_HISTORY = 6 * STATE_CHANGE_TX_LIFETIME_IN_BLOCKS;
-  //   static_assert(DEFAULT_SHORT_TERM_STATE_HISTORY >= 12 * cryptonote::BLOCKS_PER_HOUR, // Arbitrary, but raises a compilation failure if it gets shortened.
-  //       "not enough short term state storage for blink quorum retrieval!");
-
-  //   static_assert(DEFAULT_SHORT_TERM_STATE_HISTORY >= 12 * cryptonote::BLOCKS_PER_HOUR, // Arbitrary, but raises a compilation failure if it gets shortened.
-  //                 "not enough short term state storage for blink quorum retrieval!");
-  //   uint64_t result =
-  //       (block_height < DEFAULT_SHORT_TERM_STATE_HISTORY) ? 0 : block_height - DEFAULT_SHORT_TERM_STATE_HISTORY;
-  //   return result;
-  // }
 
   static uint64_t short_term_state_cull_height(hf hf_version, uint64_t block_height)
   {
@@ -128,6 +114,23 @@ namespace master_nodes
 
     if (!loaded || m_state.height > current_height)
       reset(true);
+  }
+  void master_node_list::add_old_quorum_state(uint64_t height, quorum_manager q)
+  {
+    quorums_by_height entry{height, std::move(q)};
+    m_transient.old_quorum_states.push_back(std::move(entry));
+  }
+
+  template <typename Archive>
+  void master_node_list::serialize_quorum_states(Archive &ar)
+  {
+    field(ar, "quorum_states", m_transient.old_quorum_states);
+  }
+
+  template <typename Archive>
+  void master_node_list::deserialize_quorum_states(Archive &ar)
+  {
+    field(ar, "quorum_states", m_transient.old_quorum_states);
   }
 
   template <typename UnaryPredicate>
@@ -2686,7 +2689,6 @@ namespace master_nodes
   static void serialize_master_node_infos_directly(
       Archive &ar, std::string_view key, master_nodes_infos_t &mn_infos)
   {
-    ZoneScoped;
     if constexpr (Archive::is_serializer)
       ar.tag(key);
 
@@ -2717,13 +2719,16 @@ namespace master_nodes
   // vice versa for deserialising.
   template <typename Archive>
   static std::string serialize_db_blob(
-      Archive &ar, std::vector<std::string> &blob_list, std::deque<master_node_list::quorums_by_height> *quorums)
+      Archive &ar,
+      std::vector<std::string> &blob_list,
+      master_node_list *mnl)
   {
     uint32_t version = 0;
     field(ar, "version", version);
     field(ar, "data", blob_list);
-    if (quorums)
-      field(ar, "quorum_states", *quorums);
+
+    if (mnl)
+      mnl->serialize_quorum_states(ar);
 
     std::string result;
     if constexpr (Archive::is_serializer)
@@ -2737,7 +2742,6 @@ namespace master_nodes
   template <typename Archive>
   static std::string serialize_mnl_directly(Archive &ar, master_node_list::state_t &state)
   {
-    ZoneScoped;
     uint32_t version = 0;
     field_varint(ar, "version", version);
     field_varint(ar, "height", state.height);
@@ -2757,7 +2761,6 @@ namespace master_nodes
 
   bool master_node_list::store()
   {
-    ZoneScoped;
     if (!m_blockchain.has_db())
       return false; // Haven't been initialized yet
 
@@ -2819,24 +2822,19 @@ namespace master_nodes
 
     // NOTE: Store blobs to DB
     {
-      ZoneScopedN("Store blobs to DB");
       auto &db = m_blockchain.get_db();
       cryptonote::db_wtxn_guard txn_guard{db};
 
       if (m_transient.state_added_to_archive)
       {
-        TracyCZoneN(serialize_step, "Serialize archive array of blobs", true);
         serialization::binary_string_archiver ar;
         std::string db_blob = serialize_db_blob(ar, archive_blob_list, nullptr);
-        TracyCZoneEnd(serialize_step);
         db.set_master_node_data(db_blob, true /*long_term*/);
       }
 
       {
-        TracyCZoneN(serialize_step, "Serialize history array of blobs", true);
         serialization::binary_string_archiver ar;
-        std::string db_blob = serialize_db_blob(ar, history_blob_list, &m_transient.old_quorum_states);
-        TracyCZoneEnd(serialize_step);
+        std::string db_blob = serialize_db_blob(ar, history_blob_list, this);
         db.set_master_node_data(db_blob, false /*long_term*/);
       }
     }
@@ -3468,7 +3466,6 @@ static try_load_blobs_result try_load_as_old_style_blobs(
     // roll-back but this is not considered fatal. It will have to recompute the rollback by jumping
     // back and processing blocks forward).
     if (db.get_master_node_data(blob, true /*long_term*/)) {
-        ZoneScopedN("Load long term MNL blob");
         result.bytes_loaded += blob.size();
         try {
             master_nodes::master_node_list::data_for_serialization data_in = {};
@@ -3541,30 +3538,30 @@ static try_load_blobs_result try_load_as_old_style_blobs(
         return result;
 
     {
-        const uint64_t hist_state_from_height = current_height - m_store_quorum_history;
-        uint64_t last_loaded_height = 0;
-        for (auto& states : data_in.quorum_states) {
-            if (states.height < hist_state_from_height)
-                continue;
+      const uint64_t hist_state_from_height = current_height - m_store_quorum_history;
+      uint64_t last_loaded_height = 0;
+      for (auto &states : data_in.quorum_states)
+      {
+        if (states.height < hist_state_from_height)
+          continue;
 
-            master_nodes::master_node_list::quorums_by_height entry = {};
-            entry.height = states.height;
-            entry.quorums = quorum_for_serialization_to_quorum_manager(states);
-
-            if (states.height <= last_loaded_height) {
-                LOG_PRINT_L0(
-                        "Serialised quorums is not stored in ascending order by height in DB, "
-                        "failed to load from DB");
-                return result;
-            }
-            last_loaded_height = states.height;
-            m_transient.old_quorum_states.push_back(entry);
+        if (states.height <= last_loaded_height)
+        {
+          LOG_PRINT_L0(
+              "Serialised quorums is not stored in ascending order by height in DB, "
+              "failed to load from DB");
+          return result;
         }
+        last_loaded_height = states.height;
+
+        mnl->add_old_quorum_state(
+            states.height,
+            quorum_for_serialization_to_quorum_manager(states));
+      }
     }
 
     assert(data_in.states.size());
     if (data_in.states.size()) {
-        ZoneScopedN("Deserialize MNL states");
         size_t const last_index = data_in.states.size() - 1;
         if (data_in.states[last_index].only_stored_quorums) {
             LOG_PRINT_L0("Unexpected last serialized state only has quorums loaded");
@@ -3653,7 +3650,7 @@ static try_load_blobs_result try_load_as_new_style_blobs(
 
     serialization::binary_string_unarchiver ar{db_blob};
     std::vector<std::string> mn_blob_list;
-    serialize_db_blob(ar, mn_blob_list, &m_transient.old_quorum_states);
+    serialize_db_blob(ar, mn_blob_list, mnl);
 
     std::mutex mutex;
     for (size_t mn_blob_index = 0; mn_blob_index < mn_blob_list.size(); mn_blob_index++) {
@@ -3680,7 +3677,6 @@ static try_load_blobs_result try_load_as_new_style_blobs(
 }
 
 bool master_node_list::load(const uint64_t current_height) {
-    ZoneScoped;
     LOG_PRINT_L1("master_node_list::load()");
     reset(false);
     if (!m_blockchain.has_db()) {
