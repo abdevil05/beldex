@@ -121,6 +121,18 @@ namespace master_nodes
     m_transient.old_quorum_states.push_back(std::move(entry));
   }
 
+  void master_node_list::add_state_archive(state_t &&s)
+  {
+    m_transient.state_archive.emplace_hint(
+        m_transient.state_archive.end(), std::move(s));
+  }
+
+  void master_node_list::add_state_history(state_t &&s)
+  {
+    m_transient.state_history.emplace_hint(
+        m_transient.state_history.end(), std::move(s));
+  }
+
   template <typename Archive>
   void master_node_list::serialize_quorum_states(Archive &ar)
   {
@@ -3455,7 +3467,6 @@ static try_load_blobs_result try_load_as_old_style_blobs(
         cryptonote::Blockchain& blockchain,
         master_node_list::state_t& m_state,
         uint64_t m_store_quorum_history) {
-    auto& m_transient = mnl->get_transient();
     auto& db = blockchain.get_db();
     cryptonote::db_rtxn_guard txn_guard{db};
 
@@ -3503,14 +3514,15 @@ static try_load_blobs_result try_load_as_old_style_blobs(
                             entry.master_nodes_infos = {};
                             entry.key_image_blacklist = {};
                             entry.only_loaded_quorums = true;
-                            m_transient.state_archive.emplace_hint(m_transient.state_archive.begin(), std::move(long_term_state));
+                            mnl->add_state_archive(std::move(long_term_state));
+
                         }
-                        m_transient.state_archive.emplace_hint(m_transient.state_archive.begin(), std::move(entry));
+                        mnl->add_state_archive(std::move(entry));
+
                     }
                 } else {
                     for (master_nodes::master_node_list::state_serialized& entry : data_in.states) {
-                        m_transient.state_archive.emplace_hint(
-                                m_transient.state_archive.end(), mnl, std::move(entry));
+                        mnl->add_state_archive(master_node_list::state_t{mnl, std::move(entry)});
                         result.archive_with_quorums_only += entry.only_stored_quorums;
                         result.archive_min_height = std::min(result.archive_min_height, entry.height);
                         result.archive_max_height = std::max(result.archive_max_height, entry.height);
@@ -3581,9 +3593,10 @@ static try_load_blobs_result try_load_as_old_style_blobs(
                 
                 if (i == last_index) {
                     m_state = std::move(entry);
-                } else {
-                    m_transient.state_history.emplace_hint(
-                            m_transient.state_history.end(), std::move(entry));
+                }
+                else
+                {
+                  mnl->add_state_history(std::move(entry));
                 }
             }
         } else {
@@ -3600,9 +3613,11 @@ static try_load_blobs_result try_load_as_old_style_blobs(
 
                 if (i == last_index) {
                     m_state = {mnl, std::move(entry)};
-                } else {
-                    m_transient.state_history.emplace_hint(
-                            m_transient.state_history.end(), mnl, std::move(entry));
+                }
+                else
+                {
+                  mnl->add_state_history(
+                      master_nodes::master_node_list::state_t{mnl, std::move(entry)});
                 }
             }
         }
@@ -3618,7 +3633,6 @@ static try_load_blobs_result try_load_as_new_style_blobs(
         cryptonote::Blockchain& blockchain,
         master_node_list::state_t& m_state,
         uint64_t m_store_quorum_history) {
-    auto& m_transient = mnl->get_transient();
     try_load_blobs_result result = {};
     std::string db_blob;
 
@@ -3639,8 +3653,7 @@ static try_load_blobs_result try_load_as_new_style_blobs(
             result.archive_max_height = std::max(result.archive_max_height, state.height);
 
             auto lock = std::unique_lock{mutex};
-            m_transient.state_archive.emplace_hint(
-                    m_transient.state_archive.end(), std::move(state));
+            mnl->add_state_archive(std::move(state));
         }
     }
     result.bytes_loaded += db_blob.size();
@@ -3666,8 +3679,7 @@ static try_load_blobs_result try_load_as_new_style_blobs(
         if (mn_blob_index == mn_blob_list.size() - 1) {
             m_state = std::move(state);
         } else {
-            m_transient.state_history.emplace_hint(
-                    m_transient.state_history.end(), std::move(state));
+          mnl->add_state_history(std::move(state));
         }
     }
 

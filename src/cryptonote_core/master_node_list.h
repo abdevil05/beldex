@@ -424,14 +424,7 @@ namespace master_nodes
   class master_node_list
   {
   public:
-    void add_old_quorum_state(uint64_t height, quorum_manager q);
-    // Serialize/deserialize quorum history without exposing the type
-    template <typename Archive>
-    void serialize_quorum_states(Archive &ar);
-
-    template <typename Archive>
-    void deserialize_quorum_states(Archive &ar);
-    explicit master_node_list(cryptonote::Blockchain& blockchain);
+    explicit master_node_list(cryptonote::Blockchain &blockchain);
     // non-copyable:
     master_node_list(const master_node_list &) = delete;
     master_node_list &operator=(const master_node_list &) = delete;
@@ -702,6 +695,15 @@ namespace master_nodes
       payout get_block_producer(uint8_t POS_round) const;
       master_node_info get_master_node_details(crypto::public_key mnode_key);
     };
+    void add_state_archive(state_t &&s);
+    void add_state_history(state_t &&s);
+    void add_old_quorum_state(uint64_t height, quorum_manager q);
+    // Serialize/deserialize quorum history without exposing the type
+    template <typename Archive>
+    void serialize_quorum_states(Archive &ar);
+
+    template <typename Archive>
+    void deserialize_quorum_states(Archive &ar);
 
     // Can be set to true (via --dev-allow-local-ips) for debugging a new testnet on a local private network.
     bool debug_allow_local_ips = false;
@@ -757,7 +759,6 @@ namespace master_nodes
       std::string                               cache_data_blob;
     } m_transient = {};
 
-    public:
     transient_t& get_transient() { return m_transient; }
     const transient_t& get_transient() const { return m_transient; }
 
