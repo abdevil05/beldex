@@ -1621,23 +1621,6 @@ namespace master_nodes
     }
     else
     {
-
-      bool POS_block = cryptonote::block_has_POS_components(block);
-
-      // Trust historical POS blocks during rescan when quorum unavailable
-      if (POS_block && !POS_quorum)
-      {
-        // Check if this is a historical block (not at chain tip)
-        uint64_t current_height = m_blockchain.get_current_blockchain_height();
-        bool is_historical = (height < current_height) || m_rescanning;
-
-        if (is_historical)
-        {
-          MDEBUG("Trusting historical POS block " << height << " during sync (current height: " << current_height << ", rescanning: " << m_rescanning << ")");
-          return; // Skip verification - trust the historical block
-        }
-      }
-
       // NOTE: No POS quorums are generated when the network has insufficient nodes to generate quorums
       //       Or, block specifies time after all the rounds have timed out
       bool miner_block = !POS_hf || !POS_quorum;
@@ -3734,19 +3717,16 @@ bool master_node_list::load(const uint64_t current_height) {
 
     initialize_x25519_map();
 
-    LOG_PRINT_L2(fmt::format(
-        "{} nodes, {} recent states [blks {}-{}], {} historical [blks {}-{}] (w/ {} quorums) "
-        "loaded ({}) @ height: {}",
-        m_state.master_nodes_infos.size(),
-        m_transient.state_history.size(),
-        load_result.recent_min_height,
-        load_result.recent_max_height,
-        m_transient.state_archive.size(),
-        load_result.archive_min_height,
-        load_result.archive_max_height,
-        load_result.archive_with_quorums_only,
-        tools::get_human_readable_bytes(load_result.bytes_loaded),
-        m_state.height));
+    MGINFO("Master node data loaded successfully, height: " << m_state.height);
+
+    MGINFO(m_state.master_nodes_infos.size()
+
+           << " nodes and " << m_transient.state_history.size() << " recent states loaded, " << m_transient.state_archive.size()
+
+           << " historical states loaded, (" << tools::get_human_readable_bytes(load_result.bytes_loaded) << ")");
+
+    LOG_PRINT_L1("master_node_list::load() returning success");
+
     return true;
 }
 
