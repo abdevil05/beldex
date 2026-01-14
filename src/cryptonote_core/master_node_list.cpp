@@ -53,8 +53,11 @@ extern "C" {
 #include "common/random.h"
 #include "common/lock.h"
 #include "common/hex.h"
+#include "common/threadpool.h"
 #include "blockchain.h"
 #include "master_node_quorum_cop.h"
+#include "serialization/deque.h"
+#include "serialization/string.h"
 
 #include "pos.h"
 #include "master_node_list.h"
@@ -80,7 +83,7 @@ namespace master_nodes
   {
     size_t constexpr DEFAULT_SHORT_TERM_STATE_HISTORY = 6 * STATE_CHANGE_TX_LIFETIME_IN_BLOCKS;
     static_assert(DEFAULT_SHORT_TERM_STATE_HISTORY >= 12 * cryptonote::BLOCKS_PER_HOUR, // Arbitrary, but raises a compilation failure if it gets shortened.
-        "not enough short term state storage for blink quorum retrieval!");
+        "not enough short term state storage for flash quorum retrieval!");
     uint64_t result =
         (block_height < DEFAULT_SHORT_TERM_STATE_HISTORY) ? 0 : block_height - DEFAULT_SHORT_TERM_STATE_HISTORY;
     return result;
@@ -111,6 +114,35 @@ namespace master_nodes
 
     if (!loaded || m_state.height > current_height)
       reset(true);
+  }
+  void master_node_list::add_old_quorum_state(uint64_t height, quorum_manager q)
+  {
+    quorums_by_height entry{height, std::move(q)};
+    m_transient.old_quorum_states.push_back(std::move(entry));
+  }
+
+  void master_node_list::add_state_archive(state_t &&s)
+  {
+    m_transient.state_archive.emplace_hint(
+        m_transient.state_archive.end(), std::move(s));
+  }
+
+  void master_node_list::add_state_history(state_t &&s)
+  {
+    m_transient.state_history.emplace_hint(
+        m_transient.state_history.end(), std::move(s));
+  }
+
+  template <typename Archive>
+  void master_node_list::serialize_quorum_states(Archive &ar)
+  {
+    field(ar, "quorum_states", m_transient.old_quorum_states);
+  }
+
+  template <typename Archive>
+  void master_node_list::deserialize_quorum_states(Archive &ar)
+  {
+    field(ar, "quorum_states", m_transient.old_quorum_states);
   }
 
   template <typename UnaryPredicate>
@@ -1493,6 +1525,7 @@ namespace master_nodes
       std::vector<std::shared_ptr<const master_nodes::quorum>> alt_quorums;
       std::shared_ptr<const quorum> quorum = get_quorum(quorum_type::checkpointing, checkpoint->height, false, alt_block ? &alt_quorums : nullptr);
 
+
       if (!quorum)
       {
         throw std::runtime_error{fmt::format("Failed to get testing quorum checkpoint for {} {}", block_type, cryptonote::get_block_hash(block))};
@@ -1551,9 +1584,11 @@ namespace master_nodes
     std::shared_ptr<const quorum>              POS_quorum;
     std::vector<std::shared_ptr<const quorum>> alt_POS_quorums;
     bool POS_hf = block.major_version >= hf::hf17_POS;
+  
     
     if (POS_hf)
     {
+   
       POS_quorum = get_quorum(quorum_type::POS,
                                 height,
                                 false /*include historical quorums*/,
@@ -1589,7 +1624,6 @@ namespace master_nodes
       // NOTE: No POS quorums are generated when the network has insufficient nodes to generate quorums
       //       Or, block specifies time after all the rounds have timed out
       bool miner_block = !POS_hf || !POS_quorum;
-      // std::cout << "miner_block : " << miner_block << std::endl;
 
       result = verify_block_components(m_blockchain.nettype(),
                                        block,
@@ -1605,14 +1639,17 @@ namespace master_nodes
       throw std::runtime_error{fmt::format("Failed to verify block components for incoming {} at height {}",block_type, height)};
   }
 
-  void master_node_list::block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint)
+  void master_node_list::block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint,const std::optional<rescan_context>& rescan)
   {
     if (block.major_version < hf::hf9_master_nodes)
       return;
 
     std::lock_guard lock(m_mn_mutex);
     process_block(block, txs);
-    verify_block(block, false /*alt_block*/, checkpoint);
+
+    if (!rescan || !rescan->skip_verify)
+      verify_block(block, false /*alt_block*/, checkpoint);
+
     if (cryptonote::block_has_POS_components(block))
     {
       // NOTE: Only record participation if its a block we recently received.
@@ -1627,7 +1664,11 @@ namespace master_nodes
 
       if (newest_block && (now >= earliest_time && now <= latest_time))
       {
+  
         std::shared_ptr<const quorum> quorum = get_quorum(quorum_type::POS, block_height, false, nullptr);
+
+
+
         if (!quorum || quorum->validators.empty())
         {
           throw std::runtime_error{fmt::format("Unexpected POS error {}" ,quorum ? " quorum was not generated" : " quorum was empty")};
@@ -1798,7 +1839,8 @@ namespace master_nodes
     return get_POS_entropy_for_next_block(db, db.get_top_block(), POS_round);
   }
 
-  master_nodes::quorum generate_POS_quorum(cryptonote::network_type nettype,
+
+    master_nodes::quorum generate_POS_quorum(cryptonote::network_type nettype,
                                               crypto::public_key const &block_leader,
                                               hf hf_version,
                                               std::vector<pubkey_and_mninfo> const &active_mnode_list,
@@ -1994,6 +2036,8 @@ namespace master_nodes
     }
   }
 
+
+
   void master_node_list::state_t::update_from_block(cryptonote::BlockchainDB const &db,
                                                      cryptonote::network_type nettype,
                                                      state_set const &state_history,
@@ -2133,6 +2177,8 @@ namespace master_nodes
 
     generate_other_quorums(*this, active_mnode_list, nettype, hf_version);
   }
+
+
 
   void master_node_list::process_block(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs)
   {
@@ -2633,113 +2679,158 @@ namespace master_nodes
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  static master_node_list::quorum_for_serialization serialize_quorum_state(hf hf_version, uint64_t height, quorum_manager const &quorums)
+  // Serialise the hash table of MNs to the archive `ar`
+  template <typename Archive>
+  static void serialize_master_node_infos_directly(
+      Archive &ar, std::string_view key, master_nodes_infos_t &mn_infos)
   {
-    master_node_list::quorum_for_serialization result = {};
-    result.height                                      = height;
-    if (quorums.obligations)   result.quorums[static_cast<uint8_t>(quorum_type::obligations)] = *quorums.obligations;
-    if (quorums.checkpointing) result.quorums[static_cast<uint8_t>(quorum_type::checkpointing)] = *quorums.checkpointing;
+    if constexpr (Archive::is_serializer)
+      ar.tag(key);
+
+    size_t count = mn_infos.size();
+    auto array = ar.begin_array(count);
+    if (Archive::is_serializer)
+    {
+      for (auto it : mn_infos)
+      {
+        field(ar, "pubkey", const_cast<crypto::public_key &>(it.first));
+        field(ar, "info", const_cast<master_node_info &>(*it.second));
+      }
+    }
+    else
+    {
+      for (size_t index = 0; index < count; index++)
+      {
+        crypto::public_key key = {};
+        master_node_info info = {};
+        field(ar, "pubkey", key);
+        field(ar, "info", info);
+        mn_infos[key] = std::make_shared<master_node_info>(std::move(info));
+      }
+    }
+  }
+
+  // Serialize the list of blobs and quorums into a blob suitable for the DB and
+  // vice versa for deserialising.
+  template <typename Archive>
+  static std::string serialize_db_blob(
+      Archive &ar,
+      std::vector<std::string> &blob_list,
+      master_node_list *mnl)
+  {
+    uint32_t version = 0;
+    field(ar, "version", version);
+    field(ar, "data", blob_list);
+
+    if (mnl)
+      mnl->serialize_quorum_states(ar);
+
+    std::string result;
+    if constexpr (Archive::is_serializer)
+      result = ar.str();
     return result;
   }
 
-  static master_node_list::state_serialized serialize_master_node_state_object(hf hf_version, master_node_list::state_t const &state, bool only_serialize_quorums = false)
+  // Serialise the master node state into the archive `ar`. If a serializer is passed in the function
+  // produces the binary string and returns it. If it's deserializing the `state` object is populated
+  // and an empty string is returned.
+  template <typename Archive>
+  static std::string serialize_mnl_directly(Archive &ar, master_node_list::state_t &state)
   {
-    master_node_list::state_serialized result = {};
-    result.version                             = master_node_list::state_serialized::get_version(hf_version);
-    result.height                              = state.height;
-    result.quorums                             = serialize_quorum_state(hf_version, state.height, state.quorums);
-    result.only_stored_quorums                 = state.only_loaded_quorums || only_serialize_quorums;
+    uint32_t version = 0;
+    field_varint(ar, "version", version);
+    field_varint(ar, "height", state.height);
+    // NOTE: Serialization code struggles with the MN info stored behind a const
+    // shared_ptr. We can be explicit and serialise it ourselves.
+    serialize_master_node_infos_directly(ar, "infos", state.master_nodes_infos);
+    field(ar, "key_image_blacklist", state.key_image_blacklist);
+    field(ar, "quorums", state.quorums);
+    field(ar, "only_stored_quorums", state.only_loaded_quorums);
+    field(ar, "block_hash", state.block_hash);
 
-    if (only_serialize_quorums)
-     return result;
-
-    result.infos.reserve(state.master_nodes_infos.size());
-    for (const auto &kv_pair : state.master_nodes_infos)
-      result.infos.emplace_back(kv_pair);
-
-    result.key_image_blacklist = state.key_image_blacklist;
-    result.block_hash          = state.block_hash;
+    std::string result;
+    if constexpr (!Archive::is_deserializer)
+      result = ar.str();
     return result;
   }
 
   bool master_node_list::store()
   {
     if (!m_blockchain.has_db())
-        return false; // Haven't been initialized yet
+      return false; // Haven't been initialized yet
 
     auto hf_version = m_blockchain.get_network_version();
     if (hf_version < hf::hf9_master_nodes)
       return true;
 
-    data_for_serialization *data[] = {&m_transient.cache_long_term_data, &m_transient.cache_short_term_data};
-    auto const serialize_version   = data_for_serialization::get_version(hf_version);
+    // NOTE: Convert the runtime MNL data into a format suitable for serialization into the DB
     std::lock_guard lock(m_mn_mutex);
 
-    for (data_for_serialization *serialize_entry : data)
-    {
-      if (serialize_entry->version != serialize_version) m_transient.state_added_to_archive = true;
-      serialize_entry->version = serialize_version;
-      serialize_entry->clear();
-    }
+    std::vector<std::string> archive_blob_list;
+    std::vector<std::string> history_blob_list;
+    archive_blob_list.resize(m_transient.state_archive.size());
 
-    m_transient.cache_short_term_data.quorum_states.reserve(m_transient.old_quorum_states.size());
-    for (const quorums_by_height &entry : m_transient.old_quorum_states)
-      m_transient.cache_short_term_data.quorum_states.push_back(serialize_quorum_state(hf_version, entry.height, entry.quorums));
-
-
-    if (m_transient.state_added_to_archive)
-    {
-      for (auto const &it : m_transient.state_archive)
-        m_transient.cache_long_term_data.states.push_back(serialize_master_node_state_object(hf_version, it));
-    }
-
-    // NOTE: A state_t may reference quorums up to (vote_lifetime
-    // + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER) blocks back. So in the
-    // (MAX_SHORT_TERM_STATE_HISTORY | 2nd oldest checkpoint) window of states we store, the
-    // first (vote_lifetime + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER) states we only
-    // store their quorums, such that the following states have quorum
-    // information preceeding it.
+    // NOTE: Calculate history blob list size
+    // Count states that need to be serialized from state_history
     uint64_t const max_short_term_height = short_term_state_cull_height(hf_version, (m_state.height - 1)) + VOTE_LIFETIME + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER;
+    size_t history_count = 0;
     for (auto it = m_transient.state_history.begin();
          it != m_transient.state_history.end() && it->height <= max_short_term_height;
          it++)
     {
-      // TODO(beldex): There are 2 places where we convert a state_t to be a serialized state_t without quorums. We should only do this in one location for clarity.
-      m_transient.cache_short_term_data.states.push_back(serialize_master_node_state_object(hf_version, *it, it->height < max_short_term_height /*only_serialize_quorums*/));
+      history_count++;
     }
+    history_blob_list.resize(history_count);
 
-    m_transient.cache_data_blob.clear();
+    tools::threadpool &tpool = tools::threadpool::getInstance();
+    tools::threadpool::waiter tpool_waiter = {};
+
+    // NOTE: Serialize archive
     if (m_transient.state_added_to_archive)
     {
-      serialization::binary_string_archiver ba;
-      try {
-        serialization::serialize(ba, m_transient.cache_long_term_data);
-      } catch (const std::exception& e) {
-        LOG_ERROR("Failed to store master node info: failed to serialize long term data: " << e.what());
-        return false;
-      }
-      m_transient.cache_data_blob.append(ba.str());
+      size_t archive_index = 0;
+      for (auto &it : m_transient.state_archive)
       {
-        auto &db = m_blockchain.get_db();
-        cryptonote::db_wtxn_guard txn_guard{db};
-        db.set_master_node_data(m_transient.cache_data_blob, true /*long_term*/);
+        std::string &dest = archive_blob_list[archive_index++];
+        tpool.submit(&tpool_waiter, [&dest, &it]()
+                     {
+                serialization::binary_string_archiver ba;
+                dest = serialize_mnl_directly(ba, const_cast<state_t&>(it)); });
       }
     }
 
-    m_transient.cache_data_blob.clear();
+    // NOTE: Serialize recent MNL state(s)
     {
-      serialization::binary_string_archiver ba;
-      try {
-        serialization::serialize(ba, m_transient.cache_short_term_data);
-      } catch (const std::exception& e) {
-        LOG_ERROR("Failed to store master node info: failed to serialize short term data: " << e.what());
-        return false;
-      }
-      m_transient.cache_data_blob.append(ba.str());
+      size_t history_index = 0;
+      for (auto it = m_transient.state_history.begin();
+           it != m_transient.state_history.end() && it->height <= max_short_term_height;
+           it++)
       {
-        auto &db = m_blockchain.get_db();
-        cryptonote::db_wtxn_guard txn_guard{db};
-        db.set_master_node_data(m_transient.cache_data_blob, false /*long_term*/);
+        std::string &dest = history_blob_list[history_index++];
+        tpool.submit(&tpool_waiter, [&dest, &it]()
+                     {
+                serialization::binary_string_archiver ba;
+                dest = serialize_mnl_directly(ba, const_cast<state_t&>(*it)); });
+      }
+    }
+    tpool_waiter.wait(&tpool);
+
+    // NOTE: Store blobs to DB
+    {
+      auto &db = m_blockchain.get_db();
+      cryptonote::db_wtxn_guard txn_guard{db};
+
+      if (m_transient.state_added_to_archive)
+      {
+        serialization::binary_string_archiver ar;
+        std::string db_blob = serialize_db_blob(ar, archive_blob_list, nullptr);
+        db.set_master_node_data(db_blob, true /*long_term*/);
+      }
+
+      {
+        serialization::binary_string_archiver ar;
+        std::string db_blob = serialize_db_blob(ar, history_blob_list, this);
+        db.set_master_node_data(db_blob, false /*long_term*/);
       }
     }
 
@@ -3273,7 +3364,7 @@ namespace master_nodes
       return set_peer_reachable(false, pubkey, reachable);
   }
 
-  static quorum_manager quorum_for_serialization_to_quorum_manager(master_node_list::quorum_for_serialization const &source)
+  static quorum_manager quorum_for_serialization_to_quorum_manager( master_node_list::quorum_for_serialization const &source)
   {
     quorum_manager result = {};
     result.obligations = std::make_shared<quorum>(source.quorums[static_cast<uint8_t>(quorum_type::obligations)]);
@@ -3281,7 +3372,6 @@ namespace master_nodes
     // Don't load any checkpoints that shouldn't exist (see the comment in generate_quorums as to why the `+BUFFER` term is here).
     if ((source.height + REORG_SAFETY_BUFFER_BLOCKS_POST_HF12) % CHECKPOINT_INTERVAL == 0)
       result.checkpointing = std::make_shared<quorum>(source.quorums[static_cast<uint8_t>(quorum_type::checkpointing)]);
-
     return result;
   }
 
@@ -3343,105 +3433,104 @@ namespace master_nodes
     quorums = quorum_for_serialization_to_quorum_manager(state.quorums);
   }
 
-  bool master_node_list::load(const uint64_t current_height)
-  {
-    LOG_PRINT_L1("master_node_list::load()");
-    reset(false);
-    if (!m_blockchain.has_db())
-    {
-      return false;
-    }
+struct try_load_blobs_result {
+    bool success;
+    uint64_t archive_min_height = 0;
+    uint64_t archive_max_height = 0;
+    uint64_t archive_with_quorums_only = 0;
 
-    // NOTE: Deserialize long term state history
+    uint64_t recent_max_height = 0;
+    uint64_t recent_min_height = 0;
     uint64_t bytes_loaded = 0;
-    auto &db = m_blockchain.get_db();
+};
+
+static try_load_blobs_result try_load_as_old_style_blobs(
+        uint64_t current_height,
+        master_node_list* mnl,
+        cryptonote::Blockchain& blockchain,
+        master_node_list::state_t& m_state,
+        uint64_t m_store_quorum_history) {
+    auto& db = blockchain.get_db();
     cryptonote::db_rtxn_guard txn_guard{db};
+
+    try_load_blobs_result result = {};
     std::string blob;
-    if (db.get_master_node_data(blob, true /*long_term*/))
-    {
-      bytes_loaded += blob.size();
-      data_for_serialization data_in = {};
-      bool success = false;
-      try {
-        serialization::parse_binary(blob, data_in);
-        success = true;
-      } catch (...) {}
 
-      if (success && data_in.states.size())
-      {
-        // NOTE: Previously the quorum for the next state is derived from the
-        // state that's been updated from the next block. This is fixed in
-        // version_1.
+    // NOTE: Deserialize long term state history (optional, if it doesn't exist- this node can't
+    // roll-back but this is not considered fatal. It will have to recompute the rollback by jumping
+    // back and processing blocks forward).
+    if (db.get_master_node_data(blob, true /*long_term*/)) {
+        result.bytes_loaded += blob.size();
+        try {
+            master_nodes::master_node_list::data_for_serialization data_in = {};
+            serialization::parse_binary(blob, data_in);
+            if (data_in.states.size()) {
+                result.archive_min_height = std::numeric_limits<uint64_t>::max();
+                
+                // NOTE: Handle version_0 migration if needed
+                if (data_in.states[0].version == master_nodes::master_node_list::state_serialized::version_t::version_0) {
+                    size_t const last_index = data_in.states.size() - 1;
+                    if ((data_in.states.back().height % STORE_LONG_TERM_STATE_INTERVAL) != 0) {
+                      LOG_PRINT_L0("Last serialised quorum height: " << data_in.states.back().height
+                                                                     << " in archive is unexpectedly not a multiple of: "
+                                                                     << STORE_LONG_TERM_STATE_INTERVAL << ", regenerating state");
+                      return result;
+                    }
 
-        // So, copy the quorum from (state.height-1) to (state.height), all
-        // states need to have their (height-1) which means we're missing the
-        // 10k-th interval and need to generate it based on the last state.
+                    for (size_t i = data_in.states.size() - 1; i >= 1; i--) {
+                        master_nodes::master_node_list::state_serialized& serialized_entry = data_in.states[i];
+                        master_nodes::master_node_list::state_serialized& prev_serialized_entry = data_in.states[i - 1];
 
-        if (data_in.states[0].version == state_serialized::version_t::version_0)
-        {
-          size_t const last_index = data_in.states.size() - 1;
-          if ((data_in.states.back().height % STORE_LONG_TERM_STATE_INTERVAL) != 0)
-          {
-            LOG_PRINT_L0("Last serialised quorum height: " << data_in.states.back().height
-                                                           << " in archive is unexpectedly not a multiple of: "
-                                                           << STORE_LONG_TERM_STATE_INTERVAL << ", regenerating state");
-            return false;
-          }
+                        if ((prev_serialized_entry.height % STORE_LONG_TERM_STATE_INTERVAL) == 0) {
+                            continue;
+                        }
+                        master_nodes::master_node_list::state_t entry{mnl, std::move(serialized_entry)};
+                        entry.height--;
+                        entry.quorums = quorum_for_serialization_to_quorum_manager(prev_serialized_entry.quorums);
 
-          for (size_t i = data_in.states.size() - 1; i >= 1; i--)
-          {
-            state_serialized &serialized_entry      = data_in.states[i];
-            state_serialized &prev_serialized_entry = data_in.states[i - 1];
+                        if ((serialized_entry.height % STORE_LONG_TERM_STATE_INTERVAL) == 0) {
+                            master_nodes::master_node_list::state_t long_term_state = entry;
+                            cryptonote::block const& block = db.get_block_from_height(long_term_state.height + 1);
+                            std::vector<cryptonote::transaction> txs = db.get_tx_list(block.tx_hashes);
+                            long_term_state.update_from_block(db, blockchain.nettype(), {} /*state_history*/, {} /*state_archive*/, {} /*alt_states*/, block, txs, nullptr /*my_keys*/);
 
-            if ((prev_serialized_entry.height % STORE_LONG_TERM_STATE_INTERVAL) == 0)
-            {
-              // NOTE: drop this entry, we have insufficient data to derive
-              // sadly, do this as a one off and if we ever need this data we
-              // need to do a full rescan.
-              continue;
+                            entry.master_nodes_infos = {};
+                            entry.key_image_blacklist = {};
+                            entry.only_loaded_quorums = true;
+                            mnl->add_state_archive(std::move(long_term_state));
+
+                        }
+                        mnl->add_state_archive(std::move(entry));
+
+                    }
+                } else {
+                    for (master_nodes::master_node_list::state_serialized& entry : data_in.states) {
+                        mnl->add_state_archive(master_node_list::state_t{mnl, std::move(entry)});
+                        result.archive_with_quorums_only += entry.only_stored_quorums;
+                        result.archive_min_height = std::min(result.archive_min_height, entry.height);
+                        result.archive_max_height = std::max(result.archive_max_height, entry.height);
+                    }
+                }
             }
-            state_t entry{this, std::move(serialized_entry)};
-            entry.height--;
-            entry.quorums = quorum_for_serialization_to_quorum_manager(prev_serialized_entry.quorums);
-
-            if ((serialized_entry.height % STORE_LONG_TERM_STATE_INTERVAL) == 0)
-            {
-              state_t long_term_state                  = entry;
-              cryptonote::block const &block           = db.get_block_from_height(long_term_state.height + 1);
-              std::vector<cryptonote::transaction> txs = db.get_tx_list(block.tx_hashes);
-              long_term_state.update_from_block(db, m_blockchain.nettype(), {} /*state_history*/, {} /*state_archive*/, {} /*alt_states*/, block, txs, nullptr /*my_keys*/);
-
-              entry.master_nodes_infos                = {};
-              entry.key_image_blacklist                = {};
-              entry.only_loaded_quorums                = true;
-              m_transient.state_archive.emplace_hint(m_transient.state_archive.begin(), std::move(long_term_state));
-            }
-            m_transient.state_archive.emplace_hint(m_transient.state_archive.begin(), std::move(entry));
-          }
+        } catch (const std::exception&) {
         }
-        else
-        {
-          for (state_serialized &entry : data_in.states)
-            m_transient.state_archive.emplace_hint(m_transient.state_archive.end(), this, std::move(entry));
-        }
-      }
     }
 
     // NOTE: Deserialize short term state history
     if (!db.get_master_node_data(blob, false))
-      return false;
+        return result;
 
-    bytes_loaded += blob.size();
-    data_for_serialization data_in = {};
+    result.bytes_loaded += blob.size();
+    master_nodes::master_node_list::data_for_serialization data_in = {};
     try {
-      serialization::parse_binary(blob, data_in);
+        serialization::parse_binary(blob, data_in);
     } catch (const std::exception& e) {
-      LOG_ERROR("Failed to parse master node data from blob: " << e.what());
-      return false;
+      LOG_PRINT_L1("Old style MNL blob was not detected (" << e.what() << "), parsing as new style blobs");
+      return result;
     }
 
     if (data_in.states.empty())
-      return false;
+        return result;
 
     {
       const uint64_t hist_state_from_height = current_height - m_store_quorum_history;
@@ -3451,77 +3540,196 @@ namespace master_nodes
         if (states.height < hist_state_from_height)
           continue;
 
-        quorums_by_height entry = {};
-        entry.height            = states.height;
-        entry.quorums           = quorum_for_serialization_to_quorum_manager(states);
-
         if (states.height <= last_loaded_height)
         {
-          LOG_PRINT_L0("Serialised quorums is not stored in ascending order by height in DB, failed to load from DB");
-          return false;
+          LOG_PRINT_L0(
+              "Serialised quorums is not stored in ascending order by height in DB, "
+              "failed to load from DB");
+          return result;
         }
         last_loaded_height = states.height;
-        m_transient.old_quorum_states.push_back(entry);
+
+        mnl->add_old_quorum_state(
+            states.height,
+            quorum_for_serialization_to_quorum_manager(states));
       }
     }
 
-    {
-      assert(data_in.states.size() > 0);
-      size_t const last_index = data_in.states.size() - 1;
-      if (data_in.states[last_index].only_stored_quorums)
-      {
-        LOG_PRINT_L0("Unexpected last serialized state only has quorums loaded");
+    assert(data_in.states.size());
+    if (data_in.states.size()) {
+        size_t const last_index = data_in.states.size() - 1;
+        if (data_in.states[last_index].only_stored_quorums) {
+            LOG_PRINT_L0("Unexpected last serialized state only has quorums loaded");
+            return result;
+        }
+
+        if (data_in.states[0].version == master_nodes::master_node_list::state_serialized::version_t::version_0) {
+            for (size_t i = last_index; i >= 1; i--) {
+                master_nodes::master_node_list::state_serialized& serialized_entry = data_in.states[i];
+                master_nodes::master_node_list::state_serialized& prev_serialized_entry = data_in.states[i - 1];
+                master_nodes::master_node_list::state_t entry{mnl, std::move(serialized_entry)};
+                entry.quorums = quorum_for_serialization_to_quorum_manager(prev_serialized_entry.quorums);
+                entry.height--;
+                
+                result.recent_min_height = std::min(result.recent_min_height, entry.height);
+                result.recent_max_height = std::max(result.recent_max_height, entry.height);
+                
+                if (i == last_index) {
+                    m_state = std::move(entry);
+                }
+                else
+                {
+                  mnl->add_state_history(std::move(entry));
+                }
+            }
+        } else {
+            result.recent_min_height = std::numeric_limits<uint64_t>::max();
+            for (size_t i = 0; i < data_in.states.size(); i++) {
+                master_nodes::master_node_list::state_serialized& entry = data_in.states[i];
+
+                assert(!entry.only_stored_quorums);
+                if (!entry.block_hash)
+                    entry.block_hash = blockchain.get_block_id_by_height(entry.height);
+
+                result.recent_min_height = std::min(result.recent_min_height, entry.height);
+                result.recent_max_height = std::max(result.recent_max_height, entry.height);
+
+                if (i == last_index) {
+                    m_state = {mnl, std::move(entry)};
+                }
+                else
+                {
+                  mnl->add_state_history(
+                      master_nodes::master_node_list::state_t{mnl, std::move(entry)});
+                }
+            }
+        }
+    }
+
+    result.success = true;
+    return result;
+}
+
+static try_load_blobs_result try_load_as_new_style_blobs(
+        uint64_t current_height,
+        master_node_list* mnl,
+        cryptonote::Blockchain& blockchain,
+        master_node_list::state_t& m_state,
+        uint64_t m_store_quorum_history) {
+    try_load_blobs_result result = {};
+    std::string db_blob;
+
+    if (blockchain.get_db().get_master_node_data(db_blob, true /*long_term*/)) {
+        serialization::binary_string_unarchiver ar{db_blob};
+        std::vector<std::string> mn_blob_list;
+        serialize_db_blob(ar, mn_blob_list, nullptr);
+
+        std::mutex mutex;
+        for (size_t mn_blob_index = 0; mn_blob_index < mn_blob_list.size(); mn_blob_index++) {
+            const auto& mn_blob = mn_blob_list[mn_blob_index];
+            serialization::binary_string_unarchiver mn_blob_ar{mn_blob};
+            master_node_list::state_t state(mnl);
+            serialize_mnl_directly(mn_blob_ar, state);  // TODO: Multi-thread this step
+
+            result.archive_with_quorums_only += state.only_loaded_quorums;
+            result.archive_min_height = std::min(result.archive_min_height, state.height);
+            result.archive_max_height = std::max(result.archive_max_height, state.height);
+
+            auto lock = std::unique_lock{mutex};
+            mnl->add_state_archive(std::move(state));
+        }
+    }
+    result.bytes_loaded += db_blob.size();
+
+    if (!blockchain.get_db().get_master_node_data(db_blob, false /*long_term*/))
+        return result;
+
+    serialization::binary_string_unarchiver ar{db_blob};
+    std::vector<std::string> mn_blob_list;
+    serialize_db_blob(ar, mn_blob_list, mnl);
+
+    std::mutex mutex;
+    for (size_t mn_blob_index = 0; mn_blob_index < mn_blob_list.size(); mn_blob_index++) {
+        const auto& mn_blob = mn_blob_list[mn_blob_index];
+        serialization::binary_string_unarchiver mn_blob_ar{mn_blob};
+        master_node_list::state_t state(mnl);
+        serialize_mnl_directly(mn_blob_ar, state);  // TODO: Multi-thread this step
+
+        result.recent_min_height = std::min(result.recent_min_height, state.height);
+        result.recent_max_height = std::max(result.recent_max_height, state.height);
+
+        auto lock = std::unique_lock{mutex};
+        if (mn_blob_index == mn_blob_list.size() - 1) {
+            m_state = std::move(state);
+        } else {
+          mnl->add_state_history(std::move(state));
+        }
+    }
+
+    result.bytes_loaded += db_blob.size();
+    result.success = true;
+    return result;
+}
+
+bool master_node_list::load(const uint64_t current_height) {
+    LOG_PRINT_L1("master_node_list::load()");
+    reset(false);
+    if (!m_blockchain.has_db()) {
         return false;
-      }
-
-      if (data_in.states[0].version == state_serialized::version_t::version_0)
-      {
-        for (size_t i = last_index; i >= 1; i--)
-        {
-          state_serialized &serialized_entry      = data_in.states[i];
-          state_serialized &prev_serialized_entry = data_in.states[i - 1];
-          state_t entry{this, std::move(serialized_entry)};
-          entry.quorums = quorum_for_serialization_to_quorum_manager(prev_serialized_entry.quorums);
-          entry.height--;
-          if (i == last_index) m_state = std::move(entry);
-          else                 m_transient.state_archive.emplace_hint(m_transient.state_archive.end(), std::move(entry));
-        }
-      }
-      else
-      {
-        size_t const last_index  = data_in.states.size() - 1;
-        for (size_t i = 0; i < last_index; i++)
-        {
-          state_serialized &entry = data_in.states[i];
-          if (entry.block_hash == crypto::null_hash) entry.block_hash = m_blockchain.get_block_id_by_height(entry.height);
-          m_transient.state_history.emplace_hint(m_transient.state_history.end(), this, std::move(entry));
-        }
-
-        m_state = {this, std::move(data_in.states[last_index])};
-      }
     }
+
+    auto& db = m_blockchain.get_db();
+    try_load_blobs_result load_result = {};
+    try {
+        load_result = try_load_as_new_style_blobs(
+                current_height,
+                this,
+                m_blockchain,
+                m_state,
+                m_store_quorum_history);
+    } catch (std::exception&) {
+        // NOTE: Try as old style blob then
+    }
+
+    if (!load_result.success) {
+        m_transient = {};
+
+        load_result = try_load_as_old_style_blobs(
+                current_height,
+                this,
+                m_blockchain,
+                m_state,
+                m_store_quorum_history);
+    }
+
+    if (!load_result.success)
+        return false;
 
     // NOTE: Load uptime proof data
     proofs = db.get_all_master_node_proofs();
-    if (m_master_node_keys)
-    {
-      // Reset our own proof timestamp to zero so that we aggressively try to resend proofs on
-      // startup (in case we are restarting because the last proof that we think went out didn't
-      // actually make it to the network).
-      auto &mine = proofs[m_master_node_keys->pub];
-      mine.timestamp = mine.effective_timestamp = 0;
+    if (m_master_node_keys) {
+        // Reset our own proof timestamp to zero so that we aggressively try to resend proofs on
+        // startup (in case we are restarting because the last proof that we think went out didn't
+        // actually make it to the network).
+        auto& mine = proofs[m_master_node_keys->pub];
+        mine.timestamp = mine.effective_timestamp = 0;
     }
 
     initialize_x25519_map();
 
     MGINFO("Master node data loaded successfully, height: " << m_state.height);
+
     MGINFO(m_state.master_nodes_infos.size()
+
            << " nodes and " << m_transient.state_history.size() << " recent states loaded, " << m_transient.state_archive.size()
-           << " historical states loaded, (" << tools::get_human_readable_bytes(bytes_loaded) << ")");
+
+           << " historical states loaded, (" << tools::get_human_readable_bytes(load_result.bytes_loaded) << ")");
 
     LOG_PRINT_L1("master_node_list::load() returning success");
+
     return true;
-  }
+}
+
 
   void master_node_list::reset(bool delete_db_entry)
   {

@@ -299,120 +299,397 @@ uint64_t Blockchain::get_current_blockchain_height(bool lock) const
   if (lock) lock_.lock();
   return m_db->height();
 }
-//------------------------------------------------------------------
-bool Blockchain::load_missing_blocks_into_beldex_subsystems()
+// --- types used for threaded loader ---
+struct block_data
 {
-  uint64_t const mnl_height   = std::max(hard_fork_begins(m_nettype, hf::hf9_master_nodes).value_or(0), m_master_node_list.height() + 1);
-  uint64_t const bns_height   = std::max(hard_fork_begins(m_nettype, hf::hf18_bns).value_or(0), m_bns_db.height() + 1);
-  uint64_t const end_height   = m_db->height();
-  uint64_t const start_height = std::min(end_height, std::min(bns_height, mnl_height));
-  
-  int64_t const total_blocks = static_cast<int64_t>(end_height) - static_cast<int64_t>(start_height);
-  if (total_blocks <= 0) return true;
-  if (total_blocks > 1)
-    MGINFO("Loading blocks into beldex subsystems, scanning blockchain from height: " << start_height << " to: " << end_height << " (mnl: " << mnl_height << ", bns: " << bns_height << ")");
+  uint64_t height = 0;
+  std::vector<cryptonote::block> blocks;
+  std::vector<std::vector<cryptonote::transaction>> txs;
+  size_t size = 0;
+};
+struct block_load_context
+{
+  static constexpr uint64_t CHUNK_SIZE = 50;  // tuneable chunk size
+  static constexpr size_t MAX_QUEUE_SIZE = 5;        // tuneable queue depth
+  std::mutex block_mut;
+  std::condition_variable block_cv;
+  std::queue<block_data> next_blocks;
+  std::thread thread;
+  bool finished = false;
+  bool failed = false;
+  uint64_t height = 0;
+};
+//------------------------------------------------------------------
+bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bool>* abort, bool use_threaded_load) {
 
-  using clock                   = std::chrono::steady_clock;
-  using dseconds                = std::chrono::duration<double>;
-  int64_t constexpr BLOCK_COUNT = 1000;
-  auto work_start               = clock::now();
-  auto scan_start               = work_start;
-  dseconds bns_duration{}, mnl_duration{}, bns_iteration_duration{}, mnl_iteration_duration{};
+    // Heights for subsystems (Beldex)
+    uint64_t const mnl_height =
+            std::max(hard_fork_begins(m_nettype, hf::hf9_master_nodes).value_or(0),
+                     m_master_node_list.height() + 1);
+    uint64_t const bns_height =
+            std::max(hard_fork_begins(m_nettype, hf::hf18_bns).value_or(0),
+                     m_bns_db.height() + 1);
 
-  for (int64_t block_count = total_blocks,
-               index       = 0;
-       block_count > 0;
-       block_count -= BLOCK_COUNT, index++)
-  {
-    auto duration = dseconds{clock::now() - work_start};
-    if (duration >= 10s)
-    {
-      m_master_node_list.store();
-      MGINFO(fmt::format("... scanning height {} ({:.3f}s) (mnl: {:.3f}s, bns: {:.3f}s)",
-            start_height + (index * BLOCK_COUNT),
-            duration.count(),
-            mnl_iteration_duration.count(),
-            bns_iteration_duration.count()));
-#ifdef ENABLE_SYSTEMD
-      // Tell systemd that we're doing something so that it should let us continue starting up
-      // (giving us 120s until we have to send the next notification):
-      sd_notify(0, ("EXTEND_TIMEOUT_USEC=120000000\nSTATUS=Recanning blockchain; height " + std::to_string(start_height + (index * BLOCK_COUNT))).c_str());
-#endif
-      work_start = clock::now();
+    const uint64_t end_height = m_db->height();
+    const uint64_t start_height = std::min(end_height, std::min(bns_height, mnl_height));
+    int64_t const total_blocks = static_cast<int64_t>(end_height) - static_cast<int64_t>(start_height);
 
-      bns_duration += bns_iteration_duration;
-      mnl_duration += mnl_iteration_duration;
-      bns_iteration_duration = mnl_iteration_duration = {};
+    if (total_blocks <= 0) {
+        return true;
     }
+    MGINFO("Loading blocks into beldex subsystems, scanning blockchain from height: "
+           << start_height << " to: " << end_height << " (mnl: " << mnl_height
+           << ", bns: " << bns_height << ")");
 
-    std::vector<cryptonote::block> blocks;
-    uint64_t height = start_height + (index * BLOCK_COUNT);
-    if (!get_blocks_only(height, static_cast<uint64_t>(BLOCK_COUNT), blocks))
-    {
-      LOG_ERROR("Unable to get checkpointed historical blocks for updating beldex subsystems");
-      return false;
-    }
+    // Initialize load context
+    block_load_context load_context = {};
+    load_context.height = start_height;
 
-    for (cryptonote::block const &blk : blocks)
-    {
-      uint64_t block_height = get_block_height(blk);
+    // Helper: fetch chunk of blocks + parallel fetch of txs
+    auto get_block_data = [&](uint64_t height, uint64_t end_height) -> block_data {
+        block_data next_chunk{};
+        next_chunk.height = height;
 
-      std::vector<cryptonote::transaction> txs;
-      if (!get_transactions(blk.tx_hashes, txs))
-      {
-        MERROR("Unable to get transactions for block for updating BNS DB: " << cryptonote::get_block_hash(blk));
-        return false;
-      }
-
-      if (block_height >= mnl_height)
-      {
-        auto mnl_start = clock::now();
-
-        checkpoint_t *checkpoint_ptr = nullptr;
-        checkpoint_t checkpoint;
-        if (blk.major_version >= hf::hf15_flash && get_checkpoint(block_height, checkpoint))
-            checkpoint_ptr = &checkpoint;
-
-        try {
-          m_master_node_list.block_add(blk, txs, checkpoint_ptr);
-        } catch (const std::exception& e) {
-          MFATAL("Unable to process block {} for updating master node list: " << e.what());
-          return false;
-        }
-        mnl_iteration_duration += clock::now() - mnl_start;
-      }
-
-      if (m_bns_db.db && (block_height >= bns_height))
-      {
-        auto bns_start = clock::now();
-        if (!m_bns_db.add_block(blk, txs))
+        // 1) Load blocks
         {
-          MERROR("Unable to process block for updating BNS DB: " << cryptonote::get_block_hash(blk));
-          return false;
+            size_t blocks_size;
+                   
+            if (!_get_blocks_only(height, block_load_context::CHUNK_SIZE, next_chunk.blocks, &blocks_size)) {
+                LOG_ERROR("Unable to get checkpointed historical blocks [" << height << "-" <<
+                          std::min<uint64_t>(height + block_load_context::CHUNK_SIZE - 1, end_height)
+                          << "] for updating beldex subsystems");
+                return {};
+            }
+            next_chunk.size += blocks_size;
         }
-        bns_iteration_duration += clock::now() - bns_start;
-      }
+
+        if (next_chunk.blocks.empty()) {
+            return {};
+        }
+
+        // 2) Parallelise TX loading via threadpool (one wait per block - keeps memory modest)
+        tools::threadpool::waiter tpool_waiter;
+        tools::threadpool& tpool = tools::threadpool::getInstance();
+
+        {
+            std::atomic<size_t> bytes_loaded_for_block{0};
+            std::atomic<uint64_t> failed_height{0};
+            next_chunk.txs.resize(next_chunk.blocks.size());
+
+            for (size_t blk_index = 0; blk_index < next_chunk.blocks.size(); ++blk_index) {
+                const auto &blk = next_chunk.blocks[blk_index];
+                uint64_t blk_height = get_block_height(blk);
+
+                auto &txs = next_chunk.txs[blk_index];
+                txs.resize(blk.tx_hashes.size());
+
+                for (size_t tx_index = 0; tx_index < blk.tx_hashes.size(); ++tx_index) {
+                    const crypto::hash &tx_hash = blk.tx_hashes[tx_index];
+                    // capture txs by reference is OK since next_chunk is local
+                    tpool.submit(&tpool_waiter, [this, &txs, tx_index, tx_hash, &bytes_loaded_for_block, blk_height, &failed_height]() {
+                        std::vector<transaction> get_tx_result;
+                        const std::vector<crypto::hash> single_hash{tx_hash};
+                        if (!_get_transactions(single_hash, get_tx_result, nullptr, nullptr)) {
+                            if (failed_height == 0) failed_height = blk_height;
+                            return;
+                        }
+                        if (get_tx_result.empty()) {
+                            if (failed_height == 0) failed_height = blk_height;
+                            return;
+                        }
+                        bytes_loaded_for_block += get_tx_result[0].blob_size;
+                        txs[tx_index] = std::move(get_tx_result[0]);
+                    });
+
+                    if (failed_height) break;
+                }
+
+                // wait for this block's txs to finish
+                tpool_waiter.wait(&tpool);
+
+                if (failed_height) {
+                    LOG_ERROR("Unable to get all transactions for subsystem updating from block: " << failed_height);
+                    return {};
+                }
+
+                next_chunk.size += bytes_loaded_for_block.load();
+                cryptonote::get_block_hash(blk);
+            }
+        }
+        return next_chunk;
+    };
+
+    // If using a threaded loader, spawn loader thread that preloads chunks
+    if (use_threaded_load) {
+        load_context.thread = std::thread{[&] {
+            // Always set finished=true and notify on any exit of this thread
+            auto finish_on_exit = beldex::defer([&] {
+                std::unique_lock lock{load_context.block_mut};
+                load_context.finished = true;
+                load_context.block_cv.notify_all();
+            });
+
+            // deferred failure propagator (keeps existing behaviour)
+            auto failure_propagator = beldex::defer([&] {
+                std::unique_lock lock{load_context.block_mut};
+                load_context.failed = true;
+                load_context.block_cv.notify_all();
+            });
+
+            while (load_context.height < end_height) {
+                // Wait for queue space (predicate must be pure - no logs, no side-effects)
+                {
+                    std::unique_lock lock{load_context.block_mut};
+                    load_context.block_cv.wait(lock, [&] {
+                        return load_context.failed || (abort && *abort) ||
+                               load_context.next_blocks.size() < block_load_context::MAX_QUEUE_SIZE;
+                    });
+
+                    if (load_context.failed || (abort && *abort)) {
+                        return;
+                    }
+
+                    // safe to proceed
+                    assert(load_context.next_blocks.size() < block_load_context::MAX_QUEUE_SIZE);
+                }
+
+                // Load the block data (may be slow)
+                block_data next_chunk = get_block_data(load_context.height, end_height);
+
+                // If nothing returned, mark finished and break (get_block_data can return empty on error or end)
+                if (next_chunk.blocks.empty()) {
+                    {
+                        std::unique_lock lock{load_context.block_mut};
+                        load_context.finished = true;
+                        load_context.block_cv.notify_all();
+                    }
+                    break;
+                }
+
+                // Push to queue and notify main thread
+                {
+                    std::unique_lock lock{load_context.block_mut};
+                    load_context.next_blocks.push(std::move(next_chunk));
+                }
+                load_context.block_cv.notify_all();
+
+                // Advance to next chunk
+                load_context.height += block_load_context::CHUNK_SIZE;
+
+                // If we've passed or reached end_height, set finished and break
+                if (load_context.height >= end_height) {
+                    std::unique_lock lock{load_context.block_mut};
+                    load_context.finished = true;
+                    load_context.block_cv.notify_all();
+                    break;
+                }
+            } // end loader while
+
+            // cancellation of failure propagator (if we got here normally)
+            failure_propagator.cancel();
+
+            // final explicit finished (finish_on_exit defer will also set it; this just logs)
+            {
+                std::unique_lock lock{load_context.block_mut};
+                load_context.finished = true;
+            }
+            load_context.block_cv.notify_all();
+        }};
     }
-  }
 
-  if (total_blocks > 1)
-  {
-    MGINFO(fmt::format("Done recalculating beldex subsystems in {:.2f}s ({:.2f}s mnl; {:.2f}s bns)",
-          dseconds{clock::now() - scan_start}.count(), mnl_duration.count(), bns_duration.count()));
-  }
+    // Ensure loader thread is joined on early exit
+    auto failure_rejoiner = beldex::defer([&] {
+        if (use_threaded_load) {
+            {
+                std::unique_lock<std::mutex> lock{load_context.block_mut};
+                load_context.failed = true;
+            }
+            load_context.block_cv.notify_all();
+            load_context.thread.join();
+        }
+    });
 
-  if (total_blocks > 0)
-    m_master_node_list.store();
+    // Timers / stats
+    using clock = std::chrono::steady_clock;
+    using dseconds = std::chrono::duration<double>;
+    auto work_start = clock::now();
+    auto scan_start = work_start;
+    dseconds bns_duration{}, bns_interval_duration{};
+    dseconds mnl_duration{}, mnl_interval_duration{};
+    dseconds get_block_data_duration{}, get_block_data_interval_duration{};
+    dseconds store_accumulator{};
+    uint64_t work_blocks = 0;
+    uint64_t total_bytes = 0, work_bytes = 0;
 
-  return true;
+    // We skip verification here because the fact that this block is already in the
+    // lmdb means it has already been verified:
+    master_nodes::rescan_context rescan = {};
+    rescan.top_block_height = end_height;
+    rescan.skip_verify = true;
+
+    // Main processing loop: pull chunks and feed to subsystems
+    while (true) {
+        auto get_block_data_start = clock::now();
+        block_data chunk;
+
+        if (use_threaded_load) {
+            {
+                std::unique_lock lock{load_context.block_mut};
+
+                // Use wait_for here for debug visibility; predicate still pure
+                if (!load_context.block_cv.wait_for(lock, 30s, [&] {
+                        return load_context.failed || (abort && *abort) ||
+                               load_context.finished || !load_context.next_blocks.empty();
+                    }))
+
+                if (load_context.failed || (abort && *abort)) {
+                    return false;
+                }
+
+                // When loader has finished AND the queue is empty, we're done
+                if (load_context.finished && load_context.next_blocks.empty()) {
+                    break;
+                }
+
+                if (!load_context.next_blocks.empty()) {
+                    chunk = std::move(load_context.next_blocks.front());
+                    load_context.next_blocks.pop();
+                    // notify loader thread that there's space in the queue
+                    load_context.block_cv.notify_all();
+                } else {
+                    // spurious wake or timed out — continue to wait again
+                    continue;
+                }
+            }
+        } else {
+            chunk = get_block_data(load_context.height, end_height);
+            if (load_context.height >= end_height || chunk.blocks.empty() || (abort && *abort))
+                break;
+            load_context.height += block_load_context::CHUNK_SIZE;
+        }
+
+        auto now = clock::now();
+        get_block_data_interval_duration += now - get_block_data_start;
+        dseconds interval_duration = now - work_start;
+        bool every_10s = interval_duration >= 10s;
+        uint64_t height = chunk.height;
+
+        if (height + chunk.blocks.size() >= end_height || every_10s) {
+            store_accumulator += interval_duration;
+            if (store_accumulator >= 60s) {
+                store_accumulator -= 60s;
+                m_master_node_list.store();
+            }
+
+            float blocks_per_s = static_cast<float>(work_blocks) / std::max<double>(1e-9, interval_duration.count());
+            float bytes_per_s = static_cast<float>(work_bytes) / std::max<double>(1e-9, interval_duration.count());
+
+            MGINFO(fmt::format("... scanning height {}/{} ({:.2f}s) (get blks: {:.2f}s; mnl: {:.2f}s; bns: {:.2f}s; {:.1f} blks/s; {}/s)",
+                               height, end_height, interval_duration.count(),
+                               get_block_data_interval_duration.count(),
+                               mnl_interval_duration.count(),
+                               bns_interval_duration.count(),
+                               blocks_per_s,
+                               tools::get_human_readable_bytes(bytes_per_s)));
+
+#ifdef ENABLE_SYSTEMD
+            sd_notify(0,
+                      ("EXTEND_TIMEOUT_USEC=120000000\nSTATUS=Recanning blockchain; height " +
+                       std::to_string(height)).c_str());
+#endif
+
+            mnl_duration += mnl_interval_duration;
+            bns_duration += bns_interval_duration;
+            get_block_data_duration += get_block_data_interval_duration;
+            total_bytes += work_bytes;
+
+            work_start = now;
+            get_block_data_interval_duration = mnl_interval_duration = bns_interval_duration = 0s;
+            work_blocks = work_bytes = 0;
+        }
+
+        // Feed subsystem processing
+        work_blocks += chunk.blocks.size();
+        work_bytes += chunk.size;
+
+        for (size_t i = 0; i < chunk.blocks.size(); i++) {
+            const auto& blk = chunk.blocks[i];
+            uint64_t block_height = get_block_height(blk);
+            const auto& txs = chunk.txs[i];
+
+            if (block_height >= mnl_height) {
+                auto mnl_start = clock::now();
+
+                checkpoint_t* checkpoint_ptr = nullptr;
+                checkpoint_t checkpoint;
+                if (blk.major_version >= hf::hf15_flash && get_checkpoint(block_height, checkpoint))
+                    checkpoint_ptr = &checkpoint;
+
+                try {
+                    m_master_node_list.block_add(blk, txs, checkpoint_ptr, rescan);
+                } catch (const std::exception& e) {
+                    MFATAL("Unable to process block " << block_height << " for updating master node list: " << e.what());
+                    return false;
+                }
+                mnl_interval_duration += clock::now() - mnl_start;
+            }
+
+            if (m_bns_db.db) {
+                auto bns_start = clock::now();
+                if (!m_bns_db.add_block(blk, txs)) {
+                    MERROR("Unable to process block for updating BNS DB: " << cryptonote::get_block_hash(blk));
+                    return false;
+                }
+                bns_interval_duration += clock::now() - bns_start;
+            }
+        }
+
+    } // end main while
+
+    auto end = clock::now();
+
+    if (total_blocks > 0) {
+        if (m_master_node_list.height() != m_bns_db.height() ||
+            m_master_node_list.height() != end_height - 1) {
+            LOG_ERROR("Mismatched subsystem height after subsystem refresh: blockchain (" << end_height - 1
+                      << "), MNL (" << m_master_node_list.height()
+                      << "), BNS (" << m_bns_db.height() << ")");
+            return false;
+        }
+
+        total_bytes += work_bytes;
+        dseconds duration{end - scan_start};
+        float blocks_per_s = static_cast<float>(total_blocks) / std::max<double>(1e-9, duration.count());
+        float bytes_per_s = static_cast<float>(total_bytes) / std::max<double>(1e-9, duration.count());
+        MGINFO(fmt::format("Done recalculating beldex subsystems in {:.2f}s (get blks: {:.2f}s; mnl: {:.2f}s; bns: {:.2f}s; {:.1f} blks/s; {}/s)",
+                           duration.count(),
+                           get_block_data_duration.count(),
+                           mnl_duration.count(),
+                           bns_duration.count(),
+                           blocks_per_s,
+                           tools::get_human_readable_bytes(bytes_per_s)));
+
+        m_master_node_list.store();
+    }
+
+    if (use_threaded_load) {
+        failure_rejoiner.cancel();
+        assert(load_context.finished);
+        load_context.thread.join();
+    }
+
+    return true;
 }
+
 
 static bool exec_detach_hooks(
         Blockchain& blockchain,
         uint64_t detach_height,
         std::vector<BlockchainDetachedHook> hooks, // have to change
         bool by_pop_blocks,
-        bool load_missing_blocks = true) {
+        bool load_missing_blocks = true,
+        const std::atomic<bool>* abort = nullptr,
+        bool use_threaded_load = false) {
 
     detached_info hook_data{detach_height, by_pop_blocks};
     for (const auto& hook : hooks)
@@ -420,7 +697,7 @@ static bool exec_detach_hooks(
 
     bool result = true;
     if (load_missing_blocks)
-        result = blockchain.load_missing_blocks_into_beldex_subsystems();
+        result = blockchain.load_missing_blocks_into_beldex_subsystems(abort, use_threaded_load);
     return result;
 }
 
@@ -592,7 +869,9 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nett
       m_db->height(),
       m_blockchain_detached_hooks,
       /*by_pop_blocks*/ false,
-      /*load_missing_blocks_into_beldex_subsystems*/ true)) 
+      /*load_missing_blocks_into_beldex_subsystems*/ true,
+      /* abort = */ nullptr,
+      /*use_threaded_load*/ true)) 
     {
         MERROR("Failed to load blocks into beldex subsystems");
         return false;
@@ -2175,6 +2454,46 @@ bool Blockchain::handle_alternative_block(const block& b, const crypto::hash& id
 
   return true;
 }
+
+bool Blockchain::_get_blocks_only(
+    uint64_t start_offset,
+    size_t count,
+    std::vector<block> &blocks,
+    size_t *size_loaded) const
+{
+  const uint64_t height = m_db->height();
+  if (size_loaded)
+    *size_loaded = 0;
+
+  if (start_offset >= height)
+    return false;
+
+  const size_t num_blocks = std::min<uint64_t>(height - start_offset, count);
+  blocks.reserve(blocks.size() + num_blocks);
+
+  for (size_t i = 0; i < num_blocks; i++)
+  {
+    try
+    {
+      size_t block_size = 0;
+
+      // Load mainchain block by height
+      block blk = m_db->get_block_from_height(start_offset + i, &block_size);
+
+      blocks.emplace_back(std::move(blk));
+
+      if (size_loaded)
+        *size_loaded += block_size;
+    }
+    catch (const std::exception &e)
+    {
+      LOG_ERROR("Invalid block at height " << start_offset + i << ". " << e.what());
+      return false;
+    }
+  }
+
+  return true;
+}
 //------------------------------------------------------------------
 bool Blockchain::get_blocks_only(uint64_t start_offset, size_t count, std::vector<block>& blocks, std::vector<cryptonote::blobdata>* txs) const
 {
@@ -2186,6 +2505,7 @@ bool Blockchain::get_blocks_only(uint64_t start_offset, size_t count, std::vecto
 
   const size_t num_blocks = std::min<uint64_t>(height - start_offset, count);
   blocks.reserve(blocks.size() + num_blocks);
+
   for(size_t i = 0; i < num_blocks; i++)
   {
     try
@@ -2726,12 +3046,45 @@ bool Blockchain::get_split_transactions_blobs(const std::vector<crypto::hash>& t
   }
   return true;
 }
+bool Blockchain::_get_transactions(
+        const std::vector<crypto::hash>& txs_ids,
+        std::vector<transaction>& txs,
+        std::unordered_set<crypto::hash>* missed_txs,
+        size_t* total_size) const {
+    LOG_PRINT_L3("Blockchain::" << __func__);
+
+    txs.reserve(txs_ids.size());
+
+    std::string blob;
+    if (total_size)
+        *total_size = 0;
+
+    for (const auto& tx_hash : txs_ids) {
+        blob.clear();
+        try {
+            if (m_db->get_tx_blob(tx_hash, blob)) {
+                if (total_size)
+                    *total_size += blob.size();
+                txs.emplace_back();
+                if (!parse_and_validate_tx_from_blob(blob, txs.back())) {
+                     LOG_ERROR("Invalid transaction");
+                    return false;
+                }
+                txs.back().set_hash(tx_hash);
+                txs.back().set_blob_size(blob.size());
+            } else if (missed_txs)
+                missed_txs->insert(tx_hash);
+        } catch (const std::exception& e) {
+            return false;
+        }
+    }
+    return true;
+}
 //------------------------------------------------------------------
 bool Blockchain::get_transactions(const std::vector<crypto::hash>& txs_ids, std::vector<transaction>& txs, std::unordered_set<crypto::hash>* missed_txs) const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   std::unique_lock lock{*this};
-
   txs.reserve(txs_ids.size());
   cryptonote::blobdata tx;
   for (const auto& tx_hash : txs_ids)
@@ -2747,6 +3100,8 @@ bool Blockchain::get_transactions(const std::vector<crypto::hash>& txs_ids, std:
           LOG_ERROR("Invalid transaction");
           return false;
         }
+        txs.back().set_hash(tx_hash);
+        txs.back().set_blob_size(tx.size());
       }
       else if (missed_txs)
         missed_txs->insert(tx_hash);

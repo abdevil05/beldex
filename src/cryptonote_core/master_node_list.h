@@ -55,6 +55,11 @@ namespace uptime_proof
 namespace master_nodes
 {
   constexpr uint64_t INVALID_HEIGHT = static_cast<uint64_t>(-1);
+  struct rescan_context
+  {
+    bool skip_verify;
+    uint64_t top_block_height;
+  };
 
   struct checkpoint_participation_entry
   {
@@ -415,16 +420,16 @@ namespace master_nodes
     crypto::x25519_secret_key key_x25519;
     crypto::x25519_public_key pub_x25519;
   };
-
+  
   class master_node_list
   {
   public:
-    explicit master_node_list(cryptonote::Blockchain& blockchain);
+    explicit master_node_list(cryptonote::Blockchain &blockchain);
     // non-copyable:
     master_node_list(const master_node_list &) = delete;
     master_node_list &operator=(const master_node_list &) = delete;
 
-    void block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, const cryptonote::checkpoint_t* checkpoint);
+    void block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, const cryptonote::checkpoint_t* checkpoint,const std::optional<rescan_context>& rescan = std::nullopt);
     void blockchain_detached(uint64_t height);
     void init();
     void validate_miner_tx(const cryptonote::miner_tx_info& info) const;
@@ -690,6 +695,15 @@ namespace master_nodes
       payout get_block_producer(uint8_t POS_round) const;
       master_node_info get_master_node_details(crypto::public_key mnode_key);
     };
+    void add_state_archive(state_t &&s);
+    void add_state_history(state_t &&s);
+    void add_old_quorum_state(uint64_t height, quorum_manager q);
+    // Serialize/deserialize quorum history without exposing the type
+    template <typename Archive>
+    void serialize_quorum_states(Archive &ar);
+
+    template <typename Archive>
+    void deserialize_quorum_states(Archive &ar);
 
     // Can be set to true (via --dev-allow-local-ips) for debugging a new testnet on a local private network.
     bool debug_allow_local_ips = false;
@@ -725,19 +739,28 @@ namespace master_nodes
       quorums_by_height(uint64_t height, quorum_manager quorums) : height(height), quorums(std::move(quorums)) {}
       uint64_t       height;
       quorum_manager quorums;
+      template <class Archive>
+      void serialize_value(Archive &ar)
+      {
+        uint32_t version = 0;
+        field(ar, "version", version);
+        field(ar, "height", height);
+        field(ar, "quorums", quorums);
+      }
     };
-
-    struct
+  
+    struct transient_t
     {
       std::deque<quorums_by_height>             old_quorum_states; // Store all old quorum history only if run with --store-full-quorum-history
       state_set                                 state_history; // Store state_t's from MIN(2nd oldest checkpoint | height - DEFAULT_SHORT_TERM_STATE_HISTORY) up to the block height
       state_set                                 state_archive; // Store state_t's where ((height < m_state_history.first()) && (height % STORE_LONG_TERM_STATE_INTERVAL))
       std::unordered_map<crypto::hash, state_t> alt_state;
       bool                                      state_added_to_archive;
-      data_for_serialization                    cache_long_term_data;
-      data_for_serialization                    cache_short_term_data;
       std::string                               cache_data_blob;
     } m_transient = {};
+
+    transient_t& get_transient() { return m_transient; }
+    const transient_t& get_transient() const { return m_transient; }
 
     state_t m_state; // NOTE: Not in m_transient due to the non-trivial constructor. We can't blanket initialise using = {}; needs to be reset in ::reset(...) manually
   };

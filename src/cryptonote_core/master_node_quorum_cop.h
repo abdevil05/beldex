@@ -64,6 +64,32 @@ namespace master_nodes
     return os;
   }
 
+  template <typename Archive>
+  static void serialize_quorum_ptr_directly(
+      Archive &ar, std::string_view key, std::shared_ptr<const quorum> &ptr)
+  {
+    if constexpr (Archive::is_deserializer)
+    {
+      quorum dummy = {};
+      field(ar, key, dummy);
+      if (dummy.validators.size())
+        ptr = std::make_shared<quorum>(std::move(dummy));
+    }
+    else
+    {
+      if (ptr)
+      {
+        auto &item = const_cast<quorum &>(*ptr);
+        field(ar, key, item);
+      }
+      else
+      {
+        quorum empty = {};
+        field(ar, key, empty);
+      }
+    }
+  }
+
   struct quorum_manager
   {
     std::shared_ptr<const quorum> obligations;
@@ -82,6 +108,32 @@ namespace master_nodes
       MERROR("Developer error: Unhandled quorum enum with value: " << (size_t)type);
       assert(!"Developer error: Unhandled quorum enum with value: ");
       return nullptr;
+    }
+    template <class Archive>
+    void serialize_value(Archive &ar)
+    {
+      uint32_t version = 0;
+      field(ar, "version", version);
+      for (size_t index = 0; index < static_cast<size_t>(quorum_type::_count); index++)
+      {
+        switch (static_cast<quorum_type>(index))
+        {
+        case quorum_type::obligations:
+          serialize_quorum_ptr_directly(ar, "obligations", obligations);
+          break;
+        case quorum_type::checkpointing:
+          serialize_quorum_ptr_directly(ar, "checkpointing", checkpointing);
+          break;
+        case quorum_type::flash:
+          serialize_quorum_ptr_directly(ar, "flash", flash);
+          break;
+        case quorum_type::POS:
+          serialize_quorum_ptr_directly(ar, "POS", POS);
+          break;
+        case quorum_type::_count:
+          break;
+        }
+      }
     }
   };
 
