@@ -2682,7 +2682,7 @@ namespace master_nodes
   // Serialise the hash table of MNs to the archive `ar`
   template <typename Archive>
   static void serialize_master_node_infos_directly(
-      Archive &ar, std::string_view key, master_nodes_infos_t &mn_infos)
+      Archive &ar, [[maybe_unused]] std::string_view key, master_nodes_infos_t &mn_infos)
   {
     if constexpr (Archive::is_serializer)
       ar.tag(key);
