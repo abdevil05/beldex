@@ -309,8 +309,8 @@ struct block_data
 };
 struct block_load_context
 {
-  static constexpr uint64_t CHUNK_SIZE = 50;  // tuneable chunk size
-  static constexpr size_t MAX_QUEUE_SIZE = 5;        // tuneable queue depth
+  static constexpr uint64_t CHUNK_SIZE = 300;  // tuneable chunk size
+  static constexpr size_t MAX_QUEUE_SIZE = 12;        // tuneable queue depth
   std::mutex block_mut;
   std::condition_variable block_cv;
   std::queue<block_data> next_blocks;
@@ -376,44 +376,54 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
             std::atomic<uint64_t> failed_height{0};
             next_chunk.txs.resize(next_chunk.blocks.size());
 
-            for (size_t blk_index = 0; blk_index < next_chunk.blocks.size(); ++blk_index) {
-                const auto &blk = next_chunk.blocks[blk_index];
-                uint64_t blk_height = get_block_height(blk);
+            for (size_t blk_index = 0; blk_index < next_chunk.blocks.size(); ++blk_index)
+            {
+              const auto &blk = next_chunk.blocks[blk_index];
+              uint64_t blk_height = get_block_height(blk);
 
-                auto &txs = next_chunk.txs[blk_index];
-                txs.resize(blk.tx_hashes.size());
+              auto &txs = next_chunk.txs[blk_index];
+              txs.resize(blk.tx_hashes.size());
 
-                for (size_t tx_index = 0; tx_index < blk.tx_hashes.size(); ++tx_index) {
-                    const crypto::hash &tx_hash = blk.tx_hashes[tx_index];
-                    // capture txs by reference is OK since next_chunk is local
-                    tpool.submit(&tpool_waiter, [this, &txs, tx_index, tx_hash, &bytes_loaded_for_block, blk_height, &failed_height]() {
-                        std::vector<transaction> get_tx_result;
-                        const std::vector<crypto::hash> single_hash{tx_hash};
-                        if (!_get_transactions(single_hash, get_tx_result, nullptr, nullptr)) {
-                            if (failed_height == 0) failed_height = blk_height;
-                            return;
-                        }
-                        if (get_tx_result.empty()) {
-                            if (failed_height == 0) failed_height = blk_height;
-                            return;
-                        }
-                        bytes_loaded_for_block += get_tx_result[0].blob_size;
-                        txs[tx_index] = std::move(get_tx_result[0]);
-                    });
+              for (size_t tx_index = 0; tx_index < blk.tx_hashes.size(); ++tx_index)
+              {
+                const crypto::hash &tx_hash = blk.tx_hashes[tx_index];
 
-                    if (failed_height) break;
-                }
+                tpool.submit(&tpool_waiter, [this, &txs, tx_index, tx_hash,
+                                             &bytes_loaded_for_block, blk_height, &failed_height]()
+                             {
+            std::vector<transaction> get_tx_result;
+            const std::vector<crypto::hash> single_hash{tx_hash};
+            if (!_get_transactions(single_hash, get_tx_result, nullptr, nullptr)) {
+                if (failed_height == 0) failed_height = blk_height;
+                return;
+            }
+            if (get_tx_result.empty()) {
+                if (failed_height == 0) failed_height = blk_height;
+                return;
+            }
+            bytes_loaded_for_block += get_tx_result[0].blob_size;
+            txs[tx_index] = std::move(get_tx_result[0]); });
 
-                // wait for this block's txs to finish
-                tpool_waiter.wait(&tpool);
+                if (failed_height)
+                  break;
+              }
+            }
 
-                if (failed_height) {
-                    LOG_ERROR("Unable to get all transactions for subsystem updating from block: " << failed_height);
-                    return {};
-                }
+            // WAIT ONLY ONCE FOR ENTIRE CHUNK
+            tpool_waiter.wait(&tpool);
 
-                next_chunk.size += bytes_loaded_for_block.load();
-                cryptonote::get_block_hash(blk);
+            if (failed_height)
+            {
+              LOG_ERROR("Unable to get all transactions for subsystem updating from block: " << failed_height);
+              return {};
+            }
+
+            // Now post-process blocks
+            for (size_t blk_index = 0; blk_index < next_chunk.blocks.size(); ++blk_index)
+            {
+              const auto &blk = next_chunk.blocks[blk_index];
+              next_chunk.size += bytes_loaded_for_block.load();
+              cryptonote::get_block_hash(blk);
             }
         }
         return next_chunk;
@@ -576,8 +586,8 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
 
         if (height + chunk.blocks.size() >= end_height || every_10s) {
             store_accumulator += interval_duration;
-            if (store_accumulator >= 60s) {
-                store_accumulator -= 60s;
+            if (store_accumulator >= 300s) {
+                store_accumulator -= 300s;
                 m_master_node_list.store();
             }
 
