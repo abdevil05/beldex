@@ -424,7 +424,8 @@ namespace master_nodes
   class master_node_list
   {
   public:
-    explicit master_node_list(cryptonote::Blockchain &blockchain);
+    explicit master_node_list(cryptonote::Blockchain& blockchain);
+    ~master_node_list(); 
     // non-copyable:
     master_node_list(const master_node_list &) = delete;
     master_node_list &operator=(const master_node_list &) = delete;
@@ -586,64 +587,6 @@ namespace master_nodes
   private:
     bool set_peer_reachable(bool storage_server, crypto::public_key const &pubkey, bool value);
   public:
-
-    struct quorum_for_serialization
-    {
-      uint8_t        version;
-      uint64_t       height;
-      quorum         quorums[tools::enum_count<quorum_type>];
-
-      BEGIN_SERIALIZE()
-        FIELD(version)
-        FIELD(height)
-        FIELD_N("obligations_quorum", quorums[static_cast<uint8_t>(quorum_type::obligations)])
-        FIELD_N("checkpointing_quorum", quorums[static_cast<uint8_t>(quorum_type::checkpointing)])
-      END_SERIALIZE()
-    };
-
-    struct state_serialized
-    {
-      enum struct version_t : uint8_t { version_0, version_1_serialize_hash, count, };
-      static version_t get_version(cryptonote::hf /*hf_version*/) { return version_t::version_1_serialize_hash; }
-
-      version_t                              version;
-      uint64_t                               height;
-      std::vector<master_node_pubkey_info>  infos;
-      std::vector<key_image_blacklist_entry> key_image_blacklist;
-      quorum_for_serialization               quorums;
-      bool                                   only_stored_quorums;
-      crypto::hash                           block_hash;
-
-      BEGIN_SERIALIZE()
-        ENUM_FIELD(version, version < version_t::count)
-        VARINT_FIELD(height)
-        FIELD(infos)
-        FIELD(key_image_blacklist)
-        FIELD(quorums)
-        FIELD(only_stored_quorums)
-
-        if (version >= version_t::version_1_serialize_hash)
-          FIELD(block_hash);
-      END_SERIALIZE()
-    };
-
-    struct data_for_serialization
-    {
-      enum struct version_t : uint8_t { version_0, count, };
-      static version_t get_version(cryptonote::hf /*hf_version*/) { return version_t::version_0; }
-
-      version_t version;
-      std::vector<quorum_for_serialization> quorum_states;
-      std::vector<state_serialized>         states;
-      void clear() { quorum_states.clear(); states.clear(); version = {}; }
-
-      BEGIN_SERIALIZE()
-        ENUM_FIELD(version, version < version_t::count)
-        FIELD(quorum_states)
-        FIELD(states)
-      END_SERIALIZE()
-    };
-
     struct state_t;
     using state_set = std::set<state_t, std::less<>>;
     using block_height = uint64_t;
@@ -658,7 +601,7 @@ namespace master_nodes
       master_node_list*                     mn_list;
 
       state_t(master_node_list* mnl) : mn_list{mnl} {}
-      state_t(master_node_list* mnl, state_serialized &&state);
+      state_t(master_node_list* mnl, struct state_serialized &&state);
 
       friend bool operator<(const state_t &a, const state_t &b) { return a.height < b.height; }
       friend bool operator<(const state_t &s, block_height h)   { return s.height < h; }
@@ -695,15 +638,6 @@ namespace master_nodes
       payout get_block_producer(uint8_t POS_round) const;
       master_node_info get_master_node_details(crypto::public_key mnode_key);
     };
-    void add_state_archive(state_t &&s);
-    void add_state_history(state_t &&s);
-    void add_old_quorum_state(uint64_t height, quorum_manager q);
-    // Serialize/deserialize quorum history without exposing the type
-    template <typename Archive>
-    void serialize_quorum_states(Archive &ar);
-
-    template <typename Archive>
-    void deserialize_quorum_states(Archive &ar);
 
     // Can be set to true (via --dev-allow-local-ips) for debugging a new testnet on a local private network.
     bool debug_allow_local_ips = false;
@@ -732,36 +666,7 @@ namespace master_nodes
     std::unordered_map<crypto::x25519_public_key, std::pair<crypto::public_key, time_t>> x25519_to_pub;
     std::chrono::system_clock::time_point x25519_map_last_pruned = std::chrono::system_clock::from_time_t(0);
     std::unordered_map<crypto::public_key, proof_info> proofs;
-
-    struct quorums_by_height
-    {
-      quorums_by_height() = default;
-      quorums_by_height(uint64_t height, quorum_manager quorums) : height(height), quorums(std::move(quorums)) {}
-      uint64_t       height;
-      quorum_manager quorums;
-      template <class Archive>
-      void serialize_value(Archive &ar)
-      {
-        uint32_t version = 0;
-        field(ar, "version", version);
-        field(ar, "height", height);
-        field(ar, "quorums", quorums);
-      }
-    };
-  
-    struct transient_t
-    {
-      std::deque<quorums_by_height>             old_quorum_states; // Store all old quorum history only if run with --store-full-quorum-history
-      state_set                                 state_history; // Store state_t's from MIN(2nd oldest checkpoint | height - DEFAULT_SHORT_TERM_STATE_HISTORY) up to the block height
-      state_set                                 state_archive; // Store state_t's where ((height < m_state_history.first()) && (height % STORE_LONG_TERM_STATE_INTERVAL))
-      std::unordered_map<crypto::hash, state_t> alt_state;
-      bool                                      state_added_to_archive;
-      std::string                               cache_data_blob;
-    } m_transient = {};
-
-    transient_t& get_transient() { return m_transient; }
-    const transient_t& get_transient() const { return m_transient; }
-
+    std::unique_ptr<struct master_node_list_transient_storage> m_transient;
     state_t m_state; // NOTE: Not in m_transient due to the non-trivial constructor. We can't blanket initialise using = {}; needs to be reset in ::reset(...) manually
   };
 

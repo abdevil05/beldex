@@ -63,33 +63,6 @@ namespace master_nodes
     for (size_t i = 0; i < q.workers.size(); i++) os    << "W[" << i << "] " << q.workers[i] << "\n";
     return os;
   }
-
-  template <typename Archive>
-  static void serialize_quorum_ptr_directly(
-      Archive &ar, std::string_view key, std::shared_ptr<const quorum> &ptr)
-  {
-    if constexpr (Archive::is_deserializer)
-    {
-      quorum dummy = {};
-      field(ar, key, dummy);
-      if (dummy.validators.size())
-        ptr = std::make_shared<quorum>(std::move(dummy));
-    }
-    else
-    {
-      if (ptr)
-      {
-        auto &item = const_cast<quorum &>(*ptr);
-        field(ar, key, item);
-      }
-      else
-      {
-        quorum empty = {};
-        field(ar, key, empty);
-      }
-    }
-  }
-
   struct quorum_manager
   {
     std::shared_ptr<const quorum> obligations;
