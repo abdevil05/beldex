@@ -324,12 +324,8 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
 {
 
   // Heights for subsystems (Beldex)
-  uint64_t const mnl_height =
-      std::max(hard_fork_begins(m_nettype, hf::hf9_master_nodes).value_or(0),
-               m_master_node_list.height() + 1);
-  uint64_t const bns_height =
-      std::max(hard_fork_begins(m_nettype, hf::hf18_bns).value_or(0),
-               m_bns_db.height() + 1);
+  uint64_t const mnl_height = std::max(hard_fork_begins(m_nettype, hf::hf9_master_nodes).value_or(0), m_master_node_list.height() + 1);
+  uint64_t const bns_height = std::max(hard_fork_begins(m_nettype, hf::hf18_bns).value_or(0), m_bns_db.height() + 1);
 
   const uint64_t end_height = m_db->height();
   const uint64_t start_height = std::min(end_height, std::min(bns_height, mnl_height));
@@ -410,7 +406,7 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
             break;
         }
 
-        // ✅ CRITICAL FIX: Wait after EACH block, not after entire chunk
+        //CRITICAL FIX: Wait after EACH block, not after entire chunk
         tpool_waiter.wait(&tpool);
 
         if (failed_height)
@@ -432,58 +428,62 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems(const std::atomic<bo
   // If using a threaded loader, spawn loader thread that preloads chunks
   if (use_threaded_load)
   {
-    load_context.thread = std::thread{[&]
-                                      {
-                                        // Deferred callback that gets fired if we return early (or throw) that makes sure the
-                                        // processing thread gets notified about the failure.
-                                        auto failure_propagator = beldex::defer([&]
-                                                                                {
-               std::unique_lock lock{load_context.block_mut};
-               load_context.failed = true;
-               load_context.block_cv.notify_all(); });
+      load_context.thread = std::thread{[&]
+      {
+          // Deferred callback that gets fired if we return early (or throw) that makes sure the
+          // processing thread gets notified about the failure.
+          auto failure_propagator = beldex::defer([&]
+          {
+              std::unique_lock lock{load_context.block_mut};
+              load_context.failed = true;
+              load_context.block_cv.notify_all();
+          });
 
-                                        for (; load_context.height < end_height;
-                                             load_context.height += block_load_context::CHUNK_SIZE)
-                                        {
-                                          {
-                                            std::unique_lock lock{load_context.block_mut};
-                                            load_context.block_cv.wait(lock, [&]
-                                                                       { return load_context.failed || (abort && *abort) ||
-                                                                                load_context.next_blocks.size() < block_load_context::MAX_QUEUE_SIZE; });
+          for (; load_context.height < end_height;
+              load_context.height += block_load_context::CHUNK_SIZE)
+          {
+              {
+                  std::unique_lock lock{load_context.block_mut};
+                  load_context.block_cv.wait(
+                      lock,
+                      [&]
+                      {
+                          return load_context.failed || (abort && *abort) ||
+                                load_context.next_blocks.size() < block_load_context::MAX_QUEUE_SIZE;
+                      });
 
-                                            if (load_context.failed || (abort && *abort))
-                                              return;
+                  if (load_context.failed || (abort && *abort))
+                      return;
 
-                                            assert(load_context.next_blocks.size() < block_load_context::MAX_QUEUE_SIZE);
-                                          }
+                  assert(load_context.next_blocks.size() < block_load_context::MAX_QUEUE_SIZE);
+              }
 
-                                          // Load the block data (may be slow)
-                                          block_data next_chunk = get_block_data(load_context.height, end_height);
+              // Load the block data (may be slow)
+              block_data next_chunk = get_block_data(load_context.height, end_height);
 
-                                          {
-                                            std::unique_lock lock{load_context.block_mut};
-                                            load_context.next_blocks.push(std::move(next_chunk));
-                                          }
-                                          load_context.block_cv.notify_all();
-                                        }
+              {
+                  std::unique_lock lock{load_context.block_mut};
+                  load_context.next_blocks.push(std::move(next_chunk));
+              }
+              load_context.block_cv.notify_all();
+          }
 
-                                        // Disarm the failure transmitter, then signal the processing thread that we finished
-                                        // loading everything.
-                                        failure_propagator.cancel();
+          // Disarm the failure transmitter, then signal the processing thread that we finished
+          // loading everything.
+          failure_propagator.cancel();
 
-                                        {
-                                          std::unique_lock lock{load_context.block_mut};
-                                          load_context.finished = true;
-                                        }
-                                        load_context.block_cv.notify_all();
-                                      }};
+          {
+              std::unique_lock lock{load_context.block_mut};
+              load_context.finished = true;
+          }
+          load_context.block_cv.notify_all();
+      }};
   }
 
   // If we bail out of this function in any way before the very end successful `return true` (just
   // before which we cancel this deferred call) then make sure we signal the loader thread and
   // rejoin the thread on our way out.
-  auto failure_rejoiner = beldex::defer([&]
-                                        {
+  auto failure_rejoiner = beldex::defer([&]{
        if (use_threaded_load) {
            {
                std::unique_lock<std::mutex> lock{load_context.block_mut};
