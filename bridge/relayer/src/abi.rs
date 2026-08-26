@@ -9,13 +9,15 @@
 
 use sha3::{Digest, Keccak256};
 
-/// `mint(address,uint256,bytes32,bytes)` selector — `keccak256(sig)[..4]`.
-pub const MINT_SELECTOR: [u8; 4] = [0x96, 0xd6, 0x6d, 0xe0];
+/// `mint(address,uint256,bytes32,uint32,bytes)` selector — `keccak256(sig)[..4]`.
+/// H-2: `outputIndex` joined the signature so a deposit is identified by the gateway
+/// OUTPUT, not merely the transaction that carried it.
+pub const MINT_SELECTOR: [u8; 4] = [0x7f, 0x00, 0x00, 0x0a];
 /// `rotateSigner(address,uint64,bytes)` selector.
 pub const ROTATE_SELECTOR: [u8; 4] = [0xe8, 0xbc, 0x46, 0x89];
 
 /// The canonical function signatures (used only by the drift-guard tests).
-pub const MINT_SIG: &[u8] = b"mint(address,uint256,bytes32,bytes)";
+pub const MINT_SIG: &[u8] = b"mint(address,uint256,bytes32,uint32,bytes)";
 pub const ROTATE_SIG: &[u8] = b"rotateSigner(address,uint64,bytes)";
 
 /// `keccak256(fn_sig)[..4]` — the 4-byte selector for a function signature.
@@ -54,17 +56,26 @@ fn push_dynamic_bytes(out: &mut Vec<u8>, data: &[u8]) {
     out.extend(std::iter::repeat(0u8).take(pad));
 }
 
-/// Build the calldata for `mint(address to, uint256 amount, bytes32 beldexTxid, bytes sig)`.
+/// Build the calldata for
+/// `mint(address to, uint256 amount, bytes32 beldexTxid, uint32 outputIndex, bytes sig)`.
 ///
-/// Layout: `selector ‖ head[4 words] ‖ tail`, where the head is
-/// `word(to) ‖ word(amount) ‖ beldexTxid ‖ offset(=0x80)` and the tail is the encoded `sig`.
-pub fn build_mint_calldata(to: [u8; 20], amount: u128, beldex_txid: [u8; 32], sig: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(4 + 32 * 5 + sig.len() + 32);
+/// Layout: `selector ‖ head[5 words] ‖ tail`, where the head is
+/// `word(to) ‖ word(amount) ‖ beldexTxid ‖ word(outputIndex) ‖ offset(=0xa0)` and the
+/// tail is the encoded `sig`. The offset moved 0x80 -> 0xa0 when `outputIndex` was added.
+pub fn build_mint_calldata(
+    to: [u8; 20],
+    amount: u128,
+    beldex_txid: [u8; 32],
+    output_index: u32,
+    sig: &[u8],
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(4 + 32 * 6 + sig.len() + 32);
     out.extend_from_slice(&MINT_SELECTOR);
     out.extend_from_slice(&word_address(to));
     out.extend_from_slice(&word_u256(amount));
     out.extend_from_slice(&beldex_txid);
-    out.extend_from_slice(&word_u256(0x80)); // offset to `sig`: 4 head words = 128 bytes
+    out.extend_from_slice(&word_u64(output_index as u64));
+    out.extend_from_slice(&word_u256(0xa0)); // offset to `sig`: 5 head words = 160 bytes
     push_dynamic_bytes(&mut out, sig);
     out
 }
@@ -91,7 +102,7 @@ mod tests {
         assert_eq!(MINT_SELECTOR, selector_of(MINT_SIG));
         assert_eq!(ROTATE_SELECTOR, selector_of(ROTATE_SIG));
         // Pin the exact bytes so a drift is caught even if the signature string changed.
-        assert_eq!(MINT_SELECTOR, [0x96, 0xd6, 0x6d, 0xe0]);
+        assert_eq!(MINT_SELECTOR, [0x7f, 0x00, 0x00, 0x0a]);
         assert_eq!(ROTATE_SELECTOR, [0xe8, 0xbc, 0x46, 0x89]);
     }
 
@@ -100,11 +111,12 @@ mod tests {
         let to = [0x11u8; 20];
         let sig = vec![0xAB; 65]; // r‖s‖v
         let txid = [0xCD; 32];
-        let cd = build_mint_calldata(to, 1000, txid, &sig);
+        let cd = build_mint_calldata(to, 1000, txid, 7, &sig);
 
-        // selector + 4 head words + (len word + 65 bytes padded to 96).
+        // selector + 5 head words + (len word + 65 bytes padded to 96). H-2 added the
+        // outputIndex word, so the head grew 4 -> 5 and the tail offset 0x80 -> 0xa0.
         assert_eq!(&cd[0..4], &MINT_SELECTOR);
-        assert_eq!(cd.len(), 4 + 32 * 4 + 32 + 96);
+        assert_eq!(cd.len(), 4 + 32 * 5 + 32 + 96);
 
         // head word 0: to (right-aligned)
         assert_eq!(&cd[4 + 12..4 + 32], &to);
@@ -112,12 +124,14 @@ mod tests {
         assert_eq!(&cd[4 + 32 + 16..4 + 64], &1000u128.to_be_bytes());
         // head word 2: beldexTxid verbatim
         assert_eq!(&cd[4 + 64..4 + 96], &txid);
-        // head word 3: offset 0x80
-        assert_eq!(cd[4 + 96 + 31], 0x80);
+        // head word 3: outputIndex, right-aligned
+        assert_eq!(&cd[4 + 96 + 24..4 + 128], &7u64.to_be_bytes());
+        // head word 4: offset 0xa0
+        assert_eq!(cd[4 + 128 + 31], 0xa0);
         // tail: length word 65
-        assert_eq!(cd[4 + 128 + 31], 65);
+        assert_eq!(cd[4 + 160 + 31], 65);
         // tail data: the signature bytes
-        assert_eq!(&cd[4 + 160..4 + 160 + 65], &sig[..]);
+        assert_eq!(&cd[4 + 192..4 + 192 + 65], &sig[..]);
     }
 
     #[test]

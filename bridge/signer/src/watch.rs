@@ -64,8 +64,12 @@ fn addr32(a: [u8; 20]) -> [u8; 32] {
 /// A finalized Beldex gateway **deposit**, normalized to a mint intent (E.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MintEvent {
-    /// The L1 deposit tx id (the replay nonce the contract dedupes on).
+    /// The L1 deposit tx id.
     pub beldex_txid: [u8; 32],
+    /// Index of this deposit's gateway output within `beldex_txid`. Together with the
+    /// tx id this is the replay nonce the contract dedupes on: consensus permits up to
+    /// `GATEWAY_TX_MAX_OUTPUTS` gateway outputs per tx, each its own deposit (H-2).
+    pub output_index: u32,
     /// Destination EVM chain (from the Phase A.5 routing memo / pid registry).
     pub dst_chain: ChainId,
     /// Destination EVM recipient.
@@ -81,13 +85,14 @@ impl MintEvent {
     /// contract address + chain id makes a mint non-replayable across chains/contracts;
     /// `beldex_txid` makes it single-use.
     pub fn mint_preimage(&self, contract: [u8; 20]) -> Vec<u8> {
-        let mut v = Vec::with_capacity(32 * 6);
+        let mut v = Vec::with_capacity(32 * 7);
         v.extend_from_slice(&mint_tag());
         v.extend_from_slice(&u256_be(self.dst_chain.0 as u128));
         v.extend_from_slice(&addr32(contract));
         v.extend_from_slice(&addr32(self.to));
         v.extend_from_slice(&u256_be(self.amount));
         v.extend_from_slice(&self.beldex_txid);
+        v.extend_from_slice(&u256_be(self.output_index as u128));
         v
     }
 
@@ -101,8 +106,12 @@ impl MintEvent {
 /// A confirmed EVM wBDX **burn**, normalized to a release intent (E.2).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReleaseEvent {
-    /// The EVM burn tx id (the L1-side replay nonce).
+    /// The EVM burn tx id.
     pub evm_txid: [u8; 32],
+    /// Index of this burn's log within `evm_txid`. Together with `evm_txid` this is
+    /// the L1-side replay nonce: a single transaction may carry several burns, so the
+    /// tx id alone does not identify one (H-1).
+    pub log_index: u32,
     /// Source EVM chain.
     pub chain: ChainId,
     /// Amount in atomic units.
@@ -118,10 +127,11 @@ impl ReleaseEvent {
     /// built downstream (deterministically from this intent), so agreeing on the
     /// intent fixes what gets signed.
     pub fn canonical_id(&self, genesis: [u8; 32]) -> Vec<u8> {
-        let mut v = Vec::with_capacity(GW_INPUT_SIG.len() + 32 + 32 + 8 + 16 + self.beldex_recipient.len());
+        let mut v = Vec::with_capacity(GW_INPUT_SIG.len() + 32 + 32 + 4 + 8 + 16 + self.beldex_recipient.len());
         v.extend_from_slice(GW_INPUT_SIG);
         v.extend_from_slice(&genesis);
         v.extend_from_slice(&self.evm_txid);
+        v.extend_from_slice(&self.log_index.to_be_bytes());
         v.extend_from_slice(&self.chain.0.to_be_bytes());
         v.extend_from_slice(&self.amount.to_be_bytes());
         v.extend_from_slice(&(self.beldex_recipient.len() as u32).to_be_bytes());
@@ -296,7 +306,7 @@ mod tests {
     use super::*;
 
     fn mint(amount: u128) -> MintEvent {
-        MintEvent { beldex_txid: [0xab; 32], dst_chain: ChainId(1), to: [0x11; 20], amount }
+        MintEvent { beldex_txid: [0xab; 32], output_index: 0, dst_chain: ChainId(1), to: [0x11; 20], amount }
     }
 
     #[test]
@@ -305,10 +315,18 @@ mod tests {
         let a = mint(1000).mint_preimage(contract);
         let b = mint(1000).mint_preimage(contract);
         assert_eq!(a, b, "same event → same bytes (honest members converge)");
-        assert_eq!(a.len(), 32 * 6, "abi.encode of 6 words");
+        assert_eq!(a.len(), 32 * 7, "abi.encode of 7 words (H-2 added output_index)");
         assert_eq!(&a[..32], &mint_tag(), "leads with MINT_TAG");
         // amount lives in the 5th word, big-endian in the low 16 bytes.
         assert_eq!(&a[32 * 4 + 16..32 * 5], &1000u128.to_be_bytes());
+        // output_index is the 7th and last word (H-2): the deposit's gateway output.
+        assert_eq!(&a[32 * 6 + 28..32 * 7], &0u32.to_be_bytes());
+
+        // A different output of the SAME tx must produce different signed bytes,
+        // otherwise one signature would authorize another deposit.
+        let mut other = mint(1000);
+        other.output_index = 1;
+        assert_ne!(a, other.mint_preimage(contract), "output_index is bound in");
     }
 
     /// Drift guard: the hardcoded [`MINT_TAG`] must equal `keccak256("BELDEX_BRIDGE_MINT_V1")`
@@ -336,7 +354,7 @@ mod tests {
     #[test]
     fn release_canonical_is_genesis_bound() {
         let e = ReleaseEvent {
-            evm_txid: [0x01; 32],
+            evm_txid: [0x01; 32], log_index: 0,
             chain: ChainId(1),
             amount: 500,
             beldex_recipient: b"bxRecipient".to_vec(),
@@ -480,3 +498,4 @@ mod tests {
         assert_ne!(session.stage(), Stage::Sign, "a fabricated payload is never signed");
     }
 }
+

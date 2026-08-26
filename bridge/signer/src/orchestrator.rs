@@ -38,11 +38,19 @@ pub enum DutyKind {
     Release,
 }
 
-/// The unique identity of a duty: `(kind, 32-byte on-chain id)`.
+/// The unique identity of a duty: `(kind, 32-byte on-chain id, index within that id)`.
+///
+/// `sub` exists because a single on-chain transaction can carry several units of value:
+/// an EVM tx may emit several `RedeemToNative` logs, and a Beldex tx may pay the gateway
+/// up to `GATEWAY_TX_MAX_OUTPUTS` times. Keying on the tx id alone collapsed those onto
+/// one duty and silently discarded the rest (H-1 / H-2). The tx id is kept whole rather
+/// than hashed with the index so it stays readable in logs, tombstones and reconciliation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DutyKey {
     pub kind: DutyKind,
     pub id: [u8; 32],
+    /// Release: the burn's `log_index`. Mint: the deposit's gateway `output_index`.
+    pub sub: u32,
 }
 
 /// A unit of committee work derived from a finalized watcher event.
@@ -55,11 +63,16 @@ pub enum Duty {
 }
 
 impl Duty {
-    /// The dedup key (`beldex_txid` for a mint, `evm_txid` for a release).
+    /// The dedup key: `(beldex_txid, output_index)` for a mint, `(evm_txid, log_index)`
+    /// for a release — the transaction plus which event inside it.
     pub fn key(&self) -> DutyKey {
         match self {
-            Duty::Mint(e) => DutyKey { kind: DutyKind::Mint, id: e.beldex_txid },
-            Duty::Release(e) => DutyKey { kind: DutyKind::Release, id: e.evm_txid },
+            Duty::Mint(e) => {
+                DutyKey { kind: DutyKind::Mint, id: e.beldex_txid, sub: e.output_index }
+            }
+            Duty::Release(e) => {
+                DutyKey { kind: DutyKind::Release, id: e.evm_txid, sub: e.log_index }
+            }
         }
     }
 
@@ -160,12 +173,14 @@ impl Orchestrator {
                 duty: match key.kind {
                     DutyKind::Mint => Duty::Mint(MintEvent {
                         beldex_txid: key.id,
+                        output_index: key.sub,
                         dst_chain: crate::chain_registry::ChainId(0),
                         to: [0u8; 20],
                         amount: 0,
                     }),
                     DutyKind::Release => Duty::Release(ReleaseEvent {
                         evm_txid: key.id,
+                        log_index: key.sub,
                         chain: crate::chain_registry::ChainId(0),
                         amount: 0,
                         beldex_recipient: Vec::new(),
@@ -301,7 +316,7 @@ mod tests {
 
     fn mint(txid: u8) -> Duty {
         Duty::Mint(MintEvent {
-            beldex_txid: [txid; 32],
+            beldex_txid: [txid; 32], output_index: 0,
             dst_chain: ChainId(1),
             to: [0x11; 20],
             amount: 1000,
@@ -309,7 +324,7 @@ mod tests {
     }
     fn release(txid: u8) -> Duty {
         Duty::Release(ReleaseEvent {
-            evm_txid: [txid; 32],
+            evm_txid: [txid; 32], log_index: 0,
             chain: ChainId(1),
             amount: 1000,
             beldex_recipient: b"bxRecipient".to_vec(),

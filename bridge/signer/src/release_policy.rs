@@ -40,9 +40,9 @@ use crate::watch::ReleaseEvent;
 
 /// The leader's release proposal, broadcast in `Propose` and admitted by R1–R6.
 ///
-/// `log_index` disambiguates multiple burns in one EVM tx. The current watcher keys duties by
-/// `evm_txid` alone, so it is fixed at 0 until the watcher carries the index; the field is in
-/// the codec now so the wire format does not change when it does.
+/// `log_index` disambiguates multiple burns in one EVM tx. The watcher now carries it
+/// (H-1), so it names the specific burn this proposal discharges rather than being
+/// pinned at 0.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReleaseProposal {
     pub version: u8,
@@ -185,7 +185,7 @@ where
         // R1 / R6: the proposal names exactly the burn this session is for (provenance), and
         // — because the raw tuple is what the L1 replay guard records — exactly the burn the
         // signature will discharge (replay binding).
-        if p.chain_id != ev.chain.0 || p.evm_txid != ev.evm_txid || p.log_index != 0 {
+        if p.chain_id != ev.chain.0 || p.evm_txid != ev.evm_txid || p.log_index != ev.log_index {
             return reject;
         }
         // R3 precondition: the burn must cover the fee (a fee > burn would underflow into a
@@ -252,7 +252,7 @@ where
             version: RELEASE_PROPOSAL_VERSION,
             chain_id: ev.chain.0,
             evm_txid: ev.evm_txid,
-            log_index: 0,
+            log_index: ev.log_index,
             fee: built.fee,
             hash_to_sign: built.hash_to_sign,
             tx_key: built.tx_key,
@@ -397,7 +397,7 @@ mod tests {
 
     fn burn(amount: u128) -> ReleaseEvent {
         ReleaseEvent {
-            evm_txid: [0x77; 32],
+            evm_txid: [0x77; 32], log_index: 0,
             chain: ChainId(1),
             amount,
             beldex_recipient: b"bxRecipient".to_vec(),
@@ -549,7 +549,7 @@ mod tests {
         let release = Duty::Release(burn(1000));
         assert!(dual.actionable(&release).is_ok(), "release routed to the release policy");
         let mint = Duty::Mint(crate::watch::MintEvent {
-            beldex_txid: [1; 32],
+            beldex_txid: [1; 32], output_index: 0,
             dst_chain: ChainId(1),
             to: [0; 20],
             amount: 1,

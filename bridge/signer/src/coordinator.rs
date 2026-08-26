@@ -46,7 +46,7 @@ pub const DOMAIN_SESSION_KEY: &[u8] = b"BELDEX_BRIDGE_SESSION_KEY_V1";
 /// This hash only *names* sessions (leader selection + routing). It is not part of any
 /// consensus digest — those remain keccak/`gateway_input_message` on their own paths.
 pub fn session_key(leg: Leg, epoch: u64, key: &DutyKey) -> [u8; 32] {
-    let mut buf = Vec::with_capacity(DOMAIN_SESSION_KEY.len() + 1 + 8 + 1 + 32);
+    let mut buf = Vec::with_capacity(DOMAIN_SESSION_KEY.len() + 1 + 8 + 1 + 32 + 4);
     buf.extend_from_slice(DOMAIN_SESSION_KEY);
     buf.push(match leg {
         Leg::Pevm => 0,
@@ -58,6 +58,11 @@ pub fn session_key(leg: Leg, epoch: u64, key: &DutyKey) -> [u8; 32] {
         DutyKind::Release => 1,
     });
     buf.extend_from_slice(&key.id);
+    // `sub` (burn log_index / deposit output_index) is part of the identity: a single
+    // transaction can carry several duties, and without this they would share one session
+    // key — two concurrent withdrawals from one tx would collide on session identity and
+    // leader selection, undoing the H-1/H-2 separation one layer up.
+    buf.extend_from_slice(&key.sub.to_le_bytes());
     sha256(&buf)
 }
 
@@ -537,9 +542,20 @@ where
                                     Ok(sig) => {
                                         live.signature = Some(sig.clone());
                                         report.signed += 1;
-                                        // The leader distributes; everyone advances locally so a
-                                        // lost broadcast only costs the laggards, not the quorum.
-                                        if live.session.is_leader() {
+                                        // The FIRST canonical signer distributes; everyone
+                                        // advances locally so a lost broadcast only costs the
+                                        // laggards, not the quorum.
+                                        //
+                                        // NOT the leader: the leader only reaches this branch if
+                                        // it is inside the canonical set, and the leader is picked
+                                        // by hash while the set is the lowest `t` ackers. Whenever
+                                        // the leader landed outside the set (indices >= t in the
+                                        // common case — 6 of 20 in production) the set signed but
+                                        // NOBODY broadcast, and every other node waited forever.
+                                        // `signers` is ascending and non-empty here, so its first
+                                        // member is always a participant and every node agrees on
+                                        // who it is.
+                                        if signers.first() == Some(&self.self_index) {
                                             let m = Self::msg_for(
                                                 &live.session,
                                                 self.self_index,
@@ -870,19 +886,25 @@ mod tests {
 
     #[test]
     fn session_key_is_deterministic_and_input_sensitive() {
-        let key = DutyKey { kind: DutyKind::Mint, id: [7u8; 32] };
+        let key = DutyKey { kind: DutyKind::Mint, id: [7u8; 32] , sub: 0};
         let a = session_key(Leg::Pevm, 2, &key);
         assert_eq!(a, session_key(Leg::Pevm, 2, &key), "same inputs, same key (all nodes agree)");
+        // Two duties from the SAME transaction must not share a session (H-1/H-2).
+        assert_ne!(
+            a,
+            session_key(Leg::Pevm, 2, &DutyKey { kind: DutyKind::Mint, id: [7u8; 32], sub: 1 }),
+            "sub must be part of the session identity"
+        );
         assert_ne!(a, session_key(Leg::Pgw, 2, &key), "leg-namespaced (S14)");
         assert_ne!(a, session_key(Leg::Pevm, 3, &key), "epoch-bound");
         assert_ne!(
             a,
-            session_key(Leg::Pevm, 2, &DutyKey { kind: DutyKind::Release, id: [7u8; 32] }),
+            session_key(Leg::Pevm, 2, &DutyKey { kind: DutyKind::Release, id: [7u8; 32] , sub: 0}),
             "kind-namespaced"
         );
         assert_ne!(
             a,
-            session_key(Leg::Pevm, 2, &DutyKey { kind: DutyKind::Mint, id: [8u8; 32] }),
+            session_key(Leg::Pevm, 2, &DutyKey { kind: DutyKind::Mint, id: [8u8; 32] , sub: 0}),
             "id-sensitive"
         );
     }
@@ -890,7 +912,7 @@ mod tests {
     // ---- multi-node harness (Bus/NodeNet/committee/mock_sign in test_support) ----
 
     fn mint_ev(amount: u128) -> MintEvent {
-        MintEvent { beldex_txid: [0x11; 32], dst_chain: ChainId(1), to: [0x22; 20], amount }
+        MintEvent { beldex_txid: [0x11; 32], output_index: 0, dst_chain: ChainId(1), to: [0x22; 20], amount }
     }
 
     fn contracts() -> BTreeMap<u64, [u8; 20]> {
@@ -1037,7 +1059,7 @@ mod tests {
         // Chain 999 has no registered contract → the actionability screen (which every node
         // runs against the shared registry before opening a session) abandons it everywhere —
         // no session, no proposal, no waiting on a leader that could never build one.
-        let ev = MintEvent { beldex_txid: [0x44; 32], dst_chain: ChainId(999), to: [0x22; 20], amount: 5 };
+        let ev = MintEvent { beldex_txid: [0x44; 32], output_index: 0, dst_chain: ChainId(999), to: [0x22; 20], amount: 5 };
         for node in &mut nodes {
             node.orch.observe(Duty::Mint(ev.clone()));
         }
@@ -1087,7 +1109,12 @@ mod tests {
                     Box::new(|_d: &Duty, _p: &[u8], _s: &[u8]| ExecOutcome::Submitted)
                         as Box<dyn FnMut(&Duty, &[u8], &[u8]) -> ExecOutcome>,
                 );
-                coord.sign_settle_steps = 0;
+                // A settle delay is REQUIRED, not an optimisation: `canonical_signers` is
+                // the lowest `t` of the acks a node currently holds, so two nodes reading
+                // at different moments derive different sets and the mesh barrier
+                // deadlocks. Production sets this > 0 for exactly this reason; 0 only
+                // happened to work here while the leader was node 0.
+                coord.sign_settle_steps = 2;
                 Rec { coord, orch: Orchestrator::new(), net: bus.node(i) }
             })
             .collect();
@@ -1095,7 +1122,7 @@ mod tests {
         for nd in &mut nodes {
             nd.orch.observe(Duty::Mint(mint_ev(1000)));
         }
-        for _ in 0..12 {
+        for _ in 0..24 {
             for nd in &mut nodes {
                 nd.coord.step(&mut nd.orch, &mut nd.net);
             }
@@ -1139,3 +1166,4 @@ mod tests {
         }
     }
 }
+

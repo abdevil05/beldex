@@ -4,7 +4,7 @@ Step-by-step companion to `AUTONOMOUS_ROUNDTRIP.md`. Every value you need is eit
 of a file the tooling already wrote, or generated here — nothing is guessed.
 
 Conventions: `$BLD` = the beldex repo root, `$BC` = the `bridge-contract` repo
-(`~/Niyas/projects/bridge-contract`). The devnet's working tree is
+(`~/Desktop/beldex/bridge-contract`). The devnet's working tree is
 `$BLD/utils/local-devnet/testdata/`, with one directory per node
 (`beldex-127.0.0.1-<port>/`).
 

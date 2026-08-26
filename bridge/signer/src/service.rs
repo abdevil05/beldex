@@ -182,10 +182,10 @@ mod tests {
     use crate::chain_registry::ChainId;
 
     fn mint_ev(txid: u8) -> MintEvent {
-        MintEvent { beldex_txid: [txid; 32], dst_chain: ChainId(1), to: [0x11; 20], amount: 1000 }
+        MintEvent { beldex_txid: [txid; 32], output_index: 0, dst_chain: ChainId(1), to: [0x11; 20], amount: 1000 }
     }
     fn release_ev(txid: u8) -> ReleaseEvent {
-        ReleaseEvent { evm_txid: [txid; 32], chain: ChainId(1), amount: 1000, beldex_recipient: b"bx".to_vec() }
+        ReleaseEvent { evm_txid: [txid; 32], log_index: 0, chain: ChainId(1), amount: 1000, beldex_recipient: b"bx".to_vec() }
     }
 
     struct MockSource {

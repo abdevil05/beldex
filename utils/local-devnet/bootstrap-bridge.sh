@@ -23,7 +23,7 @@ cd "$(dirname "$0")"
 export PATH="$HOME/.foundry/bin:$PATH"
 
 RPC=http://127.0.0.1:19191
-BC="${BC:-$HOME/Niyas/projects/bridge-contract}"
+BC="${BC:-$HOME/Desktop/beldex/bridge-contract}"
 ENVFILE="$PWD/devnet-bridge.env"
 
 jrpc() { # jrpc <method> [params-json]
@@ -189,10 +189,10 @@ Bridge is up. Next, from a CLI wallet (fund it per DEVNET_SETUP.md §4):
 and to auto-broadcast mints, in another shell:
 
   BRIDGE_SIGNER_OXENMQ_ENDPOINT=ipc://\$PWD/testdata/beldex-127.0.0.1-19191/devnet/beldexd.sock \\
-  BRIDGE_SIGNER_RELAY_CMD='$HOME/Niyas/projects/beldex/bridge/relayer/target/debug/beldex-bridge-relayer relay -' \\
+  BRIDGE_SIGNER_RELAY_CMD='$HOME/Desktop/beldex/beldex/dkg-tss/beldex/bridge/relayer/target/debug/beldex-bridge-relayer relay -' \\
   RELAYER_GAS_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \\
   RELAYER_CHAINS='[{"chain_id":31337,"rpc_url":"http://127.0.0.1:8545"}]' \\
-    $HOME/Niyas/projects/beldex/bridge/signer/target/debug/beldex-bridge-signer relay-watch
+    $HOME/Desktop/beldex/beldex/dkg-tss/beldex/bridge/signer/target/debug/beldex-bridge-signer relay-watch
 
 Watch:  tail -f testdata/serve-*.log
 ────────────────────────────────────────────────────────────────────────────

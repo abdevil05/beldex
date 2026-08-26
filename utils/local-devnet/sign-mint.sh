@@ -80,4 +80,4 @@ grep -h "^Pevm signature:" sign-*.log | sort -u
 N_OK=$(grep -hc "ecrecover   : VERIFIED" sign-*.log 2>/dev/null | paste -sd+ - | bc)
 echo
 echo "signers that ecrecover'd to the wBDX address: ${N_OK:-0} (expect 4)"
-echo "next: cd ~/Niyas/projects/bridge-contract && runlog ./devnet/02-mint.sh"
+echo "next: cd ~/Desktop/beldex/bridge-contract && runlog ./devnet/02-mint.sh"

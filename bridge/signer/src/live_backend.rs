@@ -296,7 +296,7 @@ mod tests {
     use crate::chain_registry::ChainId;
 
     fn mint_ev(chain: u64) -> MintEvent {
-        MintEvent { beldex_txid: [0xab; 32], dst_chain: ChainId(chain), to: [0x11; 20], amount: 1000 }
+        MintEvent { beldex_txid: [0xab; 32], output_index: 0, dst_chain: ChainId(chain), to: [0x11; 20], amount: 1000 }
     }
 
     /// A gateway RPC mock: records calls, returns canned blob/hash/txid, or a scripted error.
@@ -401,7 +401,7 @@ mod tests {
     #[test]
     fn release_creates_signs_and_submits_in_order() {
         let mut emitted: Vec<String> = Vec::new();
-        let ev = ReleaseEvent { evm_txid: [1; 32], chain: ChainId(1), amount: 500, beldex_recipient: b"bxDest".to_vec() };
+        let ev = ReleaseEvent { evm_txid: [1; 32], log_index: 0, chain: ChainId(1), amount: 500, beldex_recipient: b"bxDest".to_vec() };
         let mut b = LiveBackend {
             pevm_sign: |_p: &[u8]| Ok([0xcc; 65]),
             pgw_sign: |_d: &[u8; 32]| Ok([0xdd; 64]),
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn release_rpc_and_sign_failures_retry() {
-        let ev = ReleaseEvent { evm_txid: [1; 32], chain: ChainId(1), amount: 500, beldex_recipient: b"bxDest".to_vec() };
+        let ev = ReleaseEvent { evm_txid: [1; 32], log_index: 0, chain: ChainId(1), amount: 500, beldex_recipient: b"bxDest".to_vec() };
         let mut emitted: Vec<String> = Vec::new();
 
         // create_transfer fails → Retry, never signs/submits.

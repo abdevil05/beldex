@@ -116,6 +116,10 @@ pub struct EncMemo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DepositRecord {
     pub beldex_txid: [u8; 32],
+    /// Index of this deposit's gateway output within `beldex_txid`. A single Beldex tx
+    /// may pay the gateway up to `GATEWAY_TX_MAX_OUTPUTS` times, each a separate deposit
+    /// with its own memo and destination, so the tx id alone does not identify one (H-2).
+    pub output_index: u32,
     pub amount: u128,
     pub height: u64,
     pub enc_memo: Option<EncMemo>,
@@ -192,6 +196,7 @@ pub fn resolve_mint(deposit: &DepositRecord, registry: &ChainRegistry) -> Resolu
     }
     Resolution::Mint(MintEvent {
         beldex_txid: deposit.beldex_txid,
+        output_index: deposit.output_index,
         dst_chain: chain,
         to: memo.evm_addr,
         amount: deposit.amount,
@@ -263,7 +268,19 @@ pub fn parse_deposit_events(page: &Value) -> Vec<DepositRecord> {
         };
         // Optional already-plaintext memo (kept for tests / a daemon-decrypt fallback).
         let memo = e.get("memo").and_then(Value::as_str).and_then(hex_to_fixed::<MEMO_LEN>);
-        out.push(DepositRecord { beldex_txid: txid, amount: amount as u128, height, enc_memo, memo });
+        let output_index = e
+            .get("out_index")
+            .and_then(Value::as_u64)
+            .or_else(|| enc_memo.as_ref().map(|m| m.output_index))
+            .unwrap_or(0) as u32;
+        out.push(DepositRecord {
+            beldex_txid: txid,
+            output_index,
+            amount: amount as u128,
+            height,
+            enc_memo,
+            memo,
+        });
     }
     out
 }
@@ -275,7 +292,14 @@ pub struct BeldexWatcher<C: BeldexRpc> {
     /// Highest height whose deposits we have already finalized.
     finalized_up_to: u64,
     /// Finalized deposit txids (dedupe across polls).
-    seen: BTreeSet<[u8; 32]>,
+    /// Deposits already emitted, keyed on `(beldex_txid, output_index)`.
+    ///
+    /// NOT the txid alone (H-2): a Beldex tx may pay the gateway up to
+    /// `GATEWAY_TX_MAX_OUTPUTS` times, each output a separate deposit with its own memo
+    /// and destination. Keying on the txid dropped every output after the first here —
+    /// before it could ever become a duty — which is the same defect the contract's
+    /// replay guard and the orchestrator's DutyKey were fixed for.
+    seen: BTreeSet<([u8; 32], u32)>,
     /// Escape hatch for chains that produce no master-node checkpoints — see
     /// [`BeldexWatcher::with_fallback_confirmations`]. `None` (the default) means
     /// strict checkpoint finality: no checkpoint, no finalized deposits, ever.
@@ -360,7 +384,7 @@ impl<C: BeldexRpc> BeldexWatcher<C> {
         for _ in 0..10_000 {
             let page = self.history_page(from)?;
             for rec in parse_deposit_events(&page) {
-                if rec.height <= immutable && self.seen.insert(rec.beldex_txid) {
+                if rec.height <= immutable && self.seen.insert((rec.beldex_txid, rec.output_index)) {
                     finalized.push(rec);
                 }
             }
@@ -453,6 +477,27 @@ mod tests {
         s
     }
 
+    /// H-2: several gateway outputs in ONE Beldex tx are separate deposits. The
+    /// watcher's `seen` set must key on (txid, output_index) — keying on the txid
+    /// alone silently dropped every output after the first, before it could become
+    /// a duty. Regression for a real devnet miss.
+    #[test]
+    fn batch_deposit_outputs_are_not_deduped_by_txid() {
+        let page = serde_json::json!({"events": [
+            {"type":"deposit","txid":"11".repeat(32),"height":10,"amount":1000,"out_index":1},
+            {"type":"deposit","txid":"11".repeat(32),"height":10,"amount":2000,"out_index":2},
+            {"type":"deposit","txid":"11".repeat(32),"height":10,"amount":3000,"out_index":3},
+        ]});
+        let recs = parse_deposit_events(&page);
+        assert_eq!(recs.len(), 3, "three outputs parse as three deposits");
+        assert_eq!(recs.iter().map(|r| r.output_index).collect::<Vec<_>>(), vec![1, 2, 3]);
+
+        // the dedup key the watcher uses must separate them
+        let mut seen = std::collections::BTreeSet::new();
+        let kept = recs.iter().filter(|r| seen.insert((r.beldex_txid, r.output_index))).count();
+        assert_eq!(kept, 3, "H-2: all three survive the watcher's seen-set");
+    }
+
     #[test]
     fn bridge_memo_round_trips() {
         let m = BridgeMemo { chain_id: 137, evm_addr: [0xab; 20] };
@@ -475,7 +520,7 @@ mod tests {
         let reg = registry(1, 1000);
         let memo = BridgeMemo { chain_id: 1, evm_addr: [0x11; 20] }.encode();
         let dep = |amount, memo| DepositRecord {
-            beldex_txid: [0x01; 32],
+            beldex_txid: [0x01; 32], output_index: 0,
             amount,
             height: 100,
             enc_memo: None,
@@ -686,7 +731,7 @@ mod tests {
             crate::gateway_memo::encrypt(&plaintext, &tx_secret, &view_public, output_index).unwrap();
 
         let mut deposit = DepositRecord {
-            beldex_txid: [0x01; 32],
+            beldex_txid: [0x01; 32], output_index: 0,
             amount: 500,
             height: 100,
             enc_memo: Some(EncMemo { ciphertext, tx_pubkey, output_index }),

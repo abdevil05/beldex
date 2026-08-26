@@ -62,7 +62,7 @@ mod tests {
             chain_id: 1,
             to: [0x11; 20],
             amount: 500,
-            beldex_txid: [0xcd; 32],
+            beldex_txid: [0xcd; 32], output_index: 0,
             sig: vec![0xab; 65],
         };
         let sub = MockSubmitter::new("0xdeadbeef");

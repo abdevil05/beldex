@@ -1392,7 +1392,7 @@ where
             .ok_or_else(|| BuildError::Unactionable("burn amount does not cover the fee".into()))?;
         build_rpc
             .borrow_mut()
-            .create_release(&build_gw, &recipient, amount, release_fee, ev.chain.0, &ev.evm_txid, 0)
+            .create_release(&build_gw, &recipient, amount, release_fee, ev.chain.0, &ev.evm_txid, ev.log_index)
             .map_err(BuildError::Transient)
     };
 

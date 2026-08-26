@@ -151,6 +151,10 @@ pub fn decode_redeem_log(
     let inclusion_height = hex_to_u64(field("blockNumber")?).ok_or(DecodeError::BadHex)?;
     let block_hash = hex_to_fixed32(field("blockHash")?).ok_or(DecodeError::BadHex)?;
     let evm_txid = hex_to_fixed32(field("transactionHash")?).ok_or(DecodeError::BadHex)?;
+    // H-1: which burn *within* the transaction. One tx may emit several RedeemToNative
+    // logs (a batching wallet or aggregator), and they differ only here. Without it,
+    // every burn after the first is indistinguishable from a duplicate and is dropped.
+    let log_index = hex_to_u64(field("logIndex")?).ok_or(DecodeError::BadHex)? as u32;
 
     let data = hex_to_bytes(field("data")?).ok_or(DecodeError::BadHex)?;
     if data.len() < 96 {
@@ -166,7 +170,7 @@ pub fn decode_redeem_log(
     let recipient = data.get(96..96 + len).ok_or(DecodeError::MissingField("recipient"))?.to_vec();
 
     Ok(Observation {
-        event: ReleaseEvent { evm_txid, chain, amount, beldex_recipient: recipient },
+        event: ReleaseEvent { evm_txid, log_index, chain, amount, beldex_recipient: recipient },
         inclusion_height,
         block_hash,
     })
@@ -501,6 +505,18 @@ mod tests {
     }
 
     fn burn_log(block: u64, block_hash: [u8; 32], txid: [u8; 32], amount: u128, recipient: &[u8]) -> Value {
+        burn_log_at(block, block_hash, txid, 0, amount, recipient)
+    }
+
+    /// A burn log at a specific `logIndex` — several burns can share one transaction.
+    fn burn_log_at(
+        block: u64,
+        block_hash: [u8; 32],
+        txid: [u8; 32],
+        log_index: u64,
+        amount: u128,
+        recipient: &[u8],
+    ) -> Value {
         json!({
             "address": to_hex_bytes(&[0x22u8; 20]),
             "topics": [to_hex_bytes(&redeem_topic0()), to_hex_bytes(&[0u8; 32])],
@@ -508,7 +524,41 @@ mod tests {
             "blockNumber": to_hex_quantity(block),
             "blockHash": to_hex_bytes(&block_hash),
             "transactionHash": to_hex_bytes(&txid),
+            "logIndex": to_hex_quantity(log_index),
         })
+    }
+
+    /// H-1: two burns in ONE transaction must decode as two distinct events. Before the
+    /// fix `logIndex` was never read and the second was indistinguishable from the first.
+    #[test]
+    fn two_burns_in_one_tx_decode_distinctly() {
+        let txid = [0xAA; 32];
+        let a = decode_redeem_log(
+            &burn_log_at(10, [0xBB; 32], txid, 0, 500, b"bxALICE"), ChainId(1), [0x22; 20]
+        ).expect("first burn");
+        let b = decode_redeem_log(
+            &burn_log_at(10, [0xBB; 32], txid, 1, 800, b"bxBOB"), ChainId(1), [0x22; 20]
+        ).expect("second burn");
+
+        assert_eq!(a.event.evm_txid, b.event.evm_txid, "same transaction");
+        assert_eq!(a.event.log_index, 0);
+        assert_eq!(b.event.log_index, 1);
+        assert_ne!(a.event, b.event, "distinct burns");
+        // The bytes the committee agrees on must differ, or one signature would
+        // authorize the other withdrawal.
+        assert_ne!(a.event.canonical_id([7u8; 32]), b.event.canonical_id([7u8; 32]));
+    }
+
+    /// A log with no `logIndex` is refused rather than assumed to be index 0 — guessing
+    /// would silently collide with a real burn at index 0.
+    #[test]
+    fn burn_log_without_log_index_is_rejected() {
+        let mut l = burn_log_at(10, [0xBB; 32], [0xAA; 32], 0, 500, b"bx");
+        l.as_object_mut().unwrap().remove("logIndex");
+        assert_eq!(
+            decode_redeem_log(&l, ChainId(1), [0x22; 20]),
+            Err(DecodeError::MissingField("logIndex"))
+        );
     }
 
     /// A canned JSON-RPC node: a settable tip, a fixed log set (filtered by the

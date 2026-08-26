@@ -25,6 +25,8 @@ pub enum RelayPayload {
         to: [u8; 20],
         amount: u128,
         beldex_txid: [u8; 32],
+        /// Which gateway output of `beldex_txid` this mint discharges (H-2).
+        output_index: u32,
         /// The `Pevm` committee ECDSA signature (r‖s‖v, 65 bytes) — verified by `ecrecover`.
         sig: Vec<u8>,
     },
@@ -54,8 +56,8 @@ impl RelayPayload {
     /// The ABI calldata for this payload's wBDX call.
     pub fn calldata(&self) -> Vec<u8> {
         match self {
-            RelayPayload::Mint { to, amount, beldex_txid, sig, .. } => {
-                build_mint_calldata(*to, *amount, *beldex_txid, sig)
+            RelayPayload::Mint { to, amount, beldex_txid, output_index, sig, .. } => {
+                build_mint_calldata(*to, *amount, *beldex_txid, *output_index, sig)
             }
             RelayPayload::Rotate { new_signer, new_key_epoch, sig, .. } => {
                 build_rotate_calldata(*new_signer, *new_key_epoch, sig)
@@ -136,7 +138,15 @@ mod json {
                     let amount = get_str(&v, "amount")?
                         .parse::<u128>()
                         .map_err(|_| PayloadError::BadAmount)?;
-                    Ok(RelayPayload::Mint { contract, chain_id, to, amount, beldex_txid, sig })
+                    // H-2: optional on the wire so an older producer still parses; a
+                    // single-output deposit is index 0, which is the overwhelming case.
+                    let output_index = v
+                        .get("output_index")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0) as u32;
+                    Ok(RelayPayload::Mint {
+                        contract, chain_id, to, amount, beldex_txid, output_index, sig,
+                    })
                 }
                 "rotate" => {
                     let new_signer = hex_fixed::<20>(get_str(&v, "new_signer")?, "new_signer")?;
@@ -154,12 +164,15 @@ mod json {
         pub fn to_json(&self) -> String {
             let hexs = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
             match self {
-                RelayPayload::Mint { contract, chain_id, to, amount, beldex_txid, sig } => format!(
+                RelayPayload::Mint {
+                    contract, chain_id, to, amount, beldex_txid, output_index, sig,
+                } => format!(
                     concat!(
                         r#"{{"kind":"mint","contract":"{}","chain_id":{},"to":"{}","#,
-                        r#""amount":"{}","beldex_txid":"{}","sig":"{}"}}"#
+                        r#""amount":"{}","beldex_txid":"{}","output_index":{},"sig":"{}"}}"#
                     ),
-                    hexs(contract), chain_id, hexs(to), amount, hexs(beldex_txid), hexs(sig),
+                    hexs(contract), chain_id, hexs(to), amount, hexs(beldex_txid),
+                    output_index, hexs(sig),
                 ),
                 RelayPayload::Rotate { contract, chain_id, new_signer, new_key_epoch, sig } => format!(
                     concat!(
@@ -183,7 +196,7 @@ mod tests {
             chain_id: 1,
             to: [0x11; 20],
             amount: 1000,
-            beldex_txid: [0xcd; 32],
+            beldex_txid: [0xcd; 32], output_index: 0,
             sig: vec![0xab; 65],
         }
     }

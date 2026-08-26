@@ -117,26 +117,47 @@ pub fn processed_deposits_selector() -> [u8; 4] {
     [h[0], h[1], h[2], h[3]]
 }
 
+/// The contract's replay-guard key for one deposit: `keccak256(abi.encode(txid, outIdx))`
+/// (H-2). MUST match `WrappedBDX.mint`'s `depositId` exactly — querying the bare txid
+/// instead would report every post-upgrade mint as unsettled and re-work it forever.
+#[cfg(all(feature = "evm-watcher", feature = "tss-integration"))]
+pub fn deposit_id(beldex_txid: &[u8; 32], output_index: u32) -> [u8; 32] {
+    use sha3::{Digest, Keccak256};
+    let mut buf = [0u8; 64];
+    buf[..32].copy_from_slice(beldex_txid);
+    buf[60..64].copy_from_slice(&output_index.to_be_bytes()); // uint32, right-aligned
+    Keccak256::digest(buf).into()
+}
+
 #[cfg(all(feature = "evm-watcher", feature = "tss-integration"))]
 impl<C: crate::evm_watcher::JsonRpcClient> DutyReconciler for EvmMintReconciler<C> {
     fn is_settled(&mut self, duty: &Duty) -> Option<bool> {
         let Duty::Mint(ev) = duty else { return None };
         let (client, contract) = self.chains.get(&ev.dst_chain.0)?;
-        let mut data = Vec::with_capacity(4 + 32);
-        data.extend_from_slice(&processed_deposits_selector());
-        data.extend_from_slice(&ev.beldex_txid); // bytes32 argument, already 32 bytes
         let hexs = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
-        let params = serde_json::json!([
-            { "to": format!("0x{}", hexs(contract)), "data": format!("0x{}", hexs(&data)) },
-            "latest"
-        ]);
-        let raw = client.call("eth_call", params).ok()?;
-        let s = raw.as_str()?.strip_prefix("0x").unwrap_or_default();
-        if s.is_empty() {
-            return None; // empty return = not a contract / wrong address: undeterminable
+        let ask = |key: [u8; 32]| -> Option<bool> {
+            let mut data = Vec::with_capacity(4 + 32);
+            data.extend_from_slice(&processed_deposits_selector());
+            data.extend_from_slice(&key);
+            let params = serde_json::json!([
+                { "to": format!("0x{}", hexs(contract)), "data": format!("0x{}", hexs(&data)) },
+                "latest"
+            ]);
+            let raw = client.call("eth_call", params).ok()?;
+            let s = raw.as_str()?.strip_prefix("0x").unwrap_or_default().to_string();
+            if s.is_empty() {
+                return None; // empty return = not a contract / wrong address: undeterminable
+            }
+            // Any non-zero nibble in the returned word means `true`.
+            Some(s.chars().any(|c| c != '0'))
+        };
+
+        // Mirror the contract's own two checks, in the same order (H-2): the legacy raw-txid
+        // key closes pre-upgrade deposits, the composite key covers everything since.
+        if ask(ev.beldex_txid)? {
+            return Some(true);
         }
-        // Any non-zero nibble in the returned word means `true`.
-        Some(s.chars().any(|c| c != '0'))
+        ask(deposit_id(&ev.beldex_txid, ev.output_index))
     }
 }
 
@@ -183,7 +204,7 @@ impl DutyReconciler for GatewayReleaseReconciler {
                 "gateway_id": self.gateway_id,
                 "chain_ids": [ev.chain.0],
                 "evm_txids": [txid_hex],
-                "log_indices": [0],
+                "log_indices": [ev.log_index],
             }
         });
         let resp = ureq::post(&self.rpc_url).send_json(req).ok()?;
@@ -206,6 +227,35 @@ impl DutyReconciler for GatewayReleaseReconciler {
 // tests
 // ============================================================================
 
+#[cfg(all(test, feature = "evm-watcher", feature = "tss-integration"))]
+mod deposit_id_parity {
+    use super::deposit_id;
+
+    /// LOAD-BEARING (H-2): `deposit_id` must equal the contract's
+    /// `keccak256(abi.encode(beldexTxid, outputIndex))` byte-for-byte. If it drifts, the
+    /// reconciler silently reports every minted deposit as unsettled and re-works it.
+    /// Expected value produced by:
+    ///   cast keccak "$(cast abi-encode 'f(bytes32,uint32)' 0xcd..cd 7)"
+    #[test]
+    fn matches_the_contracts_deposit_id() {
+        let got = deposit_id(&[0xCD; 32], 7);
+        let want: [u8; 32] =
+            hex_lit("60cb746051e34ca09b7590ce7112a42a5d3498b404bfb1a8f71a24fc856bcf81");
+        assert_eq!(got, want, "deposit_id drifted from WrappedBDX.mint");
+
+        // A different output of the same tx must key differently, or H-2 is undone.
+        assert_ne!(deposit_id(&[0xCD; 32], 0), deposit_id(&[0xCD; 32], 1));
+    }
+
+    fn hex_lit(h: &str) -> [u8; 32] {
+        let mut o = [0u8; 32];
+        for (i, b) in o.iter_mut().enumerate() {
+            *b = u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).unwrap();
+        }
+        o
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,7 +265,7 @@ mod tests {
 
     fn mint(txid: u8) -> Duty {
         Duty::Mint(MintEvent {
-            beldex_txid: [txid; 32],
+            beldex_txid: [txid; 32], output_index: 0,
             dst_chain: ChainId(1),
             to: [0x11; 20],
             amount: 1000,
@@ -223,7 +273,7 @@ mod tests {
     }
     fn release(txid: u8) -> Duty {
         Duty::Release(ReleaseEvent {
-            evm_txid: [txid; 32],
+            evm_txid: [txid; 32], log_index: 0,
             chain: ChainId(1),
             amount: 1000,
             beldex_recipient: b"bx".to_vec(),

@@ -4285,11 +4285,15 @@ namespace cryptonote::rpc {
           if (!g || g->gateway_addr != gw_id)
             continue;
           json ev{{"height", h}, {"txid", txid}, {"type", "deposit"}, {"amount", g->amount}};
+          // H-2: the output index identifies WHICH deposit this is within the tx. A tx
+          // may carry up to GATEWAY_TX_MAX_OUTPUTS gateway outputs, so the txid alone is
+          // not a unique deposit id. Emitted for every gateway output, not just memoed
+          // ones, so the bridge can key its replay guard on (txid, out_index).
+          ev["out_index"] = oi;
           if (auto it = bridge_memos.find(static_cast<uint32_t>(oi)); it != bridge_memos.end())
           {
             ev["enc_memo"]  = tools::type_to_hex(it->second);
             ev["tx_pubkey"] = tools::type_to_hex(memo_txpub);
-            ev["out_index"] = oi;
           }
           events.push_back(std::move(ev));
         }
