@@ -29,7 +29,8 @@
 //! Verified against `cggmp21 =0.6.3`:
 //!   * `aux_info_gen(eid, i, n, primes)` → `AuxInfoGenerationBuilder`, driven by the
 //!     `AuxOnlyMsg<Sha256, SecurityLevel128>` protocol message; `.start(rng, party)`
-//!     yields `AuxInfo<L>`. `.enforce_reliable_broadcast(false)` matches the keygen
+//!     yields `AuxInfo<L>`. Reliable broadcast is mandatory so Byzantine peers cannot
+//!     equivocate different DKG/aux messages to different honest participants.
 //!     driver (the `round_based` sim has no reliable-broadcast echo round).
 //!   * `KeyShare::from_parts((IncompleteKeyShare, AuxInfo))` → complete `KeyShare`.
 
@@ -72,7 +73,7 @@ fn real_dkg_aux_info_sign_recovers_wbdx_address() {
         let mut rng = rand::rngs::OsRng;
         cggmp21::keygen::<Secp256k1>(eid, i, n)
             .set_threshold(t)
-            .enforce_reliable_broadcast(false)
+            .enforce_reliable_broadcast(true)
             .start(&mut rng, party)
             .await
     })
@@ -95,7 +96,7 @@ fn real_dkg_aux_info_sign_recovers_wbdx_address() {
         let mut rng = rand::rngs::OsRng;
         let primes = PregeneratedPrimes::generate(&mut rng);
         cggmp21::aux_info_gen(eid, i, n, primes)
-            .enforce_reliable_broadcast(false)
+            .enforce_reliable_broadcast(true)
             .start(&mut rng, party)
             .await
     })
@@ -115,7 +116,7 @@ fn real_dkg_aux_info_sign_recovers_wbdx_address() {
         .collect();
 
     // 4. Threshold-sign a mint digest with t of the DKG'd+aux'd shares.
-    let preimage = b"BELDEX_BRIDGE_MINT_V1 || chainid || wBDX || to || amount || beldexTxid";
+    let preimage = b"BELDEX_BRIDGE_MINT_V2 || chainid || wBDX || keyEpoch || to || amount || beldexTxid || outputIndex";
     let digest32: [u8; 32] = Keccak256::digest(preimage).into();
     let data = DataToSign::<Secp256k1>::digest::<Keccak256>(preimage);
     let parties_at_keygen: Vec<u16> = (0..t).collect();

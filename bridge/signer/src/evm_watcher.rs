@@ -28,6 +28,10 @@ use serde_json::{json, Value};
 use sha3::{Digest, Keccak256};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Bound `eth_getLogs` queries so provider range limits cannot turn a long outage
+/// into a permanent watcher stall. Catch-up continues one chunk per service tick.
+pub const MAX_LOG_BLOCK_RANGE: u64 = 2_000;
+
 /// The wBDX burn event signature; `topic0` is its keccak256.
 pub const REDEEM_EVENT_SIG: &[u8] = b"RedeemToNative(address,uint256,bytes)";
 
@@ -64,6 +68,8 @@ pub enum DecodeError {
     BadHex,
     /// Amount exceeds `u128` (a `uint256` with non-zero high 128 bits).
     AmountOverflow,
+    /// EVM log index does not fit the native/contract uint32 identity field.
+    IndexOverflow,
     /// `topics[0]` is not the `RedeemToNative` topic.
     WrongTopic,
     /// The log is from a contract other than this chain's wBDX.
@@ -154,7 +160,8 @@ pub fn decode_redeem_log(
     // H-1: which burn *within* the transaction. One tx may emit several RedeemToNative
     // logs (a batching wallet or aggregator), and they differ only here. Without it,
     // every burn after the first is indistinguishable from a duplicate and is dropped.
-    let log_index = hex_to_u64(field("logIndex")?).ok_or(DecodeError::BadHex)? as u32;
+    let log_index = u32::try_from(hex_to_u64(field("logIndex")?).ok_or(DecodeError::BadHex)?)
+        .map_err(|_| DecodeError::IndexOverflow)?;
 
     let data = hex_to_bytes(field("data")?).ok_or(DecodeError::BadHex)?;
     if data.len() < 96 {
@@ -321,10 +328,11 @@ impl<C: JsonRpcClient> EvmWatcher<C> {
         let tip = self.tip()?;
 
         if tip >= self.next_scan {
-            for obs in self.get_logs(self.next_scan, tip)? {
+            let scan_to = tip.min(self.next_scan.saturating_add(MAX_LOG_BLOCK_RANGE - 1));
+            for obs in self.get_logs(self.next_scan, scan_to)? {
                 self.tracker.observe(obs);
             }
-            self.next_scan = tip + 1;
+            self.next_scan = scan_to.saturating_add(1);
         }
 
         // Pre-fetch the current hash at each pending inclusion height (so `poll`'s
@@ -389,6 +397,7 @@ impl JsonRpcClient for HttpJsonRpc {
 pub struct EvmChainConfig {
     pub chain_id: u64,
     pub contract: [u8; 20],
+    pub key_epoch: u64,
     pub confirmations: u64,
     pub rpc_url: String,
     pub per_tx_max: u128,
@@ -403,6 +412,7 @@ impl EvmChainConfig {
         ChainRow {
             chain_id: ChainId(self.chain_id),
             contract: self.contract,
+            key_epoch: self.key_epoch,
             confirmations: self.confirmations,
             per_epoch_cap: self.per_epoch_cap,
             per_tx_max: self.per_tx_max,
@@ -421,7 +431,7 @@ fn value_to_u128(v: Option<&Value>) -> Option<u128> {
 }
 
 /// Parse the `BRIDGE_SIGNER_EVM_CHAINS` JSON array into per-chain configs. Shape:
-/// `[{"chain_id":1,"contract":"0x…20 bytes","confirmations":12,"rpc":"https://…",
+/// `[{"chain_id":1,"contract":"0x…20 bytes","key_epoch":1,"confirmations":12,"rpc":"https://…",
 ///   "per_tx_max":"…","per_epoch_cap":"…","start_block":18000000}, …]`
 /// (`per_tx_max`/`per_epoch_cap` may be strings or numbers; `start_block` optional).
 pub fn parse_evm_chains(json: &str) -> Result<Vec<EvmChainConfig>, String> {
@@ -439,15 +449,26 @@ pub fn parse_evm_chains(json: &str) -> Result<Vec<EvmChainConfig>, String> {
         }
         let mut contract = [0u8; 20];
         contract.copy_from_slice(&contract_bytes);
+        let key_epoch = row.get("key_epoch").and_then(Value::as_u64).filter(|e| *e != 0)
+            .ok_or_else(|| miss("key_epoch (non-zero)"))?;
         let confirmations = row.get("confirmations").and_then(Value::as_u64).ok_or_else(|| miss("confirmations"))?;
         let rpc_url = row.get("rpc").and_then(Value::as_str).ok_or_else(|| miss("rpc"))?.to_string();
         let per_tx_max = value_to_u128(row.get("per_tx_max")).ok_or_else(|| miss("per_tx_max"))?;
         let per_epoch_cap = value_to_u128(row.get("per_epoch_cap")).ok_or_else(|| miss("per_epoch_cap"))?;
         let start_block = row.get("start_block").and_then(Value::as_u64).unwrap_or(0);
+        if chain_id == 0 || confirmations == 0 || rpc_url.trim().is_empty() || per_tx_max == 0
+            || per_epoch_cap == 0 || per_tx_max > per_epoch_cap
+            || per_tx_max > u128::from(u64::MAX) || per_epoch_cap > u128::from(u64::MAX)
+        {
+            return Err(format!(
+                "chain[{i}]: require non-zero chain_id/confirmations/caps, non-empty rpc, per_tx_max <= per_epoch_cap, and native-u64-sized caps"
+            ));
+        }
 
         out.push(EvmChainConfig {
             chain_id,
             contract,
+            key_epoch,
             confirmations,
             rpc_url,
             per_tx_max,
@@ -469,6 +490,82 @@ pub fn build_registry(configs: &[EvmChainConfig]) -> Result<ChainRegistry, Strin
 
 #[cfg(feature = "evm-watcher-http")]
 impl EvmChainConfig {
+    /// Fail-closed startup parity check against the deployed `WrappedBDX`.
+    pub fn validate_contract(&self) -> Result<(), String> {
+        let rpc = HttpJsonRpc::new(self.rpc_url.clone());
+        let remote_chain = rpc
+            .call("eth_chainId", json!([]))
+            .map_err(|e| format!("chain {} eth_chainId: {e:?}", self.chain_id))?
+            .as_str()
+            .and_then(hex_to_u64)
+            .ok_or_else(|| format!("chain {} returned invalid eth_chainId", self.chain_id))?;
+        if remote_chain != self.chain_id {
+            return Err(format!(
+                "chain id mismatch: config {} but RPC reports {}",
+                self.chain_id, remote_chain
+            ));
+        }
+        let address = to_hex_bytes(&self.contract);
+        let code = rpc
+            .call("eth_getCode", json!([address, "latest"]))
+            .map_err(|e| format!("chain {} eth_getCode: {e:?}", self.chain_id))?;
+        if code.as_str().is_none_or(|s| strip0x(s).is_empty()) {
+            return Err(format!("chain {} wBDX address has no code", self.chain_id));
+        }
+
+        let read_u128 = |selector: &str| -> Result<u128, String> {
+            let result = rpc
+                .call(
+                    "eth_call",
+                    json!([{"to": to_hex_bytes(&self.contract), "data": selector}, "latest"]),
+                )
+                .map_err(|e| format!("chain {} eth_call {selector}: {e:?}", self.chain_id))?;
+            let bytes = result
+                .as_str()
+                .and_then(hex_to_bytes)
+                .ok_or_else(|| format!("chain {} invalid eth_call result", self.chain_id))?;
+            if bytes.len() != 32 || bytes[..16].iter().any(|b| *b != 0) {
+                return Err(format!("chain {} uint256 result exceeds u128", self.chain_id));
+            }
+            Ok(u128::from_be_bytes(bytes[16..].try_into().expect("length checked")))
+        };
+        let tag = rpc
+            .call(
+                "eth_call",
+                json!([{"to": to_hex_bytes(&self.contract), "data": "0x6749ccae"}, "latest"]),
+            )
+            .map_err(|e| format!("chain {} eth_call MINT_TAG: {e:?}", self.chain_id))?
+            .as_str()
+            .and_then(hex_to_fixed32)
+            .ok_or_else(|| format!("chain {} returned invalid MINT_TAG", self.chain_id))?;
+        if tag != crate::watch::MINT_TAG {
+            return Err(format!("chain {} contract does not expose BELDEX_BRIDGE_MINT_V2", self.chain_id));
+        }
+        let epoch = read_u128("0x6fdf657e")?;
+        let per_tx = read_u128("0x89fbcc98")?;
+        let window_cap = read_u128("0x466351f2")?;
+        let bond_limit = read_u128("0x8e801d1b")?;
+        if epoch != u128::from(self.key_epoch) {
+            return Err(format!(
+                "chain {} key_epoch config {} != contract {}",
+                self.chain_id, self.key_epoch, epoch
+            ));
+        }
+        if per_tx != self.per_tx_max || window_cap != self.per_epoch_cap {
+            return Err(format!(
+                "chain {} cap mismatch: config per_tx/window {}/{}; contract {}/{}",
+                self.chain_id, self.per_tx_max, self.per_epoch_cap, per_tx, window_cap
+            ));
+        }
+        if window_cap.checked_mul(2).is_none_or(|needed| bond_limit < needed) {
+            return Err(format!(
+                "chain {} contract bond limit {} does not cover 2x window cap {}",
+                self.chain_id, bond_limit, window_cap
+            ));
+        }
+        Ok(())
+    }
+
     /// Build a live watcher for this chain over its own HTTP JSON-RPC endpoint.
     pub fn build_watcher(&self) -> EvmWatcher<HttpJsonRpc> {
         EvmWatcher::new(
@@ -691,15 +788,16 @@ mod tests {
     fn parses_multi_chain_config() {
         let json = r#"[
             {"chain_id":1,"contract":"0x2222222222222222222222222222222222222222",
-             "confirmations":12,"rpc":"https://eth.example/key","per_tx_max":"1000000000",
+             "key_epoch":1,"confirmations":12,"rpc":"https://eth.example/key","per_tx_max":"1000000000",
              "per_epoch_cap":"100000000000","start_block":18000000},
             {"chain_id":137,"contract":"0x3333333333333333333333333333333333333333",
-             "confirmations":128,"rpc":"https://polygon.example","per_tx_max":500,"per_epoch_cap":9000}
+             "key_epoch":7,"confirmations":128,"rpc":"https://polygon.example","per_tx_max":500,"per_epoch_cap":9000}
         ]"#;
         let cfgs = parse_evm_chains(json).expect("parse");
         assert_eq!(cfgs.len(), 2);
         assert_eq!(cfgs[0].chain_id, 1);
         assert_eq!(cfgs[0].contract, [0x22; 20]);
+        assert_eq!(cfgs[0].key_epoch, 1);
         assert_eq!(cfgs[0].confirmations, 12);
         assert_eq!(cfgs[0].per_tx_max, 1_000_000_000u128);
         assert_eq!(cfgs[0].start_block, 18_000_000);
@@ -718,12 +816,12 @@ mod tests {
         assert!(parse_evm_chains(r#"{"chain_id":1}"#).unwrap_err().contains("array"));
         let bad_addr = r#"[{"chain_id":1,"contract":"0x1234","confirmations":1,"rpc":"x","per_tx_max":"1","per_epoch_cap":"1"}]"#;
         assert!(parse_evm_chains(bad_addr).unwrap_err().contains("20 bytes"));
-        let missing = r#"[{"chain_id":1,"contract":"0x2222222222222222222222222222222222222222","rpc":"x","per_tx_max":"1","per_epoch_cap":"1"}]"#;
+        let missing = r#"[{"chain_id":1,"contract":"0x2222222222222222222222222222222222222222","key_epoch":1,"rpc":"x","per_tx_max":"1","per_epoch_cap":"1"}]"#;
         assert!(parse_evm_chains(missing).unwrap_err().contains("confirmations"));
         // A duplicate chain id is rejected at registry build.
         let dup = r#"[
-            {"chain_id":1,"contract":"0x2222222222222222222222222222222222222222","confirmations":1,"rpc":"a","per_tx_max":"1","per_epoch_cap":"1"},
-            {"chain_id":1,"contract":"0x3333333333333333333333333333333333333333","confirmations":1,"rpc":"b","per_tx_max":"1","per_epoch_cap":"1"}
+            {"chain_id":1,"contract":"0x2222222222222222222222222222222222222222","key_epoch":1,"confirmations":1,"rpc":"a","per_tx_max":"1","per_epoch_cap":"1"},
+            {"chain_id":1,"contract":"0x3333333333333333333333333333333333333333","key_epoch":1,"confirmations":1,"rpc":"b","per_tx_max":"1","per_epoch_cap":"1"}
         ]"#;
         let cfgs = parse_evm_chains(dup).unwrap();
         assert!(build_registry(&cfgs).is_err());

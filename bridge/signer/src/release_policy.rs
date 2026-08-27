@@ -551,6 +551,7 @@ mod tests {
         let mint = Duty::Mint(crate::watch::MintEvent {
             beldex_txid: [1; 32], output_index: 0,
             dst_chain: ChainId(1),
+            key_epoch: 1,
             to: [0; 20],
             amount: 1,
         });

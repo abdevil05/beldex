@@ -256,10 +256,11 @@ const char* const LMDB_MASTER_NODE_DATA = "master_node_data";
 const char* const LMDB_MASTER_NODE_LATEST = "master_node_proofs"; // contains the latest data sent with a proof: time, aux keys, ip, ports
 const char* const LMDB_GATEWAY_ACCOUNTS = "gateway_accounts"; // HF22: gateway_addr -> serialized gateway_account_data
 const char* const LMDB_GATEWAY_TX_HISTORY = "gateway_tx_history"; // HF22: gateway_addr -> (height||tx_hash) entries (DUPSORT)
+const char* const LMDB_GATEWAY_RELEASE_REFS = "gateway_release_refs"; // HF23: permanent (gateway||burn-ref) set
 
 const char* const LMDB_PROPERTIES = "properties";
 
-constexpr unsigned int LMDB_DB_COUNT = 25; // Should agree with the number of db's above
+constexpr unsigned int LMDB_DB_COUNT = 26; // Should agree with the number of db's above
 
 const char zerokey[8] = {0};
 const MDB_val zerokval = { sizeof(zerokey), (void *)zerokey };
@@ -1541,6 +1542,9 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
   // the big-endian height prefix, i.e. chronologically.
   lmdb_db_open(txn, LMDB_GATEWAY_TX_HISTORY, MDB_CREATE | MDB_DUPSORT | MDB_DUPFIXED, m_gateway_tx_history, "Failed to open db handle for m_gateway_tx_history");
 
+  lmdb_db_open(txn, LMDB_GATEWAY_RELEASE_REFS, MDB_CREATE, m_gateway_release_refs,
+               "Failed to open db handle for m_gateway_release_refs");
+
   lmdb_db_open(txn, LMDB_PROPERTIES, MDB_CREATE, m_properties, "Failed to open db handle for m_properties");
 
   mdb_set_dupsort(txn, m_spent_keys, compare_hash32);
@@ -1729,6 +1733,8 @@ void BlockchainLMDB::reset()
     throw0(DB_ERROR(lmdb_error("Failed to drop m_gateway_accounts: ", result).c_str()));
   if (auto result = mdb_drop(txn, m_gateway_tx_history, 0))
     throw0(DB_ERROR(lmdb_error("Failed to drop m_gateway_tx_history: ", result).c_str()));
+  if (auto result = mdb_drop(txn, m_gateway_release_refs, 0))
+    throw0(DB_ERROR(lmdb_error("Failed to drop m_gateway_release_refs: ", result).c_str()));
   if (auto result = mdb_drop(txn, m_properties, 0))
     throw0(DB_ERROR(lmdb_error("Failed to drop m_properties: ", result).c_str()));
 
@@ -6546,6 +6552,62 @@ std::vector<crypto::hash> BlockchainLMDB::get_gateway_txs(const crypto::public_k
     result.push_back(h);
   }
   return result;
+}
+
+namespace
+{
+  std::array<unsigned char, 64> gateway_release_ref_key(
+      const crypto::public_key& gateway_addr, const crypto::hash& ref)
+  {
+    std::array<unsigned char, 64> key{};
+    std::memcpy(key.data(), &gateway_addr, 32);
+    std::memcpy(key.data() + 32, &ref, 32);
+    return key;
+  }
+}
+
+void BlockchainLMDB::add_gateway_release_ref(
+    const crypto::public_key& gateway_addr, const crypto::hash& ref)
+{
+  check_open();
+  TXN_BLOCK_PREFIX(0);
+  auto key_bytes = gateway_release_ref_key(gateway_addr, ref);
+  unsigned char present = 1;
+  MDB_val key{key_bytes.size(), key_bytes.data()};
+  MDB_val value{sizeof(present), &present};
+  const int result = mdb_put(*txn_ptr, m_gateway_release_refs, &key, &value, MDB_NOOVERWRITE);
+  if (result != MDB_SUCCESS && result != MDB_KEYEXIST)
+    throw0(DB_ERROR(lmdb_error("Failed to add permanent gateway release ref: ", result)));
+  TXN_BLOCK_POSTFIX_SUCCESS();
+}
+
+void BlockchainLMDB::remove_gateway_release_ref(
+    const crypto::public_key& gateway_addr, const crypto::hash& ref)
+{
+  check_open();
+  TXN_BLOCK_PREFIX(0);
+  auto key_bytes = gateway_release_ref_key(gateway_addr, ref);
+  MDB_val key{key_bytes.size(), key_bytes.data()};
+  const int result = mdb_del(*txn_ptr, m_gateway_release_refs, &key, nullptr);
+  if (result != MDB_SUCCESS && result != MDB_NOTFOUND)
+    throw0(DB_ERROR(lmdb_error("Failed to remove permanent gateway release ref: ", result)));
+  TXN_BLOCK_POSTFIX_SUCCESS();
+}
+
+bool BlockchainLMDB::has_gateway_release_ref(
+    const crypto::public_key& gateway_addr, const crypto::hash& ref) const
+{
+  check_open();
+  TXN_PREFIX_RDONLY();
+  auto key_bytes = gateway_release_ref_key(gateway_addr, ref);
+  MDB_val key{key_bytes.size(), key_bytes.data()};
+  MDB_val value{};
+  const int result = mdb_get(m_txn, m_gateway_release_refs, &key, &value);
+  if (result == MDB_NOTFOUND)
+    return false;
+  if (result != MDB_SUCCESS)
+    throw0(DB_ERROR(lmdb_error("Failed to query permanent gateway release ref: ", result)));
+  return true;
 }
 
 

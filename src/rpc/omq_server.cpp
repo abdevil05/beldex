@@ -14,6 +14,7 @@
 #include <sodium/crypto_sign.h>  // crypto_sign_verify_detached (bridge mint publisher auth)
 #include <fmt/core.h>
 #include <nlohmann/json.hpp>
+#include <limits>
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "daemon.rpc"
@@ -974,6 +975,7 @@ void omq_rpc::on_bridge_mint_payload(oxenmq::Message& m)
 
   // Well-formedness + the dedup key.
   std::string beldex_txid;
+  std::string deposit_id;
   try {
     const auto j = nlohmann::json::parse(payload);
     if (j.value("kind", "") != "mint") {
@@ -981,10 +983,21 @@ void omq_rpc::on_bridge_mint_payload(oxenmq::Message& m)
       return;
     }
     beldex_txid = j.value("beldex_txid", "");
-    if (beldex_txid.empty() || j.value("sig", "").empty()) {
-      m.send_reply(OMQ_BAD_REQUEST, "bridge.mint_payload: missing beldex_txid or sig");
+    if (beldex_txid.size() != 64 || j.value("sig", "").size() != 130 ||
+        !j.contains("output_index") || !j["output_index"].is_number_unsigned() ||
+        !j.contains("key_epoch") || !j["key_epoch"].is_number_unsigned() ||
+        j["key_epoch"].get<uint64_t>() == 0) {
+      m.send_reply(OMQ_BAD_REQUEST,
+                   "bridge.mint_payload: require 32-byte beldex_txid, 65-byte sig, "
+                   "non-zero key_epoch, and uint32 output_index");
       return;
     }
+    const uint64_t output_index = j["output_index"].get<uint64_t>();
+    if (output_index > std::numeric_limits<uint32_t>::max()) {
+      m.send_reply(OMQ_BAD_REQUEST, "bridge.mint_payload: output_index exceeds uint32");
+      return;
+    }
+    deposit_id = beldex_txid + ":" + std::to_string(output_index);
   } catch (const std::exception& e) {
     m.send_reply(OMQ_BAD_REQUEST, std::string{"bridge.mint_payload: invalid JSON: "} + e.what());
     return;
@@ -1025,12 +1038,12 @@ void omq_rpc::on_bridge_mint_payload(oxenmq::Message& m)
   {
     constexpr size_t MAX_RETAINED = 256; // ≤ 8 KiB each → ≤ 2 MiB worst case
     std::lock_guard lk{bridge_mint_seen_mutex_};
-    if (!bridge_mint_seen_.insert(beldex_txid).second) {
-      MTRACE("bridge.mint_payload: duplicate for txid " << beldex_txid << ", not re-fanning");
+    if (!bridge_mint_seen_.insert(deposit_id).second) {
+      MTRACE("bridge.mint_payload: duplicate deposit " << deposit_id << ", not re-fanning");
       m.send_reply(OMQ_OK, "DUPLICATE");
       return;
     }
-    bridge_mint_retained_.emplace_back(beldex_txid, payload);
+    bridge_mint_retained_.emplace_back(deposit_id, payload);
     while (bridge_mint_retained_.size() > MAX_RETAINED) {
       bridge_mint_seen_.erase(bridge_mint_retained_.front().first);
       bridge_mint_retained_.pop_front();
@@ -1043,8 +1056,8 @@ void omq_rpc::on_bridge_mint_payload(oxenmq::Message& m)
     omq.send(conn, "notify.bridge_mint", payload);
     ++sent;
   });
-  MGINFO("bridge.mint_payload: committee index " << publisher_index << " published mint for txid "
-         << beldex_txid << "; fanned out to " << sent << " subscriber(s)");
+  MGINFO("bridge.mint_payload: committee index " << publisher_index << " published mint for deposit "
+         << deposit_id << "; fanned out to " << sent << " subscriber(s)");
   m.send_reply(OMQ_OK, std::to_string(sent));
 }
 

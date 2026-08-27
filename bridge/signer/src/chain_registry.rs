@@ -29,6 +29,8 @@ pub struct ChainRow {
     pub chain_id: ChainId,
     /// The wBDX contract address on this chain.
     pub contract: [u8; 20],
+    /// Active `WrappedBDX.keyEpoch()` value. V2 binds it into every mint.
+    pub key_epoch: u64,
     /// Confirmation depth `E` before a burn is actionable (Phase E.2).
     pub confirmations: u64,
     /// Fixed-window per-epoch cap (atomic units) — mint and release accounted
@@ -157,6 +159,7 @@ mod tests {
         ChainRow {
             chain_id: ChainId(id),
             contract: [0x11; 20],
+            key_epoch: 1,
             confirmations: 12,
             per_epoch_cap,
             per_tx_max,

@@ -198,6 +198,7 @@ pub fn resolve_mint(deposit: &DepositRecord, registry: &ChainRegistry) -> Resolu
         beldex_txid: deposit.beldex_txid,
         output_index: deposit.output_index,
         dst_chain: chain,
+        key_epoch: registry.get(chain).expect("known chain").key_epoch,
         to: memo.evm_addr,
         amount: deposit.amount,
     })
@@ -268,11 +269,17 @@ pub fn parse_deposit_events(page: &Value) -> Vec<DepositRecord> {
         };
         // Optional already-plaintext memo (kept for tests / a daemon-decrypt fallback).
         let memo = e.get("memo").and_then(Value::as_str).and_then(hex_to_fixed::<MEMO_LEN>);
-        let output_index = e
+        let Some(output_index) = e
             .get("out_index")
             .and_then(Value::as_u64)
             .or_else(|| enc_memo.as_ref().map(|m| m.output_index))
-            .unwrap_or(0) as u32;
+            .and_then(|v| u32::try_from(v).ok())
+        else {
+            // Output identity is part of the V2 mint replay key.  Missing or
+            // narrowing it would either merge distinct deposits or sign a
+            // digest different from the contract's canonical preimage.
+            continue;
+        };
         out.push(DepositRecord {
             beldex_txid: txid,
             output_index,
@@ -379,22 +386,40 @@ impl<C: BeldexRpc> BeldexWatcher<C> {
 
         let mut finalized = Vec::new();
         let mut from = self.finalized_up_to + 1;
+        let mut covered = false;
+        let mut target = immutable;
         // Page forward until we've covered [.., immutable]; bounded by the server's
         // page size (advertised via next_height) and a guard against non-progress.
         for _ in 0..10_000 {
             let page = self.history_page(from)?;
+            if let Some(top) = page.get("top_height").and_then(Value::as_u64) {
+                // A lagging history endpoint cannot prove coverage beyond its
+                // own tip even if get_info already reports a newer checkpoint.
+                target = target.min(top);
+            }
             for rec in parse_deposit_events(&page) {
-                if rec.height <= immutable && self.seen.insert((rec.beldex_txid, rec.output_index)) {
+                if rec.height <= target && self.seen.insert((rec.beldex_txid, rec.output_index)) {
                     finalized.push(rec);
                 }
             }
             let next = page.get("next_height").and_then(Value::as_u64).unwrap_or(u64::MAX);
-            if next > immutable || next <= from {
-                break; // covered the finalizable range (or no progress)
+            if next > target {
+                covered = true;
+                break;
+            }
+            if next <= from {
+                return Err(RpcError::BadResponse(
+                    "gateway_get_history next_height made no progress".into(),
+                ));
             }
             from = next;
         }
-        self.finalized_up_to = immutable;
+        if !covered {
+            return Err(RpcError::BadResponse(
+                "gateway_get_history exceeded 10,000 pages; cursor not advanced".into(),
+            ));
+        }
+        self.finalized_up_to = target;
         Ok(finalized)
     }
 
@@ -460,6 +485,7 @@ mod tests {
         r.add(ChainRow {
             chain_id: ChainId(chain_id),
             contract: [0x22; 20],
+            key_epoch: 1,
             confirmations: 12,
             per_epoch_cap: u128::MAX,
             per_tx_max,
@@ -496,6 +522,19 @@ mod tests {
         let mut seen = std::collections::BTreeSet::new();
         let kept = recs.iter().filter(|r| seen.insert((r.beldex_txid, r.output_index))).count();
         assert_eq!(kept, 3, "H-2: all three survive the watcher's seen-set");
+    }
+
+    #[test]
+    fn missing_or_oversized_output_identity_is_rejected() {
+        let page = json!({"events": [
+            {"type":"deposit","txid":"11".repeat(32),"height":10,"amount":1000},
+            {"type":"deposit","txid":"22".repeat(32),"height":10,"amount":1000,
+             "out_index": u64::from(u32::MAX) + 1}
+        ]});
+        assert!(
+            parse_deposit_events(&page).is_empty(),
+            "an identity field is never defaulted or narrowed"
+        );
     }
 
     #[test]
@@ -583,7 +622,13 @@ mod tests {
     }
 
     fn deposit_event(height: u64, txid: [u8; 32], amount: u64, memo: Option<[u8; 32]>) -> Value {
-        let mut e = json!({ "height": height, "txid": to_hex(&txid), "type": "deposit", "amount": amount });
+        let mut e = json!({
+            "height": height,
+            "txid": to_hex(&txid),
+            "type": "deposit",
+            "amount": amount,
+            "out_index": 0
+        });
         if let Some(m) = memo {
             e["memo"] = json!(to_hex(&m));
         }

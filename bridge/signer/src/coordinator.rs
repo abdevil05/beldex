@@ -354,15 +354,23 @@ where
         net: &mut T,
         report: &mut StepReport,
     ) {
-        if live.session.stage() != Stage::Consensus
-            || msg.attempt != live.session.attempt()
-            || live.acked
-            || live.nacked
-        {
-            return; // wrong stage / stale attempt / already answered
+        if live.session.stage() != Stage::Consensus || msg.attempt != live.session.attempt() {
+            return; // wrong stage / stale attempt
         }
         // Only the current deterministic leader's proposal is considered.
         if msg.from as usize != live.session.leader() {
+            return;
+        }
+        // The leader re-proposes every tick. Re-emit our prior decision as well:
+        // point-to-point broadcast is not a reliable transport and a single lost
+        // ACK/NACK must not produce different canonical signer sets.
+        if live.acked || live.nacked {
+            let body = if live.acked {
+                SessionMsg::Ack
+            } else {
+                SessionMsg::Nack(NackReason::PayloadMismatch)
+            };
+            let _ = net.broadcast(&Self::msg_for(&live.session, self_index, body));
             return;
         }
         match policy.verify(&live.duty, proposal) {
@@ -503,12 +511,11 @@ where
                             );
                             let _ = net.broadcast(&m);
                             report.proposed += 1;
+                            let a = Self::msg_for(&live.session, self.self_index, SessionMsg::Ack);
+                            let _ = net.broadcast(&a);
                             if !live.acked {
                                 // The leader's own build passed its own policy by construction.
                                 live.acked = true;
-                                let a =
-                                    Self::msg_for(&live.session, self.self_index, SessionMsg::Ack);
-                                let _ = net.broadcast(&a);
                                 let _ = apply(&mut live.session, &a);
                                 report.acked += 1;
                             }
@@ -572,11 +579,26 @@ where
                     }
                 }
                 Stage::Distribute => {
+                    if let (Some(sig), Some(signers)) =
+                        (live.signature.clone(), live.session.canonical_signers())
+                    {
+                        if signers.first() == Some(&self.self_index) {
+                            let m = Self::msg_for(
+                                &live.session,
+                                self.self_index,
+                                SessionMsg::Signature(sig),
+                            );
+                            let _ = net.broadcast(&m);
+                        }
+                    }
+                    let m = Self::msg_for(
+                        &live.session,
+                        self.self_index,
+                        SessionMsg::DistributeAck,
+                    );
+                    let _ = net.broadcast(&m);
                     if !live.dist_acked {
                         live.dist_acked = true;
-                        let m =
-                            Self::msg_for(&live.session, self.self_index, SessionMsg::DistributeAck);
-                        let _ = net.broadcast(&m);
                         let _ = apply(&mut live.session, &m);
                     }
                 }
@@ -912,7 +934,7 @@ mod tests {
     // ---- multi-node harness (Bus/NodeNet/committee/mock_sign in test_support) ----
 
     fn mint_ev(amount: u128) -> MintEvent {
-        MintEvent { beldex_txid: [0x11; 32], output_index: 0, dst_chain: ChainId(1), to: [0x22; 20], amount }
+        MintEvent { beldex_txid: [0x11; 32], output_index: 0, dst_chain: ChainId(1), key_epoch: 1, to: [0x22; 20], amount }
     }
 
     fn contracts() -> BTreeMap<u64, [u8; 20]> {
@@ -1059,7 +1081,7 @@ mod tests {
         // Chain 999 has no registered contract → the actionability screen (which every node
         // runs against the shared registry before opening a session) abandons it everywhere —
         // no session, no proposal, no waiting on a leader that could never build one.
-        let ev = MintEvent { beldex_txid: [0x44; 32], output_index: 0, dst_chain: ChainId(999), to: [0x22; 20], amount: 5 };
+        let ev = MintEvent { beldex_txid: [0x44; 32], output_index: 0, dst_chain: ChainId(999), key_epoch: 1, to: [0x22; 20], amount: 5 };
         for node in &mut nodes {
             node.orch.observe(Duty::Mint(ev.clone()));
         }
@@ -1166,4 +1188,3 @@ mod tests {
         }
     }
 }
-

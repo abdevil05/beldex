@@ -4169,17 +4169,15 @@ namespace cryptonote::rpc {
       const uint32_t log_index = req.log_indices.empty() ? 0u : req.log_indices[i];
       const crypto::hash ref =
           cryptonote::gateway_release_ref_hash(req.chain_ids[i], txid, log_index);
-      discharged.push_back(exists && acct.release_ref_recorded(ref));
+      discharged.push_back(
+          (exists && acct.release_ref_recorded(ref)) || db.has_gateway_release_ref(gw_id, ref));
     }
 
-    // The retention floor: refs below this window have been pruned, so a `false`
-    // for an older burn is "not retained", not "never released".
-    uint64_t retained_from = 0;
-    for (const auto& w : acct.release_ref_windows)
-      if (retained_from == 0 || w.window_id < retained_from) retained_from = w.window_id;
-
     cmd.response["discharged"]           = std::move(discharged);
-    cmd.response["retained_from_window"] = retained_from;
+    // Zero now means complete chain-lifetime coverage: the permanent LMDB index
+    // is not window-pruned. Kept for wire compatibility with older signers.
+    cmd.response["retained_from_window"] = 0;
+    cmd.response["retention_complete"]   = true;
     cmd.response["status"]               = STATUS_OK;
   }
 

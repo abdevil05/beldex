@@ -163,7 +163,7 @@ pub fn run_cggmp21_keygen_over_transport<T: SessionTransport>(
         let mut state = wrap_protocol(|party| async move {
             cggmp21::keygen::<Secp256k1>(eid, self_index, n)
                 .set_threshold(t)
-                .enforce_reliable_broadcast(false)
+                .enforce_reliable_broadcast(true)
                 .start(&mut rng, party)
                 .await
         });

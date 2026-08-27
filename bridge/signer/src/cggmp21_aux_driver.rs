@@ -166,7 +166,7 @@ pub fn run_cggmp21_aux_over_transport<T: SessionTransport>(
         let primes = PregeneratedPrimes::<SecurityLevel128>::generate(&mut rng);
         let mut state = wrap_protocol(|party| async move {
             cggmp21::aux_info_gen(eid, self_index, n, primes)
-                .enforce_reliable_broadcast(false)
+                .enforce_reliable_broadcast(true)
                 .start(&mut rng, party)
                 .await
         });
@@ -382,7 +382,7 @@ mod tests {
             let mut rng = rand::rngs::OsRng;
             cggmp21::keygen::<Secp256k1>(keygen_eid, i, n)
                 .set_threshold(t)
-                .enforce_reliable_broadcast(false)
+                .enforce_reliable_broadcast(true)
                 .start(&mut rng, party)
                 .await
         })
@@ -422,7 +422,7 @@ mod tests {
             .iter()
             .map(|b| serde_json::from_slice(b).expect("deserialize complete share"))
             .collect();
-        let preimage = b"BELDEX_BRIDGE_MINT_V1 || chainid || wBDX || to || amount || beldexTxid";
+        let preimage = b"BELDEX_BRIDGE_MINT_V2 || chainid || wBDX || keyEpoch || to || amount || beldexTxid || outputIndex";
         let digest32: [u8; 32] = Keccak256::digest(preimage).into();
         let data = DataToSign::<Secp256k1>::digest::<Keccak256>(preimage);
         let parties: Vec<u16> = (0..t).collect();

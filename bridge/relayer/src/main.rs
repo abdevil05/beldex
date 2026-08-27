@@ -53,7 +53,7 @@ fn main() {
                 "beldex-bridge-relayer {}\n\nusage:\n  \
                  beldex-bridge-relayer prepare <payload.json | ->\n  \
                  beldex-bridge-relayer relay   <payload.json | ->\n  \
-                 beldex-bridge-relayer mint-digest --chain-id <n> --contract <20hex> --to <20hex> --amount <dec> --txid <32hex>\n\n\
+                 beldex-bridge-relayer mint-digest --chain-id <n> --contract <20hex> --key-epoch <n> --to <20hex> --amount <dec> --txid <32hex> --output-index <n>\n\n\
                  `prepare`     reads a signed relay payload and prints the {{chain_id, to, data}} to broadcast.\n\
                  `relay`       signs + broadcasts it, paying gas (build with --features submit-http).\n\
                  `mint-digest` prints the 32-byte digest the Pevm committee signs for a mint\n\
@@ -69,14 +69,17 @@ fn main() {
     }
 }
 
-/// `mint-digest --chain-id <n> --contract <20hex> --to <20hex> --amount <dec> --txid <32hex>`
+/// `mint-digest --chain-id <n> --contract <20hex> --key-epoch <n> --to <20hex>
+///              --amount <dec> --txid <32hex> --output-index <n>`
 /// → the 32-byte digest to feed the committee `sign` (`BRIDGE_SIGNER_SIGN_DIGEST`).
 fn run_mint_digest(args: &[String]) -> Result<String, String> {
     let mut chain_id: Option<u64> = None;
     let mut contract: Option<[u8; 20]> = None;
+    let mut key_epoch: Option<u64> = None;
     let mut to: Option<[u8; 20]> = None;
     let mut amount: Option<u128> = None;
     let mut txid: Option<[u8; 32]> = None;
+    let mut output_index: Option<u32> = None;
 
     let mut i = 0;
     while i + 1 < args.len() {
@@ -84,9 +87,11 @@ fn run_mint_digest(args: &[String]) -> Result<String, String> {
         match args[i].as_str() {
             "--chain-id" => chain_id = Some(val.parse().map_err(|_| "bad --chain-id".to_string())?),
             "--contract" => contract = Some(hex20(val, "--contract")?),
+            "--key-epoch" => key_epoch = Some(val.parse().map_err(|_| "bad --key-epoch".to_string())?),
             "--to" => to = Some(hex20(val, "--to")?),
             "--amount" => amount = Some(val.parse().map_err(|_| "bad --amount".to_string())?),
             "--txid" => txid = Some(hex32(val, "--txid")?),
+            "--output-index" => output_index = Some(val.parse().map_err(|_| "bad --output-index".to_string())?),
             other => return Err(format!("unknown flag {other}")),
         }
         i += 2;
@@ -94,15 +99,21 @@ fn run_mint_digest(args: &[String]) -> Result<String, String> {
 
     let chain_id = chain_id.ok_or("missing --chain-id")?;
     let contract = contract.ok_or("missing --contract")?;
+    let key_epoch = key_epoch.filter(|e| *e != 0).ok_or("missing or zero --key-epoch")?;
     let to = to.ok_or("missing --to")?;
     let amount = amount.ok_or("missing --amount")?;
     let txid = txid.ok_or("missing --txid")?;
+    let output_index = output_index.ok_or("missing --output-index")?;
 
     // The Pevm `sign` leg consumes the *preimage* (it keccaks it internally), so feed
     // `preimage` to BRIDGE_SIGNER_SIGN_PREIMAGE. `digest` = keccak256(preimage) is what the
     // contract recomputes and `ecrecover`s — shown for cross-checking.
-    let preimage = beldex_bridge_relayer::mint_preimage(chain_id, contract, to, amount, txid);
-    let digest = beldex_bridge_relayer::mint_digest(chain_id, contract, to, amount, txid);
+    let preimage = beldex_bridge_relayer::mint_preimage(
+        chain_id, contract, key_epoch, to, amount, txid, output_index,
+    );
+    let digest = beldex_bridge_relayer::mint_digest(
+        chain_id, contract, key_epoch, to, amount, txid, output_index,
+    );
     Ok(format!(
         "preimage: {}   # -> BRIDGE_SIGNER_SIGN_PREIMAGE (Pevm sign)\ndigest:   {}   # keccak256(preimage), the contract's ecrecover input\n",
         hex::encode(&preimage),

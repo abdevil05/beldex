@@ -1455,7 +1455,8 @@ bool validate_tx_gateway_operations_against_db(BlockchainDB& db, network_type ne
         if (!g)
           continue;
         gateway_account_data acct;
-        if (load_gateway_account(db, g->gateway_addr, acct) && acct.release_ref_recorded(ref))
+        if ((load_gateway_account(db, g->gateway_addr, acct) && acct.release_ref_recorded(ref)) ||
+            db.has_gateway_release_ref(g->gateway_addr, ref))
         {
           reason = "gateway release replays an already-discharged burn ref";
           return false;
@@ -1850,6 +1851,11 @@ namespace
           for (const auto& gw_addr : gateways_touched_by_withdrawals(tx))
           {
             gateway_account_data& acct = get(gw_addr);
+            if (db.has_gateway_release_ref(gw_addr, ref))
+            {
+              set_reason(reason, "gateway release replays a permanently discharged burn ref");
+              return false;
+            }
             if (!add_release_ref(acct, block_height, ref, reason))
               return false;
           }
@@ -1887,6 +1893,15 @@ bool append_gateways_from_transactions(BlockchainDB& db, const std::vector<trans
     const crypto::hash tx_hash = get_transaction_hash(tx);
     for (const auto& gw : gateways_touched_by_tx(tx))
       db.add_gateway_tx(gw, block_height, tx_hash);
+    if (bridge_active)
+    {
+      for (const auto& rf : extract_gateway_release_refs(tx))
+      {
+        const crypto::hash ref = gateway_release_ref_hash(rf.chain_id, rf.evm_txid, rf.log_index);
+        for (const auto& gw : gateways_touched_by_withdrawals(tx))
+          db.add_gateway_release_ref(gw, ref);
+      }
+    }
   }
 
   for (const auto& [id, acct] : cache)
@@ -1933,6 +1948,7 @@ bool rewind_gateways_from_transactions(BlockchainDB& db, const std::vector<trans
           gateway_account_data& acct = get(gw_addr, ok);
           if (!ok || !sub_release_ref(acct, block_height, ref, reason))
             return false;
+          db.remove_gateway_release_ref(gw_addr, ref);
         }
       }
     }

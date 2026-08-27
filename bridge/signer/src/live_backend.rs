@@ -66,13 +66,15 @@ pub fn mint_relay_payload_json(ev: &MintEvent, contract: [u8; 20], sig: &[u8]) -
     format!(
         concat!(
             r#"{{"kind":"mint","contract":"{}","chain_id":{},"to":"{}","#,
-            r#""amount":"{}","beldex_txid":"{}","sig":"{}"}}"#
+            r#""key_epoch":{},"amount":"{}","beldex_txid":"{}","output_index":{},"sig":"{}"}}"#
         ),
         hexs(&contract),
         ev.dst_chain.0,
         hexs(&ev.to),
+        ev.key_epoch,
         ev.amount,
         hexs(&ev.beldex_txid),
+        ev.output_index,
         hexs(sig),
     )
 }
@@ -135,10 +137,12 @@ impl HttpGatewayRpc {
         ref_evm_txid: &[u8; 32],
         ref_log_index: u32,
     ) -> Result<crate::release_policy::BuiltRelease, String> {
+        let amount_u64 = u64::try_from(amount)
+            .map_err(|_| "gateway_create_transfer: amount exceeds native uint64".to_string())?;
         let params = serde_json::json!({
             "source": source_gateway,
             "destinations": [dest_addr],
-            "amounts": [amount as u64],
+            "amounts": [amount_u64],
             "fee": fee,
             "ref_chain_id": ref_chain_id,
             "ref_evm_txid": hexs(ref_evm_txid),
@@ -296,7 +300,7 @@ mod tests {
     use crate::chain_registry::ChainId;
 
     fn mint_ev(chain: u64) -> MintEvent {
-        MintEvent { beldex_txid: [0xab; 32], output_index: 0, dst_chain: ChainId(chain), to: [0x11; 20], amount: 1000 }
+        MintEvent { beldex_txid: [0xab; 32], output_index: 0, dst_chain: ChainId(chain), key_epoch: 1, to: [0x11; 20], amount: 1000 }
     }
 
     /// A gateway RPC mock: records calls, returns canned blob/hash/txid, or a scripted error.

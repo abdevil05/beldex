@@ -13,6 +13,32 @@ use beldex_bridge_signer::SIGNER_VERSION;
 
 const PREFIX: &str = "BRIDGE_SIGNER_";
 
+/// The current executable persists DKG material as local files.  Never silently
+/// treat the configuration labels for external custody as implemented, and make
+/// even the local-file development path an explicit operator decision.
+fn require_share_custody(cfg: &Config) -> Result<(), String> {
+    use beldex_bridge_signer::config::ShareStoreBackend;
+
+    match cfg.share_store {
+        ShareStoreBackend::Memory => {
+            let allowed = std::env::var("BRIDGE_SIGNER_ALLOW_FILE_SHARES")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+            if allowed {
+                Ok(())
+            } else {
+                Err("local share files are disabled; set BRIDGE_SIGNER_ALLOW_FILE_SHARES=1 only for an isolated development environment".into())
+            }
+        }
+        ShareStoreBackend::Vault => Err(
+            "share_store=vault selected, but no Vault custody adapter is linked; refusing local-file fallback".into(),
+        ),
+        ShareStoreBackend::Enclave => Err(
+            "share_store=enclave selected, but no enclave custody adapter is linked; refusing local-file fallback".into(),
+        ),
+    }
+}
+
 /// Build the config map from (1) an optional `.env` file, then (2) real process
 /// environment variables which override it. In both, keys are `BRIDGE_SIGNER_<KEY>`
 /// and are lower-cased without the prefix (e.g. `BRIDGE_SIGNER_GATEWAY_ID` ->
@@ -91,6 +117,8 @@ fn run_dkg(cfg: &Config) -> Result<(), String> {
     use beldex_bridge_signer::ffi;
     use beldex_bridge_signer::omq_client::OmqCommitteeClient;
     use std::time::Duration;
+
+    require_share_custody(cfg)?;
 
     let env = |k: &str| std::env::var(k).map_err(|_| format!("missing env {k}"));
     let h32 = |s: &str, k: &str| config::parse_hex32(s).ok_or(format!("{k} must be 32-byte hex"));
@@ -381,9 +409,9 @@ fn persist_pgw_material(
     pk: &[u8],
     vk: &[u8; 32],
 ) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| format!("create share dir {dir}: {e}"))?;
+    secure_share_dir(dir)?;
     let write = |suffix: &str, bytes: &[u8]| {
-        std::fs::write(format!("{dir}/pgw-{self_index}.{suffix}"), bytes)
+        secure_share_write(&format!("{dir}/pgw-{self_index}.{suffix}"), bytes)
             .map_err(|e| format!("write {suffix}: {e}"))
     };
     write("keypackage", kp)?;
@@ -401,12 +429,37 @@ fn persist_pevm_material(
     keyshare: &[u8],
     x33: &[u8; 33],
 ) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| format!("create share dir {dir}: {e}"))?;
-    std::fs::write(format!("{dir}/pevm-{self_index}.keyshare"), keyshare)
+    secure_share_dir(dir)?;
+    secure_share_write(&format!("{dir}/pevm-{self_index}.keyshare"), keyshare)
         .map_err(|e| format!("write keyshare: {e}"))?;
-    std::fs::write(format!("{dir}/pevm-{self_index}.groupkey"), x33)
+    secure_share_write(&format!("{dir}/pevm-{self_index}.groupkey"), x33)
         .map_err(|e| format!("write groupkey: {e}"))?;
     Ok(())
+}
+
+#[cfg(feature = "live-dkg")]
+fn secure_share_dir(dir: &str) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::create_dir_all(dir).map_err(|e| format!("create share dir {dir}: {e}"))?;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| format!("chmod share dir {dir}: {e}"))
+}
+
+#[cfg(feature = "live-dkg")]
+fn secure_share_write(path: &str, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|e| format!("open {path}: {e}"))?;
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| format!("chmod {path}: {e}"))?;
+    file.write_all(bytes).map_err(|e| format!("write {path}: {e}"))?;
+    file.sync_all().map_err(|e| format!("fsync {path}: {e}"))
 }
 
 /// `sign` subcommand: load this node's persisted share material and run the signing
@@ -420,6 +473,8 @@ fn run_sign(cfg: &Config) -> Result<(), String> {
     use beldex_bridge_signer::ffi;
     use beldex_bridge_signer::omq_client::OmqCommitteeClient;
     use std::time::Duration;
+
+    require_share_custody(cfg)?;
 
     // 1) Committee + self_index.
     let client = OmqCommitteeClient::new(cfg.oxenmq_endpoint.clone());
@@ -600,7 +655,7 @@ fn sign_pevm(
         Ok(h) => hex_to_bytes(&h).ok_or("BRIDGE_SIGNER_SIGN_PREIMAGE must be hex")?,
         Err(_) => {
             println!("WARNING: no BRIDGE_SIGNER_SIGN_PREIMAGE set — signing a fixed demo mint preimage");
-            b"BELDEX_BRIDGE_MINT_V1 || chainid || wBDX || to || amount || beldexTxid".to_vec()
+            b"BELDEX_BRIDGE_MINT_V2 || chainid || wBDX || keyEpoch || to || amount || beldexTxid || outputIndex".to_vec()
         }
     };
     let key_share = std::fs::read(format!("{dir}/pevm-{self_index}.keyshare"))
@@ -687,6 +742,36 @@ fn run_sign(_cfg: &Config) -> Result<(), String> {
     Err("the `sign` subcommand requires a build with `--features live-dkg`".into())
 }
 
+/// Check the cross-chain economic invariant and the configured contract state before
+/// either a watcher-only or autonomous service is allowed to start.
+#[cfg(feature = "evm-watcher-http")]
+fn validate_evm_deployments(
+    configs: &[beldex_bridge_signer::evm_watcher::EvmChainConfig],
+) -> Result<(), String> {
+    let global_backing: u128 = std::env::var("BRIDGE_SIGNER_GLOBAL_BOND_BACKING")
+        .map_err(|_| {
+            "set BRIDGE_SIGNER_GLOBAL_BOND_BACKING to the native backing allocated across all EVM deployments"
+                .to_string()
+        })?
+        .parse()
+        .map_err(|_| "BRIDGE_SIGNER_GLOBAL_BOND_BACKING must be a decimal u128".to_string())?;
+    let boundary_exposure = configs.iter().try_fold(0u128, |total, c| {
+        c.per_epoch_cap
+            .checked_mul(2)
+            .and_then(|v| total.checked_add(v))
+            .ok_or_else(|| "aggregate EVM boundary exposure overflows u128".to_string())
+    })?;
+    if global_backing == 0 || boundary_exposure > global_backing {
+        return Err(format!(
+            "unsafe aggregate caps: 2 * sum(per_epoch_cap) = {boundary_exposure} exceeds global backing {global_backing}"
+        ));
+    }
+    for chain in configs {
+        chain.validate_contract()?;
+    }
+    Ok(())
+}
+
 /// `watch-evm` subcommand: build one EVM watcher per chain from
 /// `BRIDGE_SIGNER_EVM_CHAINS` and poll for finalized wBDX burns (E.2). Prints each
 /// finalized `ReleaseEvent` and its canonical id (what members agree on). Only built
@@ -698,13 +783,14 @@ fn run_watch_evm(_cfg: &Config) -> Result<(), String> {
 
     let chains_json = std::env::var("BRIDGE_SIGNER_EVM_CHAINS").map_err(|_| {
         "set BRIDGE_SIGNER_EVM_CHAINS — a JSON array of \
-         {chain_id, contract, confirmations, rpc, per_tx_max, per_epoch_cap, start_block}"
+         {chain_id, contract, key_epoch, confirmations, rpc, per_tx_max, per_epoch_cap, start_block}"
             .to_string()
     })?;
     let configs = parse_evm_chains(&chains_json)?;
     if configs.is_empty() {
         return Err("BRIDGE_SIGNER_EVM_CHAINS is empty — no chains to watch".into());
     }
+    validate_evm_deployments(&configs)?;
     // Build the E.3 registry (validates uniqueness) even though the loop below only
     // needs the watchers — it is the config's single source of truth.
     let _registry = build_registry(&configs)?;
@@ -790,6 +876,7 @@ fn run_serve(cfg: &Config) -> Result<(), String> {
     if configs.is_empty() {
         return Err("BRIDGE_SIGNER_EVM_CHAINS is empty — no chains to watch".into());
     }
+    validate_evm_deployments(&configs)?;
     let registry = build_registry(&configs)?;
     let evm: Vec<_> = configs.iter().map(|c| c.build_watcher()).collect();
 
@@ -945,7 +1032,7 @@ fn run_relay_watch_standalone() -> Result<(), String> {
     println!("  each mint payload → `{cmd}`");
     println!("  (this process holds NO bridge key; the gas key lives in the relay command)");
     let mut count = 0u64;
-    // Process-local dedup by beldex_txid: the daemon replays its retained backlog to a new
+    // Process-local dedup by (beldex_txid, output_index): the daemon replays its retained backlog to a new
     // subscriber (so an outage is caught up), and reconnections can re-deliver — skip what
     // this process already handled instead of re-running gas estimation on it. The
     // contract's replay guard remains the real idempotency authority.
@@ -961,8 +1048,14 @@ fn run_relay_watch_standalone() -> Result<(), String> {
                         .and_then(|s| s.split('"').next())
                         .unwrap_or("")
                         .to_string();
-                    if !txid.is_empty() && !handled.insert(txid.clone()) {
-                        println!("(skip: txid {txid} already handled this session)");
+                    let output_index = payload
+                        .split(r#""output_index":"#)
+                        .nth(1)
+                        .and_then(|s| s.split(|c: char| !c.is_ascii_digit()).next())
+                        .unwrap_or("");
+                    let deposit_id = format!("{txid}:{output_index}");
+                    if !txid.is_empty() && !output_index.is_empty() && !handled.insert(deposit_id.clone()) {
+                        println!("(skip: deposit {deposit_id} already handled this session)");
                         continue;
                     }
                     count += 1;
@@ -1021,8 +1114,70 @@ fn pipe_to_relay(cmd: &str, payload: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// Atomically persist a completed mint before any best-effort bus/relayer hand-off.
+/// A successful return means a crash/restart cannot erase the committee signature.
+#[cfg(feature = "serve-live")]
+fn persist_mint_outbox(dir: &str, ev: &beldex_bridge_signer::watch::MintEvent, payload: &str) -> Result<String, String> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    std::fs::create_dir_all(dir).map_err(|e| format!("create mint outbox {dir}: {e}"))?;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o750))
+        .map_err(|e| format!("chmod mint outbox {dir}: {e}"))?;
+    let txid = hex(&ev.beldex_txid);
+    let final_path = format!("{dir}/{txid}-{}.json", ev.output_index);
+    let temp_path = format!("{final_path}.tmp-{}", std::process::id());
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o640)
+        .open(&temp_path)
+        .map_err(|e| format!("open mint outbox temp {temp_path}: {e}"))?;
+    file.write_all(payload.as_bytes()).map_err(|e| format!("write mint outbox: {e}"))?;
+    file.write_all(b"\n").map_err(|e| format!("write mint outbox newline: {e}"))?;
+    file.sync_all().map_err(|e| format!("fsync mint outbox: {e}"))?;
+    std::fs::rename(&temp_path, &final_path)
+        .map_err(|e| format!("commit mint outbox {final_path}: {e}"))?;
+    std::fs::File::open(dir)
+        .and_then(|d| d.sync_all())
+        .map_err(|e| format!("fsync mint outbox directory: {e}"))?;
+    Ok(final_path)
+}
+
+#[cfg(all(test, feature = "serve-live"))]
+mod main_tests {
+    use super::*;
+    use beldex_bridge_signer::chain_registry::ChainId;
+    use beldex_bridge_signer::watch::MintEvent;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn mint_outbox_is_committed_with_restrictive_permissions() {
+        let dir = std::env::temp_dir().join(format!(
+            "beldex-bridge-outbox-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ev = MintEvent {
+            beldex_txid: [0x11; 32],
+            output_index: 7,
+            dst_chain: ChainId(1),
+            key_epoch: 3,
+            to: [0x22; 20],
+            amount: 10,
+        };
+        let path = persist_mint_outbox(dir.to_str().unwrap(), &ev, "{\"kind\":\"mint\"}")
+            .expect("persist outbox");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"kind\":\"mint\"}\n");
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o640);
+        assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o750);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
 /// Loaded, reusable signing context for the live `serve` backend: the committee view, this
-/// node's index + signer set, both legs' key material, and the mesh identity parameters. A
+/// node's index, both legs' key material, and the mesh identity parameters. A
 /// duty's sign closure ([`LiveSigners::pevm_sign`] / [`LiveSigners::pgw_sign`]) rebuilds the
 /// per-leg mesh and runs one session — mirroring the `sign` subcommand, but driven by the
 /// autonomy loop instead of an operator-supplied digest.
@@ -1030,7 +1185,6 @@ fn pipe_to_relay(cmd: &str, payload: &str) -> Result<String, String> {
 struct LiveSigners {
     committee: beldex_bridge_signer::committee::CommitteeView,
     self_index: u16,
-    signers: Vec<u16>,
     pgw_key_package: frost_ed25519::keys::KeyPackage,
     pgw_pubkey_package: frost_ed25519::keys::PublicKeyPackage,
     pgw_group_vk: [u8; 32],
@@ -1164,6 +1318,8 @@ fn build_live_signers(cfg: &Config) -> Result<LiveSigners, String> {
     use frost_ed25519 as frost;
     use std::time::Duration;
 
+    require_share_custody(cfg)?;
+
     let client = OmqCommitteeClient::new(cfg.oxenmq_endpoint.clone());
     let committee = client.fetch_committee(None).map_err(|e| e.to_string())?;
     let self_index = committee
@@ -1173,14 +1329,6 @@ fn build_live_signers(cfg: &Config) -> Result<LiveSigners, String> {
     if !committee.has_signer_keys() {
         return Err("bridge.committee returned no signer_keys — update beldexd".into());
     }
-    let signers: Vec<u16> = match std::env::var("BRIDGE_SIGNER_SIGN_SIGNERS") {
-        Ok(s) => s.split(',').filter_map(|x| x.trim().parse().ok()).collect(),
-        Err(_) => (0..committee.threshold as u16).collect(),
-    };
-    if !signers.contains(&self_index) {
-        return Err(format!("this node ({self_index}) is not in the signer set {signers:?}"));
-    }
-
     let dir = std::env::var("BRIDGE_SIGNER_SHARE_DIR")
         .map_err(|_| "set BRIDGE_SIGNER_SHARE_DIR (where `dkg` wrote the shares)".to_string())?;
     let port_base: u16 = std::env::var("BRIDGE_SIGNER_MESH_PORT_BASE")
@@ -1263,7 +1411,6 @@ fn build_live_signers(cfg: &Config) -> Result<LiveSigners, String> {
     Ok(LiveSigners {
         committee,
         self_index,
-        signers,
         pgw_key_package,
         pgw_pubkey_package,
         pgw_group_vk,
@@ -1317,6 +1464,13 @@ where
     use std::cell::RefCell;
     use std::collections::BTreeMap;
     use std::rc::Rc;
+
+    let bus_genesis = config::parse_hex32(
+        &std::env::var("BRIDGE_SIGNER_GENESIS_HASH")
+            .map_err(|_| "set BRIDGE_SIGNER_GENESIS_HASH; live mode refuses an unbound network domain".to_string())?,
+    )
+    .filter(|g| *g != [0u8; 32])
+    .ok_or("BRIDGE_SIGNER_GENESIS_HASH must be non-zero 32-byte hex")?;
 
     let ls = Rc::new(build_live_signers(cfg)?);
     let committee = ls.committee.clone();
@@ -1439,9 +1593,8 @@ where
     //   1. `BRIDGE_SIGNER_RELAY_CMD` — spawn that command and write the payload JSON to its
     //      stdin (e.g. `beldex-bridge-relayer relay -`). The gas key lives in *that*
     //      process's environment, never here.
-    //   2. Always: print `MINT-PAYLOAD <json>`. This line is the **durable artifact** — the
-    //      committee's job is done once the signature exists, and anyone holding this line
-    //      can broadcast it later with `relay -` or `prepare` + `cast send`.
+    //   2. Atomically persist the JSON in BRIDGE_SIGNER_MINT_OUTBOX_DIR, then print
+    //      `MINT-PAYLOAD <json>`.  The fsynced outbox file is the durable artifact.
     //
     // Broadcast failure therefore does NOT fail the duty: re-running a whole mesh signing
     // round to retry an HTTP call would be the wrong layer, and the payload is already
@@ -1455,7 +1608,7 @@ where
     // a shared key means colliding nonces.
     // Preferred hand-off: publish to the daemon's mint bus (`bridge.mint_payload`), which
     // fans out to every subscribed relayer. Relayers then need no signer-host access at all.
-    // The daemon dedups by beldex_txid, so all t+1 members publishing is expected and only
+    // The daemon dedups by (beldex_txid, output_index), so all t+1 members publishing is expected and only
     // one fan-out occurs. Off by default only because it needs the OMQ endpoint.
     let publish_bus = std::env::var("BRIDGE_SIGNER_PUBLISH_MINT_BUS")
         .map(|v| v != "0" && v != "false")
@@ -1463,10 +1616,6 @@ where
     // The daemon accepts a publication only from a seated committee member, so we sign each
     // one with this node's `signer_ed25519` — the same key the mesh authenticates with, and
     // the one consensus records for our committee index.
-    let bus_genesis: [u8; 32] = match std::env::var("BRIDGE_SIGNER_GENESIS_HASH") {
-        Ok(h) => config::parse_hex32(&h).unwrap_or([0u8; 32]),
-        Err(_) => [0u8; 32],
-    };
     // Where to publish. Default: this node's own daemon — correct when relayers subscribe
     // broadly. But a publisher→own-daemon / subscriber→one-daemon topology only intersects
     // by luck (found live: the one subscribed daemon's signer was a straggler that round,
@@ -1479,10 +1628,6 @@ where
         .unwrap_or_else(|| cfg.oxenmq_endpoint.clone());
     let bus_client = if publish_bus {
         println!("  mint hand-off: publishing to bridge.mint_payload at {bus_endpoint}");
-        if bus_genesis == [0u8; 32] {
-            println!("    WARNING: no BRIDGE_SIGNER_GENESIS_HASH — publications will not verify \
-                      against a daemon that binds a real genesis");
-        }
         Some(beldex_bridge_signer::omq_client::OmqCommitteeClient::new(bus_endpoint))
     } else {
         None
@@ -1490,6 +1635,8 @@ where
     let bus_sign_key = ls.ed25519_secret;
 
     let relay_cmd = std::env::var("BRIDGE_SIGNER_RELAY_CMD").ok().filter(|s| !s.trim().is_empty());
+    let mint_outbox_dir = std::env::var("BRIDGE_SIGNER_MINT_OUTBOX_DIR")
+        .map_err(|_| "set BRIDGE_SIGNER_MINT_OUTBOX_DIR; live mint completion is fail-closed without a durable outbox".to_string())?;
     let relay_stagger_ms: u64 = std::env::var("BRIDGE_SIGNER_RELAY_STAGGER_MS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -1508,7 +1655,13 @@ where
                     return ExecOutcome::Abandon;
                 };
                 let payload = mint_relay_payload_json(ev, contract, sig);
-                // Print first: the payload must survive even if every hand-off below fails.
+                match persist_mint_outbox(&mint_outbox_dir, ev, &payload) {
+                    Ok(path) => println!("  mint payload durably stored: {path}"),
+                    Err(e) => {
+                        eprintln!("  mint outbox persistence failed ({e}); duty will retry");
+                        return ExecOutcome::Retry;
+                    }
+                }
                 println!("MINT-PAYLOAD {payload}");
                 if let Some(bus) = &bus_client {
                     use beldex_bridge_signer::omq_client::mint_publish_message;

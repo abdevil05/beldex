@@ -82,7 +82,7 @@ fn cggmp21_threshold_signature_recovers_wbdx_address() {
     // Shape it like the contract: keccak256 over the ABI-encoded mint fields. Here
     // an opaque preimage stands in; what matters is that the signer signs the same
     // keccak digest the contract's ecrecover checks.
-    let preimage = b"BELDEX_BRIDGE_MINT_V1 || chainid || wBDX || to || amount || beldexTxid";
+    let preimage = b"BELDEX_BRIDGE_MINT_V2 || chainid || wBDX || keyEpoch || to || amount || beldexTxid || outputIndex";
     let digest32: [u8; 32] = Keccak256::digest(preimage).into();
     let data = DataToSign::<Secp256k1>::digest::<Keccak256>(preimage);
 

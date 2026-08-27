@@ -60,6 +60,7 @@ mod tests {
         let p = RelayPayload::Mint {
             contract: [0x22; 20],
             chain_id: 1,
+            key_epoch: 1,
             to: [0x11; 20],
             amount: 500,
             beldex_txid: [0xcd; 32], output_index: 0,

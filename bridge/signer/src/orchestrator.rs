@@ -175,6 +175,7 @@ impl Orchestrator {
                         beldex_txid: key.id,
                         output_index: key.sub,
                         dst_chain: crate::chain_registry::ChainId(0),
+                        key_epoch: 0,
                         to: [0u8; 20],
                         amount: 0,
                     }),
@@ -318,6 +319,7 @@ mod tests {
         Duty::Mint(MintEvent {
             beldex_txid: [txid; 32], output_index: 0,
             dst_chain: ChainId(1),
+            key_epoch: 1,
             to: [0x11; 20],
             amount: 1000,
         })

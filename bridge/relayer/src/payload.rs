@@ -22,6 +22,8 @@ pub enum RelayPayload {
     Mint {
         contract: [u8; 20],
         chain_id: u64,
+        /// Epoch bound into the V2 signature.
+        key_epoch: u64,
         to: [u8; 20],
         amount: u128,
         beldex_txid: [u8; 32],
@@ -78,6 +80,8 @@ pub enum PayloadError {
     BadHex(&'static str),
     BadLength(&'static str),
     BadAmount,
+    BadInteger(&'static str),
+    BadSignature,
     UnknownKind(String),
     Json(String),
 }
@@ -113,7 +117,8 @@ mod json {
         ///
         /// ```json
         /// { "kind": "mint", "contract": "<40hex>", "chain_id": 1, "to": "<40hex>",
-        ///   "amount": "1000", "beldex_txid": "<64hex>", "sig": "<130hex>" }
+        ///   "key_epoch": 1, "amount": "1000", "beldex_txid": "<64hex>",
+        ///   "output_index": 0, "sig": "<130hex>" }
         /// { "kind": "rotate", "contract": "<40hex>", "chain_id": 1,
         ///   "new_signer": "<40hex>", "new_key_epoch": 7, "sig": "<130hex>" }
         /// ```
@@ -130,6 +135,9 @@ mod json {
             let chain_id = v.get("chain_id").and_then(Value::as_u64).ok_or(PayloadError::MissingField("chain_id"))?;
             let contract = hex_fixed::<20>(get_str(&v, "contract")?, "contract")?;
             let sig = hex_var(get_str(&v, "sig")?, "sig")?;
+            if sig.len() != 65 {
+                return Err(PayloadError::BadSignature);
+            }
 
             match kind {
                 "mint" => {
@@ -138,14 +146,19 @@ mod json {
                     let amount = get_str(&v, "amount")?
                         .parse::<u128>()
                         .map_err(|_| PayloadError::BadAmount)?;
-                    // H-2: optional on the wire so an older producer still parses; a
-                    // single-output deposit is index 0, which is the overwhelming case.
-                    let output_index = v
+                    let key_epoch = v
+                        .get("key_epoch")
+                        .and_then(Value::as_u64)
+                        .filter(|e| *e != 0)
+                        .ok_or(PayloadError::BadInteger("key_epoch"))?;
+                    let output_index_u64 = v
                         .get("output_index")
                         .and_then(Value::as_u64)
-                        .unwrap_or(0) as u32;
+                        .ok_or(PayloadError::MissingField("output_index"))?;
+                    let output_index = u32::try_from(output_index_u64)
+                        .map_err(|_| PayloadError::BadInteger("output_index"))?;
                     Ok(RelayPayload::Mint {
-                        contract, chain_id, to, amount, beldex_txid, output_index, sig,
+                        contract, chain_id, key_epoch, to, amount, beldex_txid, output_index, sig,
                     })
                 }
                 "rotate" => {
@@ -165,13 +178,13 @@ mod json {
             let hexs = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
             match self {
                 RelayPayload::Mint {
-                    contract, chain_id, to, amount, beldex_txid, output_index, sig,
+                    contract, chain_id, key_epoch, to, amount, beldex_txid, output_index, sig,
                 } => format!(
                     concat!(
                         r#"{{"kind":"mint","contract":"{}","chain_id":{},"to":"{}","#,
-                        r#""amount":"{}","beldex_txid":"{}","output_index":{},"sig":"{}"}}"#
+                        r#""key_epoch":{},"amount":"{}","beldex_txid":"{}","output_index":{},"sig":"{}"}}"#
                     ),
-                    hexs(contract), chain_id, hexs(to), amount, hexs(beldex_txid),
+                    hexs(contract), chain_id, hexs(to), key_epoch, amount, hexs(beldex_txid),
                     output_index, hexs(sig),
                 ),
                 RelayPayload::Rotate { contract, chain_id, new_signer, new_key_epoch, sig } => format!(
@@ -194,6 +207,7 @@ mod tests {
         RelayPayload::Mint {
             contract: [0x22; 20],
             chain_id: 1,
+            key_epoch: 1,
             to: [0x11; 20],
             amount: 1000,
             beldex_txid: [0xcd; 32], output_index: 0,

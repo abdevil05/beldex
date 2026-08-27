@@ -424,7 +424,7 @@ mod tests {
         let blobs: Vec<Vec<u8>> =
             shares.iter().map(|s| serde_json::to_vec(s).expect("serialize share")).collect();
 
-        let preimage = b"BELDEX_BRIDGE_MINT_V1 || chainid || wBDX || to || amount || beldexTxid";
+        let preimage = b"BELDEX_BRIDGE_MINT_V2 || chainid || wBDX || keyEpoch || to || amount || beldexTxid || outputIndex";
         let digest32: [u8; 32] = Keccak256::digest(preimage).into();
 
         // Signer set: keygen indices 0 and 1.

@@ -341,18 +341,10 @@ namespace cryptonote
     END_SERIALIZE()
   };
 
-  // Discharged release refs recorded in one release window (HF23, the release
-  // replay guard — GATEWAY_RELEASE_REPLAY_GUARD.md). Same shape and lifecycle
-  // discipline as gateway_release_window: append records into the block's
-  // window entry and lazily prunes entries older than the immediately-previous
-  // window (windows ≫ the checkpoint reorg buffer, so pruning is safely
-  // outside any legal reorg); rewind removes from the matching entry — an
-  // EXACT inverse (S9). The dedup check reads the current + previous windows,
-  // so the replay-protection horizon is at least one full window; a duplicate
-  // beyond that horizon is not a replay of an old tx (txid uniqueness blocks
-  // that) but a fresh t+1 committee signature — a committee action governed by
-  // the honest-majority assumption + Phase F accountability, with this trail
-  // as the evidence.
+  // Discharged release refs retained in account state for recent-window audit
+  // and exact bounded reorg bookkeeping (HF23).  Consensus replay protection is
+  // authoritative in BlockchainDB's permanent `(gateway, ref)` index; pruning
+  // these serialized buckets therefore never makes an old burn reusable.
   struct gateway_release_ref_window
   {
     uint64_t                  window_id = 0;
@@ -404,9 +396,9 @@ namespace cryptonote
       }
     END_SERIALIZE()
 
-    // Whether `ref` is recorded as discharged in any retained window (the
-    // current + previous windows; older entries are pruned — see
-    // gateway_release_ref_window).
+    // Whether `ref` is visible in the bounded account-state audit trail.  This
+    // helper is not the authoritative replay check; see BlockchainDB's permanent
+    // gateway release-ref index.
     bool release_ref_recorded(const crypto::hash& ref) const {
       for (const auto& w : release_ref_windows)
         for (const auto& r : w.refs)

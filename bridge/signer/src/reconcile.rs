@@ -164,10 +164,8 @@ impl<C: crate::evm_watcher::JsonRpcClient> DutyReconciler for EvmMintReconciler<
 /// Release leg: the daemon's `gateway_release_ref_status` — has this burn already been
 /// discharged by a release from the bridge gateway?
 ///
-/// **Horizon caveat:** the consensus ref set is pruned below the previous release window, so a
-/// `false` for a burn older than `retained_from_window` means "not retained", not "never
-/// released". This reconciler reports `None` (undetermined) in that case rather than risk
-/// re-releasing an ancient burn — the duty simply stays unworked, which is the safe direction.
+/// The daemon's permanent `(gateway, releaseRef)` LMDB index covers the full chain lifetime;
+/// `false` therefore means the burn has never been discharged by this gateway.
 #[cfg(feature = "autonomy")]
 pub struct GatewayReleaseReconciler {
     pub rpc_url: String,
@@ -213,12 +211,6 @@ impl DutyReconciler for GatewayReleaseReconciler {
         // A missing/malformed field is a transport-level unknown, not a negative (the `?`s
         // above and here all yield `None` = undetermined).
         let discharged = result.get("discharged")?.as_array()?.first()?.as_bool()?;
-        // `false` means "not in the retained ref set". Refs are pruned below the previous
-        // release window, so for a burn older than the horizon this is not proof it was never
-        // released — but the consensus guard remains the authoritative backstop and will
-        // reject a genuine duplicate at submit, so working the duty is safe and is the only
-        // choice that stays live. (Reporting `None` here instead would strand any duty whose
-        // burn predates the horizon, forever.)
         Some(discharged)
     }
 }
@@ -267,6 +259,7 @@ mod tests {
         Duty::Mint(MintEvent {
             beldex_txid: [txid; 32], output_index: 0,
             dst_chain: ChainId(1),
+            key_epoch: 1,
             to: [0x11; 20],
             amount: 1000,
         })

@@ -22,6 +22,7 @@
 
 #include "blockchain_db/testdb.h"
 #include "cryptonote_core/uptime_proof.h" // complete uptime_proof::Proof for BaseTestDB's proof_info map
+#include "checkpoints/checkpoints.h"       // complete checkpoint_t used by BaseTestDB vectors
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_core/gateway_utils.h"
@@ -48,6 +49,7 @@ namespace
   {
   public:
     std::map<crypto::public_key, std::string> store;
+    std::set<std::pair<crypto::public_key, crypto::hash>> permanent_release_refs;
 
     void set_gateway_account(const crypto::public_key& id, const std::string& data) override { store[id] = data; }
     bool get_gateway_account(const crypto::public_key& id, std::string& data) const override
@@ -64,6 +66,18 @@ namespace
       std::vector<crypto::public_key> ids;
       for (auto& [k, v] : store) ids.push_back(k);
       return ids;
+    }
+    void add_gateway_release_ref(const crypto::public_key& id, const crypto::hash& ref) override
+    {
+      permanent_release_refs.emplace(id, ref);
+    }
+    void remove_gateway_release_ref(const crypto::public_key& id, const crypto::hash& ref) override
+    {
+      permanent_release_refs.erase({id, ref});
+    }
+    bool has_gateway_release_ref(const crypto::public_key& id, const crypto::hash& ref) const override
+    {
+      return permanent_release_refs.count({id, ref}) != 0;
     }
   };
 
@@ -919,7 +933,7 @@ TEST(GatewayBridgeEvidence, supermajority_rules)
   {
     std::vector<gateway_governance_signature> ev;
     for (uint16_t i = 0; i < required; ++i) ev.push_back(sign_by(i));
-    crypto::generate_signature(msg, vpk[0], vsk[1], ev[0].signature); // signs slot 0 with key 1
+    crypto::generate_signature(msg, vpk[1], vsk[1], ev[0].signature); // valid key-1 sig claimed as slot 0
     EXPECT_FALSE(verify_gateway_governance_evidence(ev, epoch, msg, resolver, reason));
   }
 
@@ -1210,7 +1224,7 @@ TEST(GatewayBridgeReleaseRef, bridge_reserve_flag_serializes_and_is_version_gate
   EXPECT_LT(blob0.size(), blob.size()) << "v0 carries no flags byte";
 }
 
-TEST(GatewayBridgeReleaseRef, ref_windows_prune_like_cap_windows)
+TEST(GatewayBridgeReleaseRef, recent_windows_prune_but_permanent_index_blocks_old_replay)
 {
   MemGatewayDB db;
   const crypto::public_key gw = seed_gateway(db, 10'000'000);
@@ -1225,11 +1239,18 @@ TEST(GatewayBridgeReleaseRef, ref_windows_prune_like_cap_windows)
   ASSERT_TRUE(append_gateways_from_transactions(db, {tx12}, 12 * W + 1, true, &reason)) << reason;
 
   gateway_account_data a; ASSERT_TRUE(load_gateway_account(db, gw, a));
-  EXPECT_FALSE(a.release_ref_recorded(gateway_release_ref_hash(1, burn_txid(0x55), 0)))
-      << "window-10 refs pruned once window 12 is recorded";
+  const crypto::hash old_ref = gateway_release_ref_hash(1, burn_txid(0x55), 0);
+  EXPECT_FALSE(a.release_ref_recorded(old_ref))
+      << "recent reorg bucket may prune window-10 refs";
+  EXPECT_TRUE(db.has_gateway_release_ref(gw, old_ref))
+      << "chain-lifetime replay index must retain the discharged burn";
   EXPECT_TRUE(a.release_ref_recorded(gateway_release_ref_hash(1, burn_txid(0x66), 0)));
   ASSERT_EQ(a.release_ref_windows.size(), 1u);
   EXPECT_EQ(a.release_ref_windows[0].window_id, 12u);
+
+  auto replay = make_withdrawal_with_ref(gw, 1000, 1, burn_txid(0x55));
+  EXPECT_FALSE(append_gateways_from_transactions(db, {replay}, 13 * W + 1, true, &reason));
+  EXPECT_NE(reason.find("permanently discharged"), std::string::npos);
 }
 
 // --------------------------------------------------------------------------
