@@ -3,8 +3,9 @@
 #
 #   runlog ./sign-rotate.sh 0x<preimage-from-03-rotate-prep.sh>
 #
-# The preimage is abi.encode(ROTATE_TAG, chainid, wBDX, newKeyEpoch, newSigner) — 5 words,
-# 160 bytes. Signed by the key that is CURRENTLY in the contract, over its existing
+# The V2 preimage is abi.encode(ROTATE_TAG, chainid, wBDX, newKeyEpoch, newSigner,
+# rotationNonce, deadline) — 7 words, 224 bytes. Signed by the key that is CURRENTLY in
+# the contract, over its existing
 # shares; that is what makes the hand-off self-authorizing rather than an admin action.
 #
 # ─── getting a successor key first ───────────────────────────────────────────────────
@@ -46,5 +47,8 @@
 set -euo pipefail
 if [ "${ACTIVATE:-0}" = "1" ]; then
   export LOG_PREFIX="${LOG_PREFIX:-activate}"
+  KIND=activate
+else
+  KIND=rotate
 fi
-exec "$(dirname "$0")/sign-pevm.sh" rotate "${1:-}"
+exec "$(dirname "$0")/sign-pevm.sh" "$KIND" "${1:-}"

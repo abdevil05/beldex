@@ -43,16 +43,9 @@ const AUX_BCAST: u8 = 1;
 const AUX_P2P: u8 = 2;
 const AUX_HELLO: u8 = 9;
 
-/// A stable 32-byte aux-info session tag (leg `Pevm`, epoch ‖ key_generation). The
-/// `0x41` ('A') distinguishes it from the keygen tag namespace (`0x51`, 'Q') so a
-/// keygen and an aux ceremony never cross-route (belt-and-braces; leg + separate
-/// invocation already separate them).
+/// A domain-separated aux-info tag binding the fresh ceremony id, epoch and generation.
 fn aux_tag(epoch: u64, key_generation: u32) -> [u8; 32] {
-    let mut h = [0u8; 32];
-    h[0..8].copy_from_slice(&epoch.to_le_bytes());
-    h[8..12].copy_from_slice(&key_generation.to_le_bytes());
-    h[12] = 0x41;
-    h
+    crate::dkg_tag::ceremony_tag(b"pevm-aux", epoch, key_generation)
 }
 
 fn wire(epoch: u64, tag: [u8; 32], from: u16, kind: u8, msg_bytes: &[u8]) -> WireMsg {
@@ -121,8 +114,12 @@ pub fn run_cggmp21_aux_over_transport<T: SessionTransport>(
             if w.leg != Leg::Pevm || w.epoch != epoch || w.payload_hash != tag {
                 continue;
             }
-            let SessionMsg::Round(payload) = &w.body else { continue };
-            let Some((kind, rest)) = payload.split_first() else { continue };
+            let SessionMsg::Round(payload) = &w.body else {
+                continue;
+            };
+            let Some((kind, rest)) = payload.split_first() else {
+                continue;
+            };
             if *kind == AUX_HELLO {
                 seen.insert(w.from);
             } else {
@@ -188,7 +185,8 @@ pub fn run_cggmp21_aux_over_transport<T: SessionTransport>(
                 ProceedResult::Yielded => {}
                 ProceedResult::Output(out) => {
                     let aux = out.map_err(|e| format!("aux-info failed: {e}"))?;
-                    let blob = serde_json::to_vec(&aux).map_err(|e| format!("serialize aux: {e}"))?;
+                    let blob =
+                        serde_json::to_vec(&aux).map_err(|e| format!("serialize aux: {e}"))?;
                     return Ok(blob);
                 }
                 ProceedResult::Error(err) => return Err(format!("state machine error: {err}")),
@@ -203,8 +201,17 @@ pub fn run_cggmp21_aux_over_transport<T: SessionTransport>(
     // Replay any aux frames buffered during the barrier.
     for (from, kind, bytes) in early.drain(..) {
         if let Ok(msg) = serde_json::from_slice::<AuxMsg>(&bytes) {
-            let msg_type = if kind == AUX_BCAST { MessageType::Broadcast } else { MessageType::P2P };
-            let _ = in_tx.send(Incoming { id: next_id, sender: from, msg_type, msg });
+            let msg_type = if kind == AUX_BCAST {
+                MessageType::Broadcast
+            } else {
+                MessageType::P2P
+            };
+            let _ = in_tx.send(Incoming {
+                id: next_id,
+                sender: from,
+                msg_type,
+                msg,
+            });
             next_id += 1;
         }
     }
@@ -231,18 +238,29 @@ pub fn run_cggmp21_aux_over_transport<T: SessionTransport>(
             if w.leg != Leg::Pevm || w.epoch != epoch || w.payload_hash != tag {
                 continue;
             }
-            let SessionMsg::Round(payload) = &w.body else { continue };
-            let Some((kind, msg_bytes)) = payload.split_first() else { continue };
+            let SessionMsg::Round(payload) = &w.body else {
+                continue;
+            };
+            let Some((kind, msg_bytes)) = payload.split_first() else {
+                continue;
+            };
             if *kind == AUX_HELLO {
                 continue;
             }
-            let Ok(msg) = serde_json::from_slice::<AuxMsg>(msg_bytes) else { continue };
+            let Ok(msg) = serde_json::from_slice::<AuxMsg>(msg_bytes) else {
+                continue;
+            };
             let msg_type = if *kind == AUX_BCAST {
                 MessageType::Broadcast
             } else {
                 MessageType::P2P
             };
-            let _ = in_tx.send(Incoming { id: next_id, sender: w.from, msg_type, msg });
+            let _ = in_tx.send(Incoming {
+                id: next_id,
+                sender: w.from,
+                msg_type,
+                msg,
+            });
             next_id += 1;
         }
 
@@ -294,7 +312,13 @@ pub mod live {
         timeout: Duration,
     ) -> Result<Vec<u8>, DriverError> {
         let mut transport = assemble_mesh(committee, self_index, identity, peers, use_curve)?;
-        run_cggmp21_aux_over_transport(committee, self_index, key_generation, &mut transport, timeout)
+        run_cggmp21_aux_over_transport(
+            committee,
+            self_index,
+            key_generation,
+            &mut transport,
+            timeout,
+        )
     }
 }
 
@@ -342,10 +366,15 @@ mod tests {
     }
     impl SharedBus {
         fn new(n: u16) -> SharedBus {
-            SharedBus { inboxes: Arc::new((0..n).map(|_| Mutex::new(VecDeque::new())).collect()) }
+            SharedBus {
+                inboxes: Arc::new((0..n).map(|_| Mutex::new(VecDeque::new())).collect()),
+            }
         }
         fn endpoint(&self, me: u16) -> BusEndpoint {
-            BusEndpoint { bus: self.clone(), me }
+            BusEndpoint {
+                bus: self.clone(),
+                me,
+            }
         }
     }
     impl SessionTransport for BusEndpoint {
@@ -358,11 +387,17 @@ mod tests {
             Ok(())
         }
         fn send_to(&mut self, peer: u16, msg: &WireMsg) -> Result<(), MeshError> {
-            self.bus.inboxes[peer as usize].lock().unwrap().push_back(msg.clone());
+            self.bus.inboxes[peer as usize]
+                .lock()
+                .unwrap()
+                .push_back(msg.clone());
             Ok(())
         }
         fn poll(&mut self) -> Result<Option<WireMsg>, MeshError> {
-            Ok(self.bus.inboxes[self.me as usize].lock().unwrap().pop_front())
+            Ok(self.bus.inboxes[self.me as usize]
+                .lock()
+                .unwrap()
+                .pop_front())
         }
     }
 
@@ -403,8 +438,10 @@ mod tests {
                 run_cggmp21_aux_over_transport(&c, i, 0, &mut ep, Duration::from_secs(180))
             }));
         }
-        let aux_blobs: Vec<Vec<u8>> =
-            handles.into_iter().map(|h| h.join().unwrap().expect("aux over mesh")).collect();
+        let aux_blobs: Vec<Vec<u8>> = handles
+            .into_iter()
+            .map(|h| h.join().unwrap().expect("aux over mesh"))
+            .collect();
 
         // 3) Combine each incomplete keygen share + its aux -> complete share.
         let complete_blobs: Vec<Vec<u8>> = incompletes
@@ -450,13 +487,18 @@ mod tests {
         for rec in [0u8, 1u8] {
             let id = RecoveryId::from_byte(rec).unwrap();
             if let Ok(vk) = VerifyingKey::recover_from_prehash(&digest32, &k_sig, id) {
-                if eth_addr_from_uncompressed(vk.to_encoded_point(false).as_bytes()) == expected_addr {
+                if eth_addr_from_uncompressed(vk.to_encoded_point(false).as_bytes())
+                    == expected_addr
+                {
                     recovered = Some(rec);
                     break;
                 }
             }
         }
-        assert!(recovered.is_some(), "ecrecover did not recover the wBDX signer address");
+        assert!(
+            recovered.is_some(),
+            "ecrecover did not recover the wBDX signer address"
+        );
         eprintln!(
             "OK: {t}-of-{n} keygen + aux-info-over-the-mesh -> complete shares -> ecrecover'd to wBDX signer 0x{} (v={})",
             expected_addr.iter().map(|b| format!("{b:02x}")).collect::<String>(),

@@ -53,7 +53,8 @@ impl OmqCommitteeClient {
             .socket(zmq::DEALER)
             .map_err(|e| tx(format!("socket: {e}")))?;
         // Don't linger on close; a dead endpoint must not block teardown.
-        sock.set_linger(0).map_err(|e| tx(format!("set_linger: {e}")))?;
+        sock.set_linger(0)
+            .map_err(|e| tx(format!("set_linger: {e}")))?;
         sock.connect(&self.endpoint)
             .map_err(|e| tx(format!("connect {}: {e}", self.endpoint)))?;
 
@@ -73,7 +74,10 @@ impl OmqCommitteeClient {
         let mut items = [sock.as_poll_item(zmq::POLLIN)];
         let ready = zmq::poll(&mut items, ms).map_err(|e| tx(format!("poll: {e}")))?;
         if ready == 0 {
-            return Err(tx(format!("timeout after {ms}ms waiting for {}", self.endpoint)));
+            return Err(tx(format!(
+                "timeout after {ms}ms waiting for {}",
+                self.endpoint
+            )));
         }
 
         let reply = sock
@@ -86,7 +90,9 @@ impl OmqCommitteeClient {
         }
         let status = String::from_utf8_lossy(&reply[2]);
         if status != "200" {
-            let body = reply.get(3).map(|d| String::from_utf8_lossy(d).into_owned());
+            let body = reply
+                .get(3)
+                .map(|d| String::from_utf8_lossy(d).into_owned());
             return Err(tx(format!(
                 "daemon returned status {status}{}",
                 body.map(|b| format!(": {b}")).unwrap_or_default()
@@ -117,7 +123,10 @@ impl OmqCommitteeClient {
         self_index: u16,
         signature: &[u8; 64],
     ) -> Result<String, String> {
-        let sock = self.ctx.socket(zmq::DEALER).map_err(|e| format!("socket: {e}"))?;
+        let sock = self
+            .ctx
+            .socket(zmq::DEALER)
+            .map_err(|e| format!("socket: {e}"))?;
         sock.set_linger(0).map_err(|e| format!("set_linger: {e}"))?;
         sock.connect(&self.endpoint)
             .map_err(|e| format!("connect {}: {e}", self.endpoint))?;
@@ -138,7 +147,10 @@ impl OmqCommitteeClient {
         let ms = self.timeout.as_millis() as i64;
         let mut items = [sock.as_poll_item(zmq::POLLIN)];
         if zmq::poll(&mut items, ms).map_err(|e| format!("poll: {e}"))? == 0 {
-            return Err(format!("timeout after {ms}ms publishing to {}", self.endpoint));
+            return Err(format!(
+                "timeout after {ms}ms publishing to {}",
+                self.endpoint
+            ));
         }
         let reply = sock.recv_multipart(0).map_err(|e| format!("recv: {e}"))?;
         if reply.len() < 3 || reply[0] != b"REPLY" {
@@ -146,13 +158,18 @@ impl OmqCommitteeClient {
         }
         let status = String::from_utf8_lossy(&reply[2]).into_owned();
         if status != "200" {
-            let body = reply.get(3).map(|d| String::from_utf8_lossy(d).into_owned());
+            let body = reply
+                .get(3)
+                .map(|d| String::from_utf8_lossy(d).into_owned());
             return Err(format!(
                 "daemon returned status {status}{}",
                 body.map(|b| format!(": {b}")).unwrap_or_default()
             ));
         }
-        Ok(reply.get(3).map(|d| String::from_utf8_lossy(d).into_owned()).unwrap_or_default())
+        Ok(reply
+            .get(3)
+            .map(|d| String::from_utf8_lossy(d).into_owned())
+            .unwrap_or_default())
     }
 }
 
@@ -211,7 +228,10 @@ impl OmqMintSubscriber {
     /// "was down, wants the backlog" case.
     fn subscribe(&mut self) -> Result<(), String> {
         if self.sock.is_none() {
-            let sock = self.ctx.socket(zmq::DEALER).map_err(|e| format!("socket: {e}"))?;
+            let sock = self
+                .ctx
+                .socket(zmq::DEALER)
+                .map_err(|e| format!("socket: {e}"))?;
             sock.set_linger(0).map_err(|e| format!("set_linger: {e}"))?;
             sock.connect(&self.endpoint)
                 .map_err(|e| format!("connect {}: {e}", self.endpoint))?;
@@ -220,7 +240,10 @@ impl OmqMintSubscriber {
         self.sock
             .as_ref()
             .expect("created above")
-            .send_multipart([b"sub.bridge_mint".as_slice(), b"bridgerelay-sub".as_slice()], 0)
+            .send_multipart(
+                [b"sub.bridge_mint".as_slice(), b"bridgerelay-sub".as_slice()],
+                0,
+            )
             .map_err(|e| {
                 self.sock = None; // send failed → full reconnect (and backlog) next call
                 format!("send subscribe: {e}")
@@ -252,9 +275,9 @@ impl OmqMintSubscriber {
         // Two shapes arrive on this socket: the REPLY to our own subscribe request, and the
         // notifications we actually want.
         match msg.first().map(|p| p.as_slice()) {
-            Some(b"notify.bridge_mint") => Ok(msg
-                .get(1)
-                .map(|d| String::from_utf8_lossy(d).into_owned())),
+            Some(b"notify.bridge_mint") => {
+                Ok(msg.get(1).map(|d| String::from_utf8_lossy(d).into_owned()))
+            }
             Some(b"REPLY") => Ok(None), // our subscribe/renew ack
             _ => Ok(None),              // anything else: ignore
         }
@@ -274,7 +297,11 @@ mod tests {
         let msg = mint_publish_message(&genesis, r#"{"kind":"mint"}"#);
         assert_eq!(&msg[..22], b"bridge_mint_publish_v1", "domain first");
         assert_eq!(&msg[22..54], &genesis[..], "then the 32-byte genesis");
-        assert_eq!(&msg[54..], br#"{"kind":"mint"}"#, "then the payload verbatim");
+        assert_eq!(
+            &msg[54..],
+            br#"{"kind":"mint"}"#,
+            "then the payload verbatim"
+        );
         assert_eq!(msg.len(), 22 + 32 + 15);
         // Genesis-bound: a different chain yields a different message (no cross-net replay).
         assert_ne!(msg, mint_publish_message(&[0xcd; 32], r#"{"kind":"mint"}"#));

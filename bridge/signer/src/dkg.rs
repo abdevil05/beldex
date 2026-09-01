@@ -115,7 +115,10 @@ pub enum DkgTranscriptEntry {
     /// The ceremony completed; the group public key is published here.
     GroupKey { pubkey: Vec<u8> },
     /// The ceremony failed, naming the members that did not contribute in `stage`.
-    Failed { stage: DkgStage, missing: Vec<usize> },
+    Failed {
+        stage: DkgStage,
+        missing: Vec<usize>,
+    },
 }
 
 /// Errors from feeding a DKG event into a session.
@@ -182,7 +185,11 @@ impl DkgSession {
             return Err(DkgError::UnknownMember);
         }
         Ok(DkgSession {
-            id: DkgId { leg, epoch: committee.epoch, key_generation },
+            id: DkgId {
+                leg,
+                epoch: committee.epoch,
+                key_generation,
+            },
             n: committee.members.len(),
             threshold: committee.threshold,
             self_index,
@@ -254,7 +261,10 @@ impl DkgSession {
         if !self.round1_from.insert(from) {
             return Err(DkgError::Duplicate(from));
         }
-        self.transcript.push(DkgTranscriptEntry::Round1 { member: from, package });
+        self.transcript.push(DkgTranscriptEntry::Round1 {
+            member: from,
+            package,
+        });
         if self.round1_from.len() == self.n {
             self.stage = DkgStage::Round2;
         }
@@ -278,7 +288,10 @@ impl DkgSession {
         if !self.round2_from.insert(from) {
             return Err(DkgError::Duplicate(from));
         }
-        self.transcript.push(DkgTranscriptEntry::Round2 { member: from, package });
+        self.transcript.push(DkgTranscriptEntry::Round2 {
+            member: from,
+            package,
+        });
         if self.round2_from.len() == self.n - 1 {
             self.stage = DkgStage::Finalize;
         }
@@ -296,7 +309,9 @@ impl DkgSession {
         if self.stage != DkgStage::Finalize {
             return Err(DkgError::WrongStage(self.stage));
         }
-        self.transcript.push(DkgTranscriptEntry::GroupKey { pubkey: group_pubkey.clone() });
+        self.transcript.push(DkgTranscriptEntry::GroupKey {
+            pubkey: group_pubkey.clone(),
+        });
         self.group_pubkey = Some(group_pubkey);
         self.stage = DkgStage::Complete;
         Ok(())
@@ -307,7 +322,11 @@ impl DkgSession {
     /// consistent erasure of superseded generations is the caller's follow-up
     /// (`ShareStore::erase_versions_below`) once the new key is live.
     pub fn store_share<S: ShareStore>(&self, store: &mut S, share_blob: Vec<u8>) {
-        store.put(self.id.share_store_key(), self.id.key_generation, share_blob);
+        store.put(
+            self.id.share_store_key(),
+            self.id.key_generation,
+            share_blob,
+        );
     }
 
     /// Abandon the ceremony, naming the members that failed to contribute in the
@@ -328,7 +347,8 @@ impl DkgSession {
                 !seen.contains(i)
             })
             .collect();
-        self.transcript.push(DkgTranscriptEntry::Failed { stage, missing });
+        self.transcript
+            .push(DkgTranscriptEntry::Failed { stage, missing });
         self.stage = DkgStage::Failed;
     }
 }
@@ -492,7 +512,10 @@ mod tests {
             _ => panic!("expected Failed entry"),
         }
         // A failed ceremony is terminal.
-        assert_eq!(s.on_round1(3, vec![]), Err(DkgError::Terminal(DkgStage::Failed)));
+        assert_eq!(
+            s.on_round1(3, vec![]),
+            Err(DkgError::Terminal(DkgStage::Failed))
+        );
     }
 
     #[test]

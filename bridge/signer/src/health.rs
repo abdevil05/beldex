@@ -32,7 +32,8 @@ pub struct HealthStatus {
 impl HealthStatus {
     /// How many EVM confirmations behind the network this node's watcher is.
     pub fn evm_lag(&self) -> u64 {
-        self.network_evm_tip_height.saturating_sub(self.evm_tip_height)
+        self.network_evm_tip_height
+            .saturating_sub(self.evm_tip_height)
     }
 
     /// Whether the node is bridge-live: TSS responsive **and** its EVM tip is

@@ -144,7 +144,11 @@ impl<C: crate::evm_watcher::JsonRpcClient> DutyReconciler for EvmMintReconciler<
                 "latest"
             ]);
             let raw = client.call("eth_call", params).ok()?;
-            let s = raw.as_str()?.strip_prefix("0x").unwrap_or_default().to_string();
+            let s = raw
+                .as_str()?
+                .strip_prefix("0x")
+                .unwrap_or_default()
+                .to_string();
             if s.is_empty() {
                 return None; // empty return = not a contract / wrong address: undeterminable
             }
@@ -252,12 +256,13 @@ mod deposit_id_parity {
 mod tests {
     use super::*;
     use crate::chain_registry::ChainId;
-    use crate::orchestrator::{DutyStatus, DutyKind};
+    use crate::orchestrator::{DutyKind, DutyStatus};
     use crate::watch::{MintEvent, ReleaseEvent};
 
     fn mint(txid: u8) -> Duty {
         Duty::Mint(MintEvent {
-            beldex_txid: [txid; 32], output_index: 0,
+            beldex_txid: [txid; 32],
+            output_index: 0,
             dst_chain: ChainId(1),
             key_epoch: 1,
             to: [0x11; 20],
@@ -266,7 +271,8 @@ mod tests {
     }
     fn release(txid: u8) -> Duty {
         Duty::Release(ReleaseEvent {
-            evm_txid: [txid; 32], log_index: 0,
+            evm_txid: [txid; 32],
+            log_index: 0,
             chain: ChainId(1),
             amount: 1000,
             beldex_recipient: b"bx".to_vec(),
@@ -288,21 +294,33 @@ mod tests {
     #[test]
     fn settled_duty_is_recorded_done_and_never_worked() {
         let mut orch = Orchestrator::new();
-        let mut rec = Scripted { answer: Some(true), calls: 0 };
+        let mut rec = Scripted {
+            answer: Some(true),
+            calls: 0,
+        };
         assert_eq!(
             observe_reconciled(&mut orch, &mut rec, mint(1)),
             ObserveOutcome::AlreadySettled
         );
         assert_eq!(orch.status(&mint(1).key()), Some(DutyStatus::Done));
-        assert!(orch.ready().is_empty(), "a settled duty is never in the ready set");
+        assert!(
+            orch.ready().is_empty(),
+            "a settled duty is never in the ready set"
+        );
         assert_eq!(orch.counts(), (0, 0, 1));
     }
 
     #[test]
     fn unsettled_duty_is_queued_normally() {
         let mut orch = Orchestrator::new();
-        let mut rec = Scripted { answer: Some(false), calls: 0 };
-        assert_eq!(observe_reconciled(&mut orch, &mut rec, mint(2)), ObserveOutcome::Queued);
+        let mut rec = Scripted {
+            answer: Some(false),
+            calls: 0,
+        };
+        assert_eq!(
+            observe_reconciled(&mut orch, &mut rec, mint(2)),
+            ObserveOutcome::Queued
+        );
         assert_eq!(orch.status(&mint(2).key()), Some(DutyStatus::Pending));
         assert_eq!(orch.ready().len(), 1);
     }
@@ -310,7 +328,10 @@ mod tests {
     #[test]
     fn undetermined_is_not_registered_so_a_later_poll_retries() {
         let mut orch = Orchestrator::new();
-        let mut rec = Scripted { answer: None, calls: 0 };
+        let mut rec = Scripted {
+            answer: None,
+            calls: 0,
+        };
         assert_eq!(
             observe_reconciled(&mut orch, &mut rec, mint(3)),
             ObserveOutcome::Undetermined
@@ -320,14 +341,20 @@ mod tests {
 
         // The watcher re-emits; now the chain answers → it gets worked.
         rec.answer = Some(false);
-        assert_eq!(observe_reconciled(&mut orch, &mut rec, mint(3)), ObserveOutcome::Queued);
+        assert_eq!(
+            observe_reconciled(&mut orch, &mut rec, mint(3)),
+            ObserveOutcome::Queued
+        );
         assert_eq!(orch.status(&mint(3).key()), Some(DutyStatus::Pending));
     }
 
     #[test]
     fn reconciler_is_consulted_at_most_once_per_duty() {
         let mut orch = Orchestrator::new();
-        let mut rec = Scripted { answer: Some(false), calls: 0 };
+        let mut rec = Scripted {
+            answer: Some(false),
+            calls: 0,
+        };
         for _ in 0..5 {
             observe_reconciled(&mut orch, &mut rec, mint(4)); // watchers re-emit every poll
         }
@@ -338,13 +365,19 @@ mod tests {
     #[test]
     fn known_duty_short_circuits_even_when_in_flight_or_done() {
         let mut orch = Orchestrator::new();
-        let mut rec = Scripted { answer: Some(false), calls: 0 };
+        let mut rec = Scripted {
+            answer: Some(false),
+            calls: 0,
+        };
         observe_reconciled(&mut orch, &mut rec, release(5));
         let key = release(5).key();
         assert!(orch.mark_in_flight(&key));
         // A re-emission mid-session must not be reconciled (or it could be marked Done
         // under an in-flight session).
-        assert_eq!(observe_reconciled(&mut orch, &mut rec, release(5)), ObserveOutcome::Known);
+        assert_eq!(
+            observe_reconciled(&mut orch, &mut rec, release(5)),
+            ObserveOutcome::Known
+        );
         assert_eq!(orch.status(&key), Some(DutyStatus::InFlight));
         assert_eq!(rec.calls, 1);
     }
@@ -354,14 +387,23 @@ mod tests {
         let mut orch = Orchestrator::new();
         // Mints are settled on chain; releases are not.
         let mut rec = DualReconciler {
-            mint: Scripted { answer: Some(true), calls: 0 },
-            release: Scripted { answer: Some(false), calls: 0 },
+            mint: Scripted {
+                answer: Some(true),
+                calls: 0,
+            },
+            release: Scripted {
+                answer: Some(false),
+                calls: 0,
+            },
         };
         assert_eq!(
             observe_reconciled(&mut orch, &mut rec, mint(6)),
             ObserveOutcome::AlreadySettled
         );
-        assert_eq!(observe_reconciled(&mut orch, &mut rec, release(6)), ObserveOutcome::Queued);
+        assert_eq!(
+            observe_reconciled(&mut orch, &mut rec, release(6)),
+            ObserveOutcome::Queued
+        );
         assert_eq!(rec.mint.calls, 1);
         assert_eq!(rec.release.calls, 1);
         // Same 32-byte id, different legs → distinct keys, both tracked.
@@ -374,7 +416,10 @@ mod tests {
     fn no_reconcile_works_every_duty() {
         let mut orch = Orchestrator::new();
         let mut rec = NoReconcile;
-        assert_eq!(observe_reconciled(&mut orch, &mut rec, mint(7)), ObserveOutcome::Queued);
+        assert_eq!(
+            observe_reconciled(&mut orch, &mut rec, mint(7)),
+            ObserveOutcome::Queued
+        );
         assert_eq!(orch.ready().len(), 1);
     }
 

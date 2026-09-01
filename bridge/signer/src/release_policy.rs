@@ -68,7 +68,8 @@ pub const RELEASE_PROPOSAL_VERSION: u8 = 1;
 impl ReleaseProposal {
     /// Serialize (little-endian, length-prefixed blob).
     pub fn encode(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(1 + 8 + 32 + 4 + 8 + 32 + 32 + 4 + self.unsigned_tx_blob.len());
+        let mut out =
+            Vec::with_capacity(1 + 8 + 32 + 4 + 8 + 32 + 32 + 4 + self.unsigned_tx_blob.len());
         out.push(self.version);
         out.extend_from_slice(&self.chain_id.to_le_bytes());
         out.extend_from_slice(&self.evm_txid);
@@ -232,7 +233,9 @@ where
                 // Over-cap burns are permanently unactionable under this policy (a cap raise
                 // is a new policy → new process lifecycle); everything else is workable.
                 if ev.amount > self.per_tx_cap {
-                    Err(BuildError::Unactionable("burn exceeds the per-tx release cap".into()))
+                    Err(BuildError::Unactionable(
+                        "burn exceeds the per-tx release cap".into(),
+                    ))
                 } else {
                     Ok(())
                 }
@@ -274,7 +277,9 @@ where
     fn signing_message(&self, _duty: &Duty, proposal: &[u8]) -> Vec<u8> {
         // Only ever called on an *accepted* proposal, so decode cannot fail; return empty on
         // the impossible path rather than panicking a signer.
-        ReleaseProposal::decode(proposal).map(|p| p.hash_to_sign.to_vec()).unwrap_or_default()
+        ReleaseProposal::decode(proposal)
+            .map(|p| p.hash_to_sign.to_vec())
+            .unwrap_or_default()
     }
 }
 
@@ -359,7 +364,12 @@ mod tests {
         at += 1;
         let dest = blob.get(at..at + dest_len).ok_or("truncated")?;
         at += dest_len;
-        let amount = u128::from_le_bytes(blob.get(at..at + 16).ok_or("truncated")?.try_into().unwrap());
+        let amount = u128::from_le_bytes(
+            blob.get(at..at + 16)
+                .ok_or("truncated")?
+                .try_into()
+                .unwrap(),
+        );
         at += 16;
         let fee = u64::from_le_bytes(blob.get(at..at + 8).ok_or("truncated")?.try_into().unwrap());
         Ok(ReleaseTxView {
@@ -377,7 +387,12 @@ mod tests {
     fn toy_build(ev: &ReleaseEvent) -> Result<BuiltRelease, BuildError> {
         let blob = toy_blob(GW, &ev.beldex_recipient, ev.amount - u128::from(FEE), FEE);
         let hash = sha256(&blob);
-        Ok(BuiltRelease { unsigned_tx_blob: blob, hash_to_sign: hash, fee: FEE, tx_key: [0xAB; 32] })
+        Ok(BuiltRelease {
+            unsigned_tx_blob: blob,
+            hash_to_sign: hash,
+            fee: FEE,
+            tx_key: [0xAB; 32],
+        })
     }
 
     type TestReleasePolicy = ReleasePolicy<
@@ -397,7 +412,8 @@ mod tests {
 
     fn burn(amount: u128) -> ReleaseEvent {
         ReleaseEvent {
-            evm_txid: [0x77; 32], log_index: 0,
+            evm_txid: [0x77; 32],
+            log_index: 0,
             chain: ChainId(1),
             amount,
             beldex_recipient: b"bxRecipient".to_vec(),
@@ -418,7 +434,11 @@ mod tests {
         let bytes = p.encode();
         assert_eq!(ReleaseProposal::decode(&bytes), Some(p.clone()));
 
-        assert_eq!(ReleaseProposal::decode(&bytes[..40]), None, "truncated header");
+        assert_eq!(
+            ReleaseProposal::decode(&bytes[..40]),
+            None,
+            "truncated header"
+        );
         let mut bad = bytes.clone();
         bad[0] = 9;
         assert_eq!(ReleaseProposal::decode(&bad), None, "unknown version");
@@ -467,7 +487,11 @@ mod tests {
                 p
             },
         ] {
-            assert_eq!(policy().verify(&duty, &tamper.encode()), reject, "R1/R6: {tamper:?}");
+            assert_eq!(
+                policy().verify(&duty, &tamper.encode()),
+                reject,
+                "R1/R6: {tamper:?}"
+            );
         }
 
         // R2: pays someone else (blob rebuilt so R5 still holds — isolates R2).
@@ -496,11 +520,20 @@ mod tests {
                 unsigned_tx_blob: blob,
                 ..proposal_for(&ev)
             };
-            assert_eq!(policy().verify(&duty, &p.encode()), reject, "R3 fee > max_fee");
+            assert_eq!(
+                policy().verify(&duty, &p.encode()),
+                reject,
+                "R3 fee > max_fee"
+            );
         }
         // R4: spends the wrong gateway.
         {
-            let blob = toy_blob("gwEvil", &ev.beldex_recipient, ev.amount - u128::from(FEE), FEE);
+            let blob = toy_blob(
+                "gwEvil",
+                &ev.beldex_recipient,
+                ev.amount - u128::from(FEE),
+                FEE,
+            );
             let mut p = proposal_for(&ev);
             p.hash_to_sign = sha256(&blob);
             p.unsigned_tx_blob = blob;
@@ -545,11 +578,20 @@ mod tests {
 
     #[test]
     fn dual_policy_dispatches_by_duty_kind() {
-        let mut dual = DualPolicy { mint: MintPolicy { contracts: BTreeMap::new() }, release: policy() };
+        let mut dual = DualPolicy {
+            mint: MintPolicy {
+                contracts: BTreeMap::new(),
+            },
+            release: policy(),
+        };
         let release = Duty::Release(burn(1000));
-        assert!(dual.actionable(&release).is_ok(), "release routed to the release policy");
+        assert!(
+            dual.actionable(&release).is_ok(),
+            "release routed to the release policy"
+        );
         let mint = Duty::Mint(crate::watch::MintEvent {
-            beldex_txid: [1; 32], output_index: 0,
+            beldex_txid: [1; 32],
+            output_index: 0,
             dst_chain: ChainId(1),
             key_epoch: 1,
             to: [0; 20],
@@ -579,7 +621,7 @@ mod tests {
     fn make_node(n: usize, t: usize, index: usize, bus: &Bus) -> Node {
         let completions: Rc<RefCell<Vec<(DutyKey, Vec<u8>)>>> = Rc::new(RefCell::new(Vec::new()));
         let log = completions.clone();
-        let mut coord = Coordinator::new(
+        let coord = Coordinator::new(
             committee(n, t),
             index as u16,
             policy(),
@@ -593,8 +635,12 @@ mod tests {
                 ExecOutcome::Submitted
             }) as Box<dyn FnMut(&Duty, &[u8], &[u8]) -> ExecOutcome>,
         );
-        coord.sign_settle_steps = 0; // synchronous in-process bus
-        Node { coord, orch: Orchestrator::new(), net: bus.node(index), completions }
+        Node {
+            coord,
+            orch: Orchestrator::new(),
+            net: bus.node(index),
+            completions,
+        }
     }
 
     #[test]
@@ -617,11 +663,18 @@ mod tests {
         let mut sigs = Vec::new();
         for node in &nodes {
             let done = node.completions.borrow();
-            assert_eq!(done.len(), 1, "each node completes the release exactly once");
+            assert_eq!(
+                done.len(),
+                1,
+                "each node completes the release exactly once"
+            );
             sigs.push(done[0].1.clone());
             assert_eq!(node.orch.counts(), (0, 0, 1));
         }
-        assert!(sigs.iter().all(|s| s == &sigs[0]), "one agreed hash → one agreed aggregate");
+        assert!(
+            sigs.iter().all(|s| s == &sigs[0]),
+            "one agreed hash → one agreed aggregate"
+        );
         assert!(nodes.iter().all(|nd| nd.coord.live_count() == 0));
     }
 }

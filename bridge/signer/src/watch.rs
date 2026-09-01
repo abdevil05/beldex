@@ -132,7 +132,9 @@ impl ReleaseEvent {
     /// built downstream (deterministically from this intent), so agreeing on the
     /// intent fixes what gets signed.
     pub fn canonical_id(&self, genesis: [u8; 32]) -> Vec<u8> {
-        let mut v = Vec::with_capacity(GW_INPUT_SIG.len() + 32 + 32 + 4 + 8 + 16 + self.beldex_recipient.len());
+        let mut v = Vec::with_capacity(
+            GW_INPUT_SIG.len() + 32 + 32 + 4 + 8 + 16 + self.beldex_recipient.len(),
+        );
         v.extend_from_slice(GW_INPUT_SIG);
         v.extend_from_slice(&genesis);
         v.extend_from_slice(&self.evm_txid);
@@ -210,7 +212,10 @@ pub struct Tracker<E> {
 
 impl<E: Clone> Tracker<E> {
     pub fn new(required_confs: u64) -> Tracker<E> {
-        Tracker { pending: Vec::new(), required_confs }
+        Tracker {
+            pending: Vec::new(),
+            required_confs,
+        }
     }
 
     /// Record a freshly-seen observation (idempotence is the caller's concern).
@@ -268,7 +273,9 @@ pub struct MemberWatch {
 
 impl MemberWatch {
     pub fn new() -> MemberWatch {
-        MemberWatch { finalized_ids: BTreeSet::new() }
+        MemberWatch {
+            finalized_ids: BTreeSet::new(),
+        }
     }
 
     /// Mark a canonical id as independently finalized by this member.
@@ -311,7 +318,14 @@ mod tests {
     use super::*;
 
     fn mint(amount: u128) -> MintEvent {
-        MintEvent { beldex_txid: [0xab; 32], output_index: 0, dst_chain: ChainId(1), key_epoch: 1, to: [0x11; 20], amount }
+        MintEvent {
+            beldex_txid: [0xab; 32],
+            output_index: 0,
+            dst_chain: ChainId(1),
+            key_epoch: 1,
+            to: [0x11; 20],
+            amount,
+        }
     }
 
     #[test]
@@ -350,9 +364,9 @@ mod tests {
         assert_eq!(
             digest,
             [
-                0x34, 0x20, 0xcc, 0xd3, 0xb8, 0x9e, 0xd0, 0xc0, 0x0a, 0x28, 0x24, 0x0f,
-                0xdb, 0x5a, 0xe0, 0xbc, 0xac, 0xd7, 0x64, 0x87, 0x84, 0x8a, 0x96, 0x67,
-                0x73, 0x3c, 0xfb, 0x6f, 0x62, 0xa1, 0x8c, 0x21,
+                0x34, 0x20, 0xcc, 0xd3, 0xb8, 0x9e, 0xd0, 0xc0, 0x0a, 0x28, 0x24, 0x0f, 0xdb, 0x5a,
+                0xe0, 0xbc, 0xac, 0xd7, 0x64, 0x87, 0x84, 0x8a, 0x96, 0x67, 0x73, 0x3c, 0xfb, 0x6f,
+                0x62, 0xa1, 0x8c, 0x21,
             ]
         );
     }
@@ -365,7 +379,10 @@ mod tests {
     fn mint_tag_is_keccak_of_the_domain_string() {
         use sha3::{Digest, Keccak256};
         let expected: [u8; 32] = Keccak256::digest(b"BELDEX_BRIDGE_MINT_V2").into();
-        assert_eq!(MINT_TAG, expected, "MINT_TAG must be keccak256 of the domain string");
+        assert_eq!(
+            MINT_TAG, expected,
+            "MINT_TAG must be keccak256 of the domain string"
+        );
     }
 
     #[test]
@@ -382,31 +399,49 @@ mod tests {
     #[test]
     fn release_canonical_is_genesis_bound() {
         let e = ReleaseEvent {
-            evm_txid: [0x01; 32], log_index: 0,
+            evm_txid: [0x01; 32],
+            log_index: 0,
             chain: ChainId(1),
             amount: 500,
             beldex_recipient: b"bxRecipient".to_vec(),
         };
         let g1 = e.canonical_id([0xaa; 32]);
         let g2 = e.canonical_id([0xbb; 32]);
-        assert_ne!(g1, g2, "different genesis → different id (S6/S14, no cross-net replay)");
+        assert_ne!(
+            g1, g2,
+            "different genesis → different id (S6/S14, no cross-net replay)"
+        );
         assert!(g1.starts_with(GW_INPUT_SIG));
     }
 
     #[test]
     fn finality_gate_pending_final_dropped() {
         // required 12 confs, included at height 100.
-        assert_eq!(FinalityGate::classify(100, true, 105, 12), Finality::Pending);
+        assert_eq!(
+            FinalityGate::classify(100, true, 105, 12),
+            Finality::Pending
+        );
         assert_eq!(FinalityGate::classify(100, true, 112, 12), Finality::Final);
         // reorged away (not canonical) → dropped, even if deep enough.
-        assert_eq!(FinalityGate::classify(100, false, 200, 12), Finality::Dropped);
+        assert_eq!(
+            FinalityGate::classify(100, false, 200, 12),
+            Finality::Dropped
+        );
     }
 
     #[test]
     fn tracker_finalizes_deep_and_drops_reorged() {
         let mut t: Tracker<MintEvent> = Tracker::new(12);
-        t.observe(Observation { event: mint(1), inclusion_height: 100, block_hash: [1; 32] });
-        t.observe(Observation { event: mint(2), inclusion_height: 100, block_hash: [2; 32] });
+        t.observe(Observation {
+            event: mint(1),
+            inclusion_height: 100,
+            block_hash: [1; 32],
+        });
+        t.observe(Observation {
+            event: mint(2),
+            inclusion_height: 100,
+            block_hash: [2; 32],
+        });
 
         // Tip at 105: nothing deep enough yet.
         let u = t.poll(105, |_, _| true);
@@ -471,14 +506,8 @@ mod tests {
 
         // One member's local session view (member 0), driven by every member's
         // watcher decision (as their Ack/Nack frames arrive).
-        let mut session = Session::start(
-            &committee(n, t),
-            Leg::Pevm,
-            proposal.clone(),
-            [9u8; 32],
-            0,
-        )
-        .unwrap();
+        let mut session =
+            Session::start(&committee(n, t), Leg::Pevm, proposal.clone(), [9u8; 32], 0).unwrap();
         assert_eq!(session.stage(), Stage::Consensus);
 
         // Feed each member's decision; once the quorum advances past Consensus,
@@ -497,7 +526,11 @@ mod tests {
             }
         }
         assert_eq!(acks, 4, "the four honest observers ACK");
-        assert_eq!(session.stage(), Stage::Sign, "honest t ACKs → advance to Sign");
+        assert_eq!(
+            session.stage(),
+            Stage::Sign,
+            "honest t ACKs → advance to Sign"
+        );
     }
 
     /// If a leader proposes an event too few members observed (e.g. fabricated or
@@ -515,14 +548,24 @@ mod tests {
             m.mark_final(real.clone());
         }
 
-        let mut session =
-            Session::start(&committee(n, t), Leg::Pevm, fabricated.clone(), [9u8; 32], 0).unwrap();
+        let mut session = Session::start(
+            &committee(n, t),
+            Leg::Pevm,
+            fabricated.clone(),
+            [9u8; 32],
+            0,
+        )
+        .unwrap();
         for (idx, m) in members.iter().enumerate() {
             let _ = match m.decide(&fabricated) {
                 ProposalDecision::Ack => session.on_ack(idx),
                 ProposalDecision::Nack(r) => session.on_nack(idx, r),
             };
         }
-        assert_ne!(session.stage(), Stage::Sign, "a fabricated payload is never signed");
+        assert_ne!(
+            session.stage(),
+            Stage::Sign,
+            "a fabricated payload is never signed"
+        );
     }
 }

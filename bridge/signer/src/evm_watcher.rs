@@ -86,7 +86,9 @@ pub trait JsonRpcClient {
 // ---- hex helpers (std-only) ------------------------------------------------
 
 fn strip0x(s: &str) -> &str {
-    s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s)
+    s.strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .unwrap_or(s)
 }
 
 fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
@@ -142,14 +144,24 @@ pub fn decode_redeem_log(
     chain: ChainId,
     contract: [u8; 20],
 ) -> Result<Observation<ReleaseEvent>, DecodeError> {
-    let field = |k: &'static str| log.get(k).and_then(Value::as_str).ok_or(DecodeError::MissingField(k));
+    let field = |k: &'static str| {
+        log.get(k)
+            .and_then(Value::as_str)
+            .ok_or(DecodeError::MissingField(k))
+    };
 
     let addr = hex_to_bytes(field("address")?).ok_or(DecodeError::BadHex)?;
     if addr != contract {
         return Err(DecodeError::ForeignContract);
     }
-    let topics = log.get("topics").and_then(Value::as_array).ok_or(DecodeError::MissingField("topics"))?;
-    let t0 = topics.first().and_then(Value::as_str).ok_or(DecodeError::MissingField("topics[0]"))?;
+    let topics = log
+        .get("topics")
+        .and_then(Value::as_array)
+        .ok_or(DecodeError::MissingField("topics"))?;
+    let t0 = topics
+        .first()
+        .and_then(Value::as_str)
+        .ok_or(DecodeError::MissingField("topics[0]"))?;
     if hex_to_fixed32(t0).ok_or(DecodeError::BadHex)? != redeem_topic0() {
         return Err(DecodeError::WrongTopic);
     }
@@ -174,10 +186,19 @@ pub fn decode_redeem_log(
     let amount = u128::from_be_bytes(data[16..32].try_into().unwrap());
     // recipient length (low 8 bytes of the 3rd word) then the bytes.
     let len = u64::from_be_bytes(data[88..96].try_into().unwrap()) as usize;
-    let recipient = data.get(96..96 + len).ok_or(DecodeError::MissingField("recipient"))?.to_vec();
+    let recipient = data
+        .get(96..96 + len)
+        .ok_or(DecodeError::MissingField("recipient"))?
+        .to_vec();
 
     Ok(Observation {
-        event: ReleaseEvent { evm_txid, log_index, chain, amount, beldex_recipient: recipient },
+        event: ReleaseEvent {
+            evm_txid,
+            log_index,
+            chain,
+            amount,
+            beldex_recipient: recipient,
+        },
         inclusion_height,
         block_hash,
     })
@@ -185,10 +206,18 @@ pub fn decode_redeem_log(
 
 /// Decode an `eth_getLogs` result array, skipping any entry that does not decode as
 /// one of this contract's burn events (robust: a stray log never aborts a scan).
-pub fn decode_get_logs(result: &Value, chain: ChainId, contract: [u8; 20]) -> Vec<Observation<ReleaseEvent>> {
+pub fn decode_get_logs(
+    result: &Value,
+    chain: ChainId,
+    contract: [u8; 20],
+) -> Vec<Observation<ReleaseEvent>> {
     result
         .as_array()
-        .map(|arr| arr.iter().filter_map(|l| decode_redeem_log(l, chain, contract).ok()).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|l| decode_redeem_log(l, chain, contract).ok())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -218,20 +247,33 @@ pub fn decode_rotated_log(
     chain: ChainId,
     contract: [u8; 20],
 ) -> Result<Observation<RotationEvent>, DecodeError> {
-    let field = |k: &'static str| log.get(k).and_then(Value::as_str).ok_or(DecodeError::MissingField(k));
+    let field = |k: &'static str| {
+        log.get(k)
+            .and_then(Value::as_str)
+            .ok_or(DecodeError::MissingField(k))
+    };
 
     let addr = hex_to_bytes(field("address")?).ok_or(DecodeError::BadHex)?;
     if addr != contract {
         return Err(DecodeError::ForeignContract);
     }
-    let topics = log.get("topics").and_then(Value::as_array).ok_or(DecodeError::MissingField("topics"))?;
-    let t0 = topics.first().and_then(Value::as_str).ok_or(DecodeError::MissingField("topics[0]"))?;
+    let topics = log
+        .get("topics")
+        .and_then(Value::as_array)
+        .ok_or(DecodeError::MissingField("topics"))?;
+    let t0 = topics
+        .first()
+        .and_then(Value::as_str)
+        .ok_or(DecodeError::MissingField("topics[0]"))?;
     if hex_to_fixed32(t0).ok_or(DecodeError::BadHex)? != rotated_topic0() {
         return Err(DecodeError::WrongTopic);
     }
 
     // topics[1] = indexed newSigner (address in the low 20 bytes; high 12 must be zero).
-    let t1 = topics.get(1).and_then(Value::as_str).ok_or(DecodeError::MissingField("topics[1]"))?;
+    let t1 = topics
+        .get(1)
+        .and_then(Value::as_str)
+        .ok_or(DecodeError::MissingField("topics[1]"))?;
     let t1b = hex_to_fixed32(t1).ok_or(DecodeError::BadHex)?;
     if t1b[0..12].iter().any(|&b| b != 0) {
         return Err(DecodeError::BadHex);
@@ -254,17 +296,30 @@ pub fn decode_rotated_log(
     let key_epoch = u64::from_be_bytes(data[24..32].try_into().unwrap());
 
     Ok(Observation {
-        event: RotationEvent { evm_txid, chain, key_epoch, new_signer },
+        event: RotationEvent {
+            evm_txid,
+            chain,
+            key_epoch,
+            new_signer,
+        },
         inclusion_height,
         block_hash,
     })
 }
 
 /// Decode an `eth_getLogs` result array of `Rotated` logs, skipping non-matching entries.
-pub fn decode_rotated_logs(result: &Value, chain: ChainId, contract: [u8; 20]) -> Vec<Observation<RotationEvent>> {
+pub fn decode_rotated_logs(
+    result: &Value,
+    chain: ChainId,
+    contract: [u8; 20],
+) -> Vec<Observation<RotationEvent>> {
     result
         .as_array()
-        .map(|arr| arr.iter().filter_map(|l| decode_rotated_log(l, chain, contract).ok()).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|l| decode_rotated_log(l, chain, contract).ok())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -281,7 +336,13 @@ pub struct EvmWatcher<C: JsonRpcClient> {
 }
 
 impl<C: JsonRpcClient> EvmWatcher<C> {
-    pub fn new(client: C, chain: ChainId, contract: [u8; 20], confirmations: u64, start_block: u64) -> Self {
+    pub fn new(
+        client: C,
+        chain: ChainId,
+        contract: [u8; 20],
+        confirmations: u64,
+        start_block: u64,
+    ) -> Self {
         EvmWatcher {
             client,
             chain,
@@ -313,11 +374,17 @@ impl<C: JsonRpcClient> EvmWatcher<C> {
     /// The current canonical block hash at `height`, or `None` if that height is not
     /// (yet / any longer) on chain.
     fn block_hash_at(&self, height: u64) -> Result<Option<[u8; 32]>, RpcError> {
-        let v = self.client.call("eth_getBlockByNumber", json!([to_hex_quantity(height), false]))?;
+        let v = self.client.call(
+            "eth_getBlockByNumber",
+            json!([to_hex_quantity(height), false]),
+        )?;
         if v.is_null() {
             return Ok(None);
         }
-        let h = v.get("hash").and_then(Value::as_str).ok_or_else(|| RpcError::BadResponse("block.hash".into()))?;
+        let h = v
+            .get("hash")
+            .and_then(Value::as_str)
+            .ok_or_else(|| RpcError::BadResponse("block.hash".into()))?;
         Ok(hex_to_fixed32(h))
     }
 
@@ -337,13 +404,20 @@ impl<C: JsonRpcClient> EvmWatcher<C> {
 
         // Pre-fetch the current hash at each pending inclusion height (so `poll`'s
         // canonical check reads a map, not `self` — no borrow tangle).
-        let heights: BTreeSet<u64> = self.tracker.pending().iter().map(|o| o.inclusion_height).collect();
+        let heights: BTreeSet<u64> = self
+            .tracker
+            .pending()
+            .iter()
+            .map(|o| o.inclusion_height)
+            .collect();
         let mut current: BTreeMap<u64, Option<[u8; 32]>> = BTreeMap::new();
         for h in heights {
             current.insert(h, self.block_hash_at(h)?);
         }
 
-        Ok(self.tracker.poll(tip, |h, hash| current.get(&h).copied().flatten() == Some(*hash)))
+        Ok(self.tracker.poll(tip, |h, hash| {
+            current.get(&h).copied().flatten() == Some(*hash)
+        }))
     }
 
     pub fn chain(&self) -> ChainId {
@@ -352,6 +426,18 @@ impl<C: JsonRpcClient> EvmWatcher<C> {
 
     pub fn pending_len(&self) -> usize {
         self.tracker.pending_len()
+    }
+
+    /// Earliest block that must be rescanned after a crash. Pending observations are
+    /// intentionally replayed because their in-memory canonicality anchors are not yet
+    /// durable; finalized work is reconciled against chain replay guards by the caller.
+    pub fn durable_resume_block(&self) -> u64 {
+        self.tracker
+            .pending()
+            .iter()
+            .map(|o| o.inclusion_height)
+            .min()
+            .unwrap_or(self.next_scan)
     }
 }
 
@@ -365,7 +451,10 @@ pub struct HttpJsonRpc {
 #[cfg(feature = "evm-watcher-http")]
 impl HttpJsonRpc {
     pub fn new(url: impl Into<String>) -> HttpJsonRpc {
-        HttpJsonRpc { url: url.into(), id: std::cell::Cell::new(1) }
+        HttpJsonRpc {
+            url: url.into(),
+            id: std::cell::Cell::new(1),
+        }
     }
 }
 
@@ -378,14 +467,22 @@ impl JsonRpcClient for HttpJsonRpc {
         let resp = ureq::post(&self.url)
             .send_json(req)
             .map_err(|e| RpcError::Transport(e.to_string()))?;
-        let v: Value = resp.into_json().map_err(|e| RpcError::BadResponse(e.to_string()))?;
+        let v: Value = resp
+            .into_json()
+            .map_err(|e| RpcError::BadResponse(e.to_string()))?;
         if let Some(err) = v.get("error") {
             return Err(RpcError::Rpc {
                 code: err.get("code").and_then(Value::as_i64).unwrap_or(0),
-                message: err.get("message").and_then(Value::as_str).unwrap_or_default().to_string(),
+                message: err
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
             });
         }
-        v.get("result").cloned().ok_or_else(|| RpcError::BadResponse("missing result".into()))
+        v.get("result")
+            .cloned()
+            .ok_or_else(|| RpcError::BadResponse("missing result".into()))
     }
 }
 
@@ -436,29 +533,53 @@ fn value_to_u128(v: Option<&Value>) -> Option<u128> {
 /// (`per_tx_max`/`per_epoch_cap` may be strings or numbers; `start_block` optional).
 pub fn parse_evm_chains(json: &str) -> Result<Vec<EvmChainConfig>, String> {
     let v: Value = serde_json::from_str(json).map_err(|e| format!("EVM chains JSON: {e}"))?;
-    let arr = v.as_array().ok_or("EVM chains config must be a JSON array")?;
+    let arr = v
+        .as_array()
+        .ok_or("EVM chains config must be a JSON array")?;
     let mut out = Vec::with_capacity(arr.len());
     for (i, row) in arr.iter().enumerate() {
         let miss = |f: &str| format!("chain[{i}]: missing/invalid `{f}`");
 
-        let chain_id = row.get("chain_id").and_then(Value::as_u64).ok_or_else(|| miss("chain_id"))?;
-        let contract_hex = row.get("contract").and_then(Value::as_str).ok_or_else(|| miss("contract"))?;
+        let chain_id = row
+            .get("chain_id")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| miss("chain_id"))?;
+        let contract_hex = row
+            .get("contract")
+            .and_then(Value::as_str)
+            .ok_or_else(|| miss("contract"))?;
         let contract_bytes = hex_to_bytes(contract_hex).ok_or_else(|| miss("contract (hex)"))?;
         if contract_bytes.len() != 20 {
             return Err(format!("chain[{i}]: `contract` must be 20 bytes"));
         }
         let mut contract = [0u8; 20];
         contract.copy_from_slice(&contract_bytes);
-        let key_epoch = row.get("key_epoch").and_then(Value::as_u64).filter(|e| *e != 0)
+        let key_epoch = row
+            .get("key_epoch")
+            .and_then(Value::as_u64)
+            .filter(|e| *e != 0)
             .ok_or_else(|| miss("key_epoch (non-zero)"))?;
-        let confirmations = row.get("confirmations").and_then(Value::as_u64).ok_or_else(|| miss("confirmations"))?;
-        let rpc_url = row.get("rpc").and_then(Value::as_str).ok_or_else(|| miss("rpc"))?.to_string();
+        let confirmations = row
+            .get("confirmations")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| miss("confirmations"))?;
+        let rpc_url = row
+            .get("rpc")
+            .and_then(Value::as_str)
+            .ok_or_else(|| miss("rpc"))?
+            .to_string();
         let per_tx_max = value_to_u128(row.get("per_tx_max")).ok_or_else(|| miss("per_tx_max"))?;
-        let per_epoch_cap = value_to_u128(row.get("per_epoch_cap")).ok_or_else(|| miss("per_epoch_cap"))?;
+        let per_epoch_cap =
+            value_to_u128(row.get("per_epoch_cap")).ok_or_else(|| miss("per_epoch_cap"))?;
         let start_block = row.get("start_block").and_then(Value::as_u64).unwrap_or(0);
-        if chain_id == 0 || confirmations == 0 || rpc_url.trim().is_empty() || per_tx_max == 0
-            || per_epoch_cap == 0 || per_tx_max > per_epoch_cap
-            || per_tx_max > u128::from(u64::MAX) || per_epoch_cap > u128::from(u64::MAX)
+        if chain_id == 0
+            || confirmations == 0
+            || rpc_url.trim().is_empty()
+            || per_tx_max == 0
+            || per_epoch_cap == 0
+            || per_tx_max > per_epoch_cap
+            || per_tx_max > u128::from(u64::MAX)
+            || per_epoch_cap > u128::from(u64::MAX)
         {
             return Err(format!(
                 "chain[{i}]: require non-zero chain_id/confirmations/caps, non-empty rpc, per_tx_max <= per_epoch_cap, and native-u64-sized caps"
@@ -483,13 +604,51 @@ pub fn parse_evm_chains(json: &str) -> Result<Vec<EvmChainConfig>, String> {
 pub fn build_registry(configs: &[EvmChainConfig]) -> Result<ChainRegistry, String> {
     let mut reg = ChainRegistry::new();
     for c in configs {
-        reg.add(c.to_chain_row()).map_err(|e| format!("chain {}: {e:?}", c.chain_id))?;
+        reg.add(c.to_chain_row())
+            .map_err(|e| format!("chain {}: {e:?}", c.chain_id))?;
     }
     Ok(reg)
 }
 
 #[cfg(feature = "evm-watcher-http")]
 impl EvmChainConfig {
+    /// Identify the RPC implementation before enabling value-moving release duties. Local
+    /// test nodes such as Anvil expose arbitrary snapshot/revert controls, so callers can
+    /// fail closed unless an operator explicitly acknowledges that trust model.
+    pub fn rpc_client_version(&self) -> Result<String, String> {
+        let rpc = HttpJsonRpc::new(self.rpc_url.clone());
+        rpc.call("web3_clientVersion", json!([]))
+            .map_err(|e| format!("chain {} web3_clientVersion: {e:?}", self.chain_id))?
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                format!(
+                    "chain {} returned invalid web3_clientVersion",
+                    self.chain_id
+                )
+            })
+    }
+
+    pub fn total_supply(&self) -> Result<u128, String> {
+        let rpc = HttpJsonRpc::new(self.rpc_url.clone());
+        let result = rpc
+            .call(
+                "eth_call",
+                json!([{"to": to_hex_bytes(&self.contract), "data": "0x18160ddd"}, "latest"]),
+            )
+            .map_err(|e| format!("chain {} eth_call totalSupply: {e:?}", self.chain_id))?;
+        let bytes = result
+            .as_str()
+            .and_then(hex_to_bytes)
+            .ok_or_else(|| format!("chain {} invalid totalSupply result", self.chain_id))?;
+        if bytes.len() != 32 || bytes[..16].iter().any(|b| *b != 0) {
+            return Err(format!("chain {} totalSupply exceeds u128", self.chain_id));
+        }
+        Ok(u128::from_be_bytes(
+            bytes[16..].try_into().expect("length checked"),
+        ))
+    }
+
     /// Fail-closed startup parity check against the deployed `WrappedBDX`.
     pub fn validate_contract(&self) -> Result<(), String> {
         let rpc = HttpJsonRpc::new(self.rpc_url.clone());
@@ -525,9 +684,14 @@ impl EvmChainConfig {
                 .and_then(hex_to_bytes)
                 .ok_or_else(|| format!("chain {} invalid eth_call result", self.chain_id))?;
             if bytes.len() != 32 || bytes[..16].iter().any(|b| *b != 0) {
-                return Err(format!("chain {} uint256 result exceeds u128", self.chain_id));
+                return Err(format!(
+                    "chain {} uint256 result exceeds u128",
+                    self.chain_id
+                ));
             }
-            Ok(u128::from_be_bytes(bytes[16..].try_into().expect("length checked")))
+            Ok(u128::from_be_bytes(
+                bytes[16..].try_into().expect("length checked"),
+            ))
         };
         let tag = rpc
             .call(
@@ -539,7 +703,10 @@ impl EvmChainConfig {
             .and_then(hex_to_fixed32)
             .ok_or_else(|| format!("chain {} returned invalid MINT_TAG", self.chain_id))?;
         if tag != crate::watch::MINT_TAG {
-            return Err(format!("chain {} contract does not expose BELDEX_BRIDGE_MINT_V2", self.chain_id));
+            return Err(format!(
+                "chain {} contract does not expose BELDEX_BRIDGE_MINT_V2",
+                self.chain_id
+            ));
         }
         let epoch = read_u128("0x6fdf657e")?;
         let per_tx = read_u128("0x89fbcc98")?;
@@ -557,7 +724,10 @@ impl EvmChainConfig {
                 self.chain_id, self.per_tx_max, self.per_epoch_cap, per_tx, window_cap
             ));
         }
-        if window_cap.checked_mul(2).is_none_or(|needed| bond_limit < needed) {
+        if window_cap
+            .checked_mul(2)
+            .is_none_or(|needed| bond_limit < needed)
+        {
             return Err(format!(
                 "chain {} contract bond limit {} does not cover 2x window cap {}",
                 self.chain_id, bond_limit, window_cap
@@ -601,7 +771,13 @@ mod tests {
         to_hex_bytes(&d)
     }
 
-    fn burn_log(block: u64, block_hash: [u8; 32], txid: [u8; 32], amount: u128, recipient: &[u8]) -> Value {
+    fn burn_log(
+        block: u64,
+        block_hash: [u8; 32],
+        txid: [u8; 32],
+        amount: u128,
+        recipient: &[u8],
+    ) -> Value {
         burn_log_at(block, block_hash, txid, 0, amount, recipient)
     }
 
@@ -631,11 +807,17 @@ mod tests {
     fn two_burns_in_one_tx_decode_distinctly() {
         let txid = [0xAA; 32];
         let a = decode_redeem_log(
-            &burn_log_at(10, [0xBB; 32], txid, 0, 500, b"bxALICE"), ChainId(1), [0x22; 20]
-        ).expect("first burn");
+            &burn_log_at(10, [0xBB; 32], txid, 0, 500, b"bxALICE"),
+            ChainId(1),
+            [0x22; 20],
+        )
+        .expect("first burn");
         let b = decode_redeem_log(
-            &burn_log_at(10, [0xBB; 32], txid, 1, 800, b"bxBOB"), ChainId(1), [0x22; 20]
-        ).expect("second burn");
+            &burn_log_at(10, [0xBB; 32], txid, 1, 800, b"bxBOB"),
+            ChainId(1),
+            [0x22; 20],
+        )
+        .expect("second burn");
 
         assert_eq!(a.event.evm_txid, b.event.evm_txid, "same transaction");
         assert_eq!(a.event.log_index, 0);
@@ -643,7 +825,10 @@ mod tests {
         assert_ne!(a.event, b.event, "distinct burns");
         // The bytes the committee agrees on must differ, or one signature would
         // authorize the other withdrawal.
-        assert_ne!(a.event.canonical_id([7u8; 32]), b.event.canonical_id([7u8; 32]));
+        assert_ne!(
+            a.event.canonical_id([7u8; 32]),
+            b.event.canonical_id([7u8; 32])
+        );
     }
 
     /// A log with no `logIndex` is refused rather than assumed to be index 0 — guessing
@@ -709,16 +894,28 @@ mod tests {
     #[test]
     fn decode_rejects_foreign_contract_and_wrong_topic() {
         let log = burn_log(100, [0xAA; 32], [1; 32], 1, b"x");
-        assert_eq!(decode_redeem_log(&log, ChainId(1), [0x99; 20]), Err(DecodeError::ForeignContract));
+        assert_eq!(
+            decode_redeem_log(&log, ChainId(1), [0x99; 20]),
+            Err(DecodeError::ForeignContract)
+        );
 
         let mut bad_topic = log.clone();
         bad_topic["topics"][0] = json!(to_hex_bytes(&[0xde; 32]));
-        assert_eq!(decode_redeem_log(&bad_topic, ChainId(1), [0x22; 20]), Err(DecodeError::WrongTopic));
+        assert_eq!(
+            decode_redeem_log(&bad_topic, ChainId(1), [0x22; 20]),
+            Err(DecodeError::WrongTopic)
+        );
     }
 
     /// A `Rotated(address indexed newSigner, uint64 newKeyEpoch)` log (H.6.3): newSigner
     /// in topic1 (right-aligned), newKeyEpoch as the single data word.
-    fn rotated_log(block: u64, block_hash: [u8; 32], txid: [u8; 32], new_signer: [u8; 20], key_epoch: u64) -> Value {
+    fn rotated_log(
+        block: u64,
+        block_hash: [u8; 32],
+        txid: [u8; 32],
+        new_signer: [u8; 20],
+        key_epoch: u64,
+    ) -> Value {
         let mut signer_topic = [0u8; 32];
         signer_topic[12..].copy_from_slice(&new_signer);
         let mut data = [0u8; 32];
@@ -749,13 +946,22 @@ mod tests {
     #[test]
     fn decode_rotation_rejects_foreign_contract_and_wrong_topic() {
         let log = rotated_log(200, [0xBB; 32], [2; 32], [0xCD; 20], 7);
-        assert_eq!(decode_rotated_log(&log, ChainId(1), [0x99; 20]), Err(DecodeError::ForeignContract));
+        assert_eq!(
+            decode_rotated_log(&log, ChainId(1), [0x99; 20]),
+            Err(DecodeError::ForeignContract)
+        );
 
         // A burn log must not decode as a rotation (topic0 differs).
         let burn = burn_log(100, [0xAA; 32], [1; 32], 1, b"x");
-        assert_eq!(decode_rotated_log(&burn, ChainId(1), [0x22; 20]), Err(DecodeError::WrongTopic));
+        assert_eq!(
+            decode_rotated_log(&burn, ChainId(1), [0x22; 20]),
+            Err(DecodeError::WrongTopic)
+        );
         // ...and vice-versa.
-        assert_eq!(decode_redeem_log(&log, ChainId(1), [0x22; 20]), Err(DecodeError::WrongTopic));
+        assert_eq!(
+            decode_redeem_log(&log, ChainId(1), [0x22; 20]),
+            Err(DecodeError::WrongTopic)
+        );
     }
 
     #[test]
@@ -813,11 +1019,15 @@ mod tests {
     #[test]
     fn config_errors_are_specific() {
         assert!(parse_evm_chains("not json").is_err());
-        assert!(parse_evm_chains(r#"{"chain_id":1}"#).unwrap_err().contains("array"));
+        assert!(parse_evm_chains(r#"{"chain_id":1}"#)
+            .unwrap_err()
+            .contains("array"));
         let bad_addr = r#"[{"chain_id":1,"contract":"0x1234","confirmations":1,"rpc":"x","per_tx_max":"1","per_epoch_cap":"1"}]"#;
         assert!(parse_evm_chains(bad_addr).unwrap_err().contains("20 bytes"));
         let missing = r#"[{"chain_id":1,"contract":"0x2222222222222222222222222222222222222222","key_epoch":1,"rpc":"x","per_tx_max":"1","per_epoch_cap":"1"}]"#;
-        assert!(parse_evm_chains(missing).unwrap_err().contains("confirmations"));
+        assert!(parse_evm_chains(missing)
+            .unwrap_err()
+            .contains("confirmations"));
         // A duplicate chain id is rejected at registry build.
         let dup = r#"[
             {"chain_id":1,"contract":"0x2222222222222222222222222222222222222222","key_epoch":1,"confirmations":1,"rpc":"a","per_tx_max":"1","per_epoch_cap":"1"},

@@ -18,8 +18,8 @@
 //! if the pinned version's API differs at the margins, adjust here — it is
 //! isolated behind the feature, exactly like `cggmp21_interop`.
 
-use crate::dkg::{DkgSession, DkgStage, DkgLeg};
 use crate::committee::CommitteeView;
+use crate::dkg::{DkgLeg, DkgSession, DkgStage};
 use crate::ffi::{ed25519_verify_consensus, ensure_init};
 use crate::share_store::{MemoryShareStore, ShareStore};
 use frost_ed25519 as frost;
@@ -59,8 +59,11 @@ fn run_frost_dkg(
     for i in 0..n {
         let me = id(i);
         // Others' round-1 packages (never one's own).
-        let others: BTreeMap<Id, _> =
-            r1_pkg.iter().filter(|(k, _)| **k != me).map(|(k, v)| (*k, v.clone())).collect();
+        let others: BTreeMap<Id, _> = r1_pkg
+            .iter()
+            .filter(|(k, _)| **k != me)
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
         let secret = r1_secret.remove(&me).unwrap();
         let (s2, out) = frost::keys::dkg::part2(secret, &others).expect("dkg part2");
         r2_secret.insert(me, s2);
@@ -73,13 +76,21 @@ fn run_frost_dkg(
     let mut pub_package = None;
     for i in 0..n {
         let me = id(i);
-        let others_r1: BTreeMap<Id, _> =
-            r1_pkg.iter().filter(|(k, _)| **k != me).map(|(k, v)| (*k, v.clone())).collect();
+        let others_r1: BTreeMap<Id, _> = r1_pkg
+            .iter()
+            .filter(|(k, _)| **k != me)
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
         // Packages addressed to me = for each other j, r2_out[j][me].
         let to_me: BTreeMap<Id, _> = r2_out
             .iter()
             .filter(|(k, _)| **k != me)
-            .map(|(j, out)| (*j, out.get(&me).expect("round2 pkg addressed to me").clone()))
+            .map(|(j, out)| {
+                (
+                    *j,
+                    out.get(&me).expect("round2 pkg addressed to me").clone(),
+                )
+            })
             .collect();
         let (kp, pp) =
             frost::keys::dkg::part3(&r2_secret[&me], &others_r1, &to_me).expect("dkg part3");
@@ -92,7 +103,10 @@ fn run_frost_dkg(
     }
 
     let pp = pub_package.unwrap();
-    let vk_vec = pp.verifying_key().serialize().expect("serialize group verifying key");
+    let vk_vec = pp
+        .verifying_key()
+        .serialize()
+        .expect("serialize group verifying key");
     let mut vk = [0u8; 32];
     vk.copy_from_slice(&vk_vec);
     (key_packages, pp, vk)

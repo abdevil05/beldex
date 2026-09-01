@@ -39,7 +39,10 @@ pub struct MockSubmitter {
 
 impl MockSubmitter {
     pub fn new(tx_hash: impl Into<String>) -> MockSubmitter {
-        MockSubmitter { calls: std::cell::RefCell::new(Vec::new()), tx_hash: tx_hash.into() }
+        MockSubmitter {
+            calls: std::cell::RefCell::new(Vec::new()),
+            tx_hash: tx_hash.into(),
+        }
     }
 }
 
@@ -63,7 +66,8 @@ mod tests {
             key_epoch: 1,
             to: [0x11; 20],
             amount: 500,
-            beldex_txid: [0xcd; 32], output_index: 0,
+            beldex_txid: [0xcd; 32],
+            output_index: 0,
             sig: vec![0xab; 65],
         };
         let sub = MockSubmitter::new("0xdeadbeef");

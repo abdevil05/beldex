@@ -148,7 +148,15 @@ pub fn detect_frost_faulty(
         };
         // verify_signature_share lives in frost-core (generic over ciphersuite);
         // the frost-ed25519 wrapper does not re-export it.
-        if frost_core::verify_signature_share::<frost::Ed25519Sha512>(*id, vshare, share, signing_package, vk).is_err() {
+        if frost_core::verify_signature_share::<frost::Ed25519Sha512>(
+            *id,
+            vshare,
+            share,
+            signing_package,
+            vk,
+        )
+        .is_err()
+        {
             if let Some(idx) = index_of_id(*id, n) {
                 faulty.push(idx);
             }
@@ -206,7 +214,10 @@ pub struct SignedSlashReport {
 impl SignedSlashReport {
     /// Start an accusation from a report (no signatures yet).
     pub fn new(report: SlashReport) -> SignedSlashReport {
-        SignedSlashReport { report, accusers: Vec::new() }
+        SignedSlashReport {
+            report,
+            accusers: Vec::new(),
+        }
     }
 
     /// This node signs the report with its bridge-signer ed25519 secret and adds
@@ -349,7 +360,8 @@ mod tests {
         let signing_package = frost::SigningPackage::new(commitments, b"a release digest");
         let mut sig_shares = BTreeMap::new();
         for id in &signers {
-            let share = frost::round2::sign(&signing_package, &nonces[id], &key_packages[id]).unwrap();
+            let share =
+                frost::round2::sign(&signing_package, &nonces[id], &key_packages[id]).unwrap();
             sig_shares.insert(*id, share);
         }
 
@@ -377,8 +389,8 @@ mod tests {
         let (sp, pp, shares) = frost_session(n, t, Some(2));
         assert_eq!(detect_frost_faulty(n, &sp, &pp, &shares), vec![2]);
 
-        let report =
-            frost_slash_report(n, &sp, &pp, &shares, [9u8; 32], 2, 240).expect("a fault → a report");
+        let report = frost_slash_report(n, &sp, &pp, &shares, [9u8; 32], 2, 240)
+            .expect("a fault → a report");
         assert_eq!(report.accused_index, 2);
         assert_eq!(report.scheme, Scheme::Pgw);
         assert_eq!(report.failing_check, FailingCheck::InvalidSignatureShare);
@@ -436,7 +448,10 @@ mod tests {
         // Member 4 "accuses" but with member 5's key → invalid under member 4's pubkey.
         let sig = ed25519_sign_detached(&sks[5], &signed.report.canonical(&genesis)).unwrap();
         signed.accusers.push((4, sig));
-        assert!(!signed.verify(&committee, &genesis), "forged 4th signature does not count");
+        assert!(
+            !signed.verify(&committee, &genesis),
+            "forged 4th signature does not count"
+        );
     }
 
     #[test]
@@ -475,10 +490,20 @@ mod tests {
         // `beldexd` requires strictly-ascending accuser indices.
         let order: Vec<usize> = [0usize, 1, 3, 4]
             .iter()
-            .map(|i| json.find(&format!(r#""voter_index":{i},"#)).expect("accuser present"))
+            .map(|i| {
+                json.find(&format!(r#""voter_index":{i},"#))
+                    .expect("accuser present")
+            })
             .collect();
-        assert!(order.windows(2).all(|w| w[0] < w[1]), "accusers must be ascending: {json}");
-        assert_eq!(json.matches(r#""voter_index""#).count(), 4, "no duplicate accusers");
+        assert!(
+            order.windows(2).all(|w| w[0] < w[1]),
+            "accusers must be ascending: {json}"
+        );
+        assert_eq!(
+            json.matches(r#""voter_index""#).count(),
+            4,
+            "no duplicate accusers"
+        );
 
         // Scalar fields land in the shape the C++ intake parses.
         assert!(json.contains(r#""scheme":1"#));

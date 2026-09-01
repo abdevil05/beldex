@@ -26,8 +26,7 @@ security-critical logic that does *not* need the TSS crates:
 | `config` | — | service configuration + validation |
 | `committee` | S7/S11 | epoch/committee view mirrored from `beldexd`; reshare-overlap check |
 | `conformance` | **S10** | secp256k1 low-S normalisation; ed25519 canonical-S check |
-| `pool` | **S3** | bounded, single-use preprocessed-material pool (presig tuples / FROST nonces) |
-| `share_store` | **D.1** | non-exportable, versioned custody with epoch-consistent erasure |
+| `share_store` | **D.1** | test/dev blob-store interface with versioning and active-store erasure; production non-exportable adapter still required |
 | `transport` | **S4/S14** | session transport abstraction + per-leg namespacing |
 | `wire_auth` | **S4** | per-message ed25519 auth binding `WireMsg.from` to the sender's on-chain transport key (forgery-proof, attributable transcript) |
 | `health` | **B.8** | bridge-signer liveness/heartbeat status |
@@ -67,7 +66,7 @@ BRIDGE_SIGNER_GATEWAY_ID=1111111111111111111111111111111111111111111111111111111
 BRIDGE_SIGNER_SELF_MN_PUBKEY=abababababababababababababababababababababababababababababababab00
 BRIDGE_SIGNER_BRIDGE_EPOCH_BLOCKS=2880
 BRIDGE_SIGNER_COMMITTEE_THRESHOLD=14
-# optional: share_store (memory|vault|enclave), max_pool (<=128)
+# optional: share_store (memory|vault|enclave)
 ```
 
 Point at a different file with `BRIDGE_SIGNER_DOTENV=/path/to/file`. The `.env`

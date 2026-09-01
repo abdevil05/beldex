@@ -5,8 +5,8 @@
 #     runlog ./rotate-ceremony.sh --from 5     # resume after a failure, without re-DKG'ing
 #
 # Every one of the eight steps in ROTATION_RUNBOOK.md already has a script. What did not
-# exist until now is the ceremony: the thing that runs them in order, carries the 320- and
-# 384-character preimages between the two repos without a human retyping them, and leaves
+# exist until now is the ceremony: the thing that runs them in order, carries the 448- and
+# 512-character preimages between the two repos without a human retyping them, and leaves
 # one transcript behind. Both defects this project has hit in the rotation path so far —
 # the `mv` onto a non-existent shares dir, and the zsh no-match glob — happened at those
 # hand-run seams, not inside the bridge.
@@ -482,9 +482,9 @@ load_rotate_env() {
   OUTGOING="$(lc "$(envget "$f" OUTGOING_SIGNER)")"
   ROTATE_TIMELOCK="$(envget "$f" ROTATE_TIMELOCK)"
   [ -n "$ROTATE_PREIMAGE" ] && [ -n "$NEW_SIGNER" ] || fail "$f is missing ROTATE_PREIMAGE or NEW_SIGNER"
-  [ "${#ROTATE_PREIMAGE}" -eq 322 ] \
-    || fail "the rotation preimage in $f is $(( ${#ROTATE_PREIMAGE} - 2 )) hex chars, expected 320
-   (5 ABI words / 160 bytes). Re-run step 3."
+  [ "${#ROTATE_PREIMAGE}" -eq 450 ] \
+    || fail "the rotation preimage in $f is $(( ${#ROTATE_PREIMAGE} - 2 )) hex chars, expected 448
+   (7 ABI words / 224 bytes). Re-run step 3."
 }
 
 step3() {
@@ -497,7 +497,7 @@ step3() {
   load_rotate_env
   [ "$NEW_SIGNER" = "$SUCCESSOR" ] \
     || fail "rotate.env names $NEW_SIGNER as the successor, but step 2 probed $SUCCESSOR."
-  ok "preimage : 320 hex chars, digest $ROTATE_DIGEST"
+  ok "preimage : 448 hex chars, digest $ROTATE_DIGEST"
   ok "epoch    : $CUR_EPOCH -> $NEW_KEY_EPOCH, challenge window ${ROTATE_TIMELOCK}s"
   state_put ROTATE_DIGEST "$ROTATE_DIGEST"
   state_put NEW_KEY_EPOCH "$NEW_KEY_EPOCH"
@@ -748,9 +748,9 @@ step8() {
   digest="$(envget "$BRIDGE/devnet/mint2.env" DIGEST)"
   live="$(lc "$(envget "$BRIDGE/devnet/mint2.env" LIVE_SIGNER)")"
   retired="$(lc "$(envget "$BRIDGE/devnet/mint2.env" RETIRED_SIGNER)")"
-  [ "${#preimage}" -eq 386 ] \
-    || fail "the mint preimage is $(( ${#preimage} - 2 )) hex chars, expected 384 (6 ABI words)"
-  ok "one preimage, 384 hex chars, digest $digest"
+  [ "${#preimage}" -eq 514 ] \
+    || fail "the mint preimage is $(( ${#preimage} - 2 )) hex chars, expected 512 (8 ABI words)"
+  ok "one preimage, 512 hex chars, digest $digest"
 
   # Both committees sign the SAME preimage. That is the whole point: same tag, chain id,
   # contract, recipient, amount and txid, so the only variable between the accepted and the

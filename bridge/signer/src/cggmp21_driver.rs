@@ -52,14 +52,9 @@ const CGGMP_P2P: u8 = 2;
 /// cggmp21 sends each message once — so an unconnected peer would miss round 1).
 const CGGMP_HELLO: u8 = 9;
 
-/// A stable 32-byte DKG session tag so all nodes route this ceremony's frames to
-/// one session (leg `Pevm`, epoch ‖ key_generation).
+/// A domain-separated tag binding the fresh ceremony id, epoch and generation.
 fn payload_tag(epoch: u64, key_generation: u32) -> [u8; 32] {
-    let mut h = [0u8; 32];
-    h[0..8].copy_from_slice(&epoch.to_le_bytes());
-    h[8..12].copy_from_slice(&key_generation.to_le_bytes());
-    h[12] = 0x51; // 'Q' — distinguish from the Pgw tag namespace (belt-and-braces; leg already separates)
-    h
+    crate::dkg_tag::ceremony_tag(b"pevm", epoch, key_generation)
 }
 
 fn wire(epoch: u64, tag: [u8; 32], from: u16, kind: u8, msg_bytes: &[u8]) -> WireMsg {
@@ -117,8 +112,12 @@ pub fn run_cggmp21_keygen_over_transport<T: SessionTransport>(
             if w.leg != Leg::Pevm || w.epoch != epoch || w.payload_hash != tag {
                 continue;
             }
-            let SessionMsg::Round(payload) = &w.body else { continue };
-            let Some((kind, rest)) = payload.split_first() else { continue };
+            let SessionMsg::Round(payload) = &w.body else {
+                continue;
+            };
+            let Some((kind, rest)) = payload.split_first() else {
+                continue;
+            };
             if *kind == CGGMP_HELLO {
                 seen.insert(w.from);
             } else {
@@ -129,7 +128,9 @@ pub fn run_cggmp21_keygen_over_transport<T: SessionTransport>(
             break;
         }
         if Instant::now() >= barrier_deadline {
-            return Err(DriverError::Protocol("connection barrier timed out: peers unreachable".into()));
+            return Err(DriverError::Protocol(
+                "connection barrier timed out: peers unreachable".into(),
+            ));
         }
         std::thread::sleep(Duration::from_millis(150));
     }
@@ -205,8 +206,17 @@ pub fn run_cggmp21_keygen_over_transport<T: SessionTransport>(
     // ahead of us) so the protocol sees them as its first inbound messages.
     for (from, kind, bytes) in early.drain(..) {
         if let Ok(msg) = serde_json::from_slice::<KeygenMsg>(&bytes) {
-            let msg_type = if kind == CGGMP_BCAST { MessageType::Broadcast } else { MessageType::P2P };
-            let _ = in_tx.send(Incoming { id: next_id, sender: from, msg_type, msg });
+            let msg_type = if kind == CGGMP_BCAST {
+                MessageType::Broadcast
+            } else {
+                MessageType::P2P
+            };
+            let _ = in_tx.send(Incoming {
+                id: next_id,
+                sender: from,
+                msg_type,
+                msg,
+            });
             next_id += 1;
         }
     }
@@ -221,7 +231,8 @@ pub fn run_cggmp21_keygen_over_transport<T: SessionTransport>(
                     let _ = transport.broadcast(&wire(epoch, tag, self_index, CGGMP_BCAST, &bytes));
                 }
                 MessageDestination::OneParty(idx) => {
-                    let _ = transport.send_to(idx, &wire(epoch, tag, self_index, CGGMP_P2P, &bytes));
+                    let _ =
+                        transport.send_to(idx, &wire(epoch, tag, self_index, CGGMP_P2P, &bytes));
                 }
             }
         }
@@ -237,17 +248,28 @@ pub fn run_cggmp21_keygen_over_transport<T: SessionTransport>(
             if w.leg != Leg::Pevm || w.epoch != epoch || w.payload_hash != tag {
                 continue;
             }
-            let SessionMsg::Round(payload) = &w.body else { continue };
-            let Some((kind, msg_bytes)) = payload.split_first() else { continue };
+            let SessionMsg::Round(payload) = &w.body else {
+                continue;
+            };
+            let Some((kind, msg_bytes)) = payload.split_first() else {
+                continue;
+            };
             // A malformed frame (or a foreign message type) is dropped — never
             // aborts the ceremony.
-            let Ok(msg) = serde_json::from_slice::<KeygenMsg>(msg_bytes) else { continue };
+            let Ok(msg) = serde_json::from_slice::<KeygenMsg>(msg_bytes) else {
+                continue;
+            };
             let msg_type = if *kind == CGGMP_BCAST {
                 MessageType::Broadcast
             } else {
                 MessageType::P2P
             };
-            let incoming = Incoming { id: next_id, sender: w.from, msg_type, msg };
+            let incoming = Incoming {
+                id: next_id,
+                sender: w.from,
+                msg_type,
+                msg,
+            };
             next_id += 1;
             // If the protocol thread has ended, the receiver is gone — that's fine.
             let _ = in_tx.send(incoming);
@@ -305,7 +327,13 @@ pub mod live {
         timeout: Duration,
     ) -> Result<([u8; 33], Vec<u8>), DriverError> {
         let mut transport = assemble_mesh(committee, self_index, identity, peers, use_curve)?;
-        run_cggmp21_keygen_over_transport(committee, self_index, key_generation, &mut transport, timeout)
+        run_cggmp21_keygen_over_transport(
+            committee,
+            self_index,
+            key_generation,
+            &mut transport,
+            timeout,
+        )
     }
 }
 
@@ -353,10 +381,15 @@ mod tests {
     }
     impl SharedBus {
         fn new(n: u16) -> SharedBus {
-            SharedBus { inboxes: Arc::new((0..n).map(|_| Mutex::new(VecDeque::new())).collect()) }
+            SharedBus {
+                inboxes: Arc::new((0..n).map(|_| Mutex::new(VecDeque::new())).collect()),
+            }
         }
         fn endpoint(&self, me: u16) -> BusEndpoint {
-            BusEndpoint { bus: self.clone(), me }
+            BusEndpoint {
+                bus: self.clone(),
+                me,
+            }
         }
     }
     impl SessionTransport for BusEndpoint {
@@ -369,11 +402,17 @@ mod tests {
             Ok(())
         }
         fn send_to(&mut self, peer: u16, msg: &WireMsg) -> Result<(), MeshError> {
-            self.bus.inboxes[peer as usize].lock().unwrap().push_back(msg.clone());
+            self.bus.inboxes[peer as usize]
+                .lock()
+                .unwrap()
+                .push_back(msg.clone());
             Ok(())
         }
         fn poll(&mut self) -> Result<Option<WireMsg>, MeshError> {
-            Ok(self.bus.inboxes[self.me as usize].lock().unwrap().pop_front())
+            Ok(self.bus.inboxes[self.me as usize]
+                .lock()
+                .unwrap()
+                .pop_front())
         }
     }
 
@@ -401,10 +440,16 @@ mod tests {
             assert!(!blob.is_empty());
             xs.push(x33);
         }
-        assert!(xs.iter().all(|x| *x == xs[0]), "parties disagree on the group key");
+        assert!(
+            xs.iter().all(|x| *x == xs[0]),
+            "parties disagree on the group key"
+        );
         eprintln!(
             "OK: {t}-of-{n} cggmp21 keygen over the mesh agreed on wBDX signer 0x{}",
-            eth_addr(&xs[0]).iter().map(|b| format!("{b:02x}")).collect::<String>()
+            eth_addr(&xs[0])
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
         );
     }
 }

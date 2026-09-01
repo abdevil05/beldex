@@ -27,9 +27,6 @@
 //!   * [`conformance`]  — **S10** canonical-signature helpers: secp256k1 low-S
 //!                        normalisation (so `Pevm` output round-trips `ecrecover`)
 //!                        and ed25519 canonical-S checks (for `Pgw`).
-//!   * [`pool`]         — **S3** bounded, single-use preprocessed-material pool
-//!                        (CGGMP21 presignature tuples / FROST nonce pairs):
-//!                        consume-and-erase, erase-on-refresh, hard cap `L ≤ 128`.
 //!   * [`session`]      — **C.4** the signing-session state machine (Consensus →
 //!                        Sign → Distribute → Finalize) with a deterministic
 //!                        leader, timeout/retry with fault exclusion, transcript
@@ -57,7 +54,7 @@
 //!                        [`watch::ReleaseEvent`] with canonical digests, reorg-safe
 //!                        finality (S9), and per-member proposal agreement (E.4 → S4).
 //!
-//! The DKG, presigning and signing rounds themselves (C.2–C.5) integrate the
+//! The DKG and signing rounds themselves (C.2–C.5) integrate the
 //! audited crates and are **not** reimplemented here (**S12**); they slot onto
 //! these primitives once the `DUE_DILIGENCE.md` C.1 gate is closed.
 //!
@@ -66,11 +63,10 @@
 
 pub mod chain_registry;
 pub mod committee;
-pub mod conformance;
 pub mod config;
+pub mod conformance;
 pub mod dkg;
 pub mod health;
-pub mod pool;
 pub mod session;
 pub mod share_store;
 pub mod transport;
@@ -190,6 +186,8 @@ mod frost_sign;
 /// needs `omq-mesh` + `omq-client` (the `live-dkg` feature).
 #[cfg(feature = "tss-integration")]
 pub mod dkg_driver;
+#[cfg(feature = "tss-integration")]
+pub mod dkg_tag;
 
 /// C.3 live-mesh **FROST (`Pgw`) signing driver**: runs the real 2-round signing
 /// (`commit`→`sign`→`aggregate`) across the signer set over a

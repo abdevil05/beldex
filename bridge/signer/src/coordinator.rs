@@ -132,7 +132,10 @@ impl ProposalPolicy for MintPolicy {
                 if self.contracts.contains_key(&ev.dst_chain.0) {
                     Ok(())
                 } else {
-                    Err(BuildError::Unactionable(format!("no contract for chain {}", ev.dst_chain.0)))
+                    Err(BuildError::Unactionable(format!(
+                        "no contract for chain {}",
+                        ev.dst_chain.0
+                    )))
                 }
             }
             Duty::Release(_) => Err(BuildError::Unactionable(
@@ -144,10 +147,9 @@ impl ProposalPolicy for MintPolicy {
     fn build(&mut self, duty: &Duty) -> Result<Vec<u8>, BuildError> {
         match duty {
             Duty::Mint(ev) => {
-                let contract = self
-                    .contracts
-                    .get(&ev.dst_chain.0)
-                    .ok_or_else(|| BuildError::Unactionable(format!("no contract for chain {}", ev.dst_chain.0)))?;
+                let contract = self.contracts.get(&ev.dst_chain.0).ok_or_else(|| {
+                    BuildError::Unactionable(format!("no contract for chain {}", ev.dst_chain.0))
+                })?;
                 Ok(ev.mint_preimage(*contract))
             }
             Duty::Release(_) => Err(BuildError::Unactionable(
@@ -241,12 +243,6 @@ where
     pub complete: Complete,
     /// Ticks a session may sit in one stage before `on_timeout` rotates the leader.
     pub stage_timeout_ticks: u32,
-    /// Steps to let ACKs settle after reaching `Sign` before reading the canonical signer
-    /// set. ACKs are broadcast and drive runs after pump, so after one full step every live
-    /// node holds the same ACK set — and therefore feeds the **same** participant set to the
-    /// scheme driver, whose mesh barrier waits on exactly those peers. Must be ≥ 1 in a real
-    /// mesh; tests with a synchronous bus can use 0.
-    pub sign_settle_steps: u32,
     live: BTreeMap<[u8; 32], LiveSession>,
 }
 
@@ -270,7 +266,6 @@ where
             sign,
             complete,
             stage_timeout_ticks: 10,
-            sign_settle_steps: 1,
             live: BTreeMap::new(),
         }
     }
@@ -524,18 +519,14 @@ where
                 }
                 Stage::Sign => {
                     // Only members that accepted the proposal participate in signing (C.5).
-                    // Gated on: (a) the ACK-settle delay, so every node derives the SAME
-                    // canonical participant set (its peers' barriers wait on exactly that
-                    // set); and (b) one signing round per step across all sessions — the
+                    // Gated on: (a) canonical_signers' information-completeness proof, so
+                    // every node derives the same participant set without a timing delay;
+                    // and (b) one signing round per step across all sessions — the
                     // scheme drivers are blocking and bind a per-leg mesh port, so fanning
                     // out over several duties at once would have nodes waiting on each
                     // other's barriers. Deterministic map order makes every node pick the
                     // same duty first.
-                    if live.signature.is_none()
-                        && live.acked
-                        && !signed_this_step
-                        && live.ticks_in_stage >= self.sign_settle_steps
-                    {
+                    if live.signature.is_none() && live.acked && !signed_this_step {
                         if let (Some(p), Some(signers)) =
                             (live.proposal.clone(), live.session.canonical_signers())
                         {
@@ -591,11 +582,8 @@ where
                             let _ = net.broadcast(&m);
                         }
                     }
-                    let m = Self::msg_for(
-                        &live.session,
-                        self.self_index,
-                        SessionMsg::DistributeAck,
-                    );
+                    let m =
+                        Self::msg_for(&live.session, self.self_index, SessionMsg::DistributeAck);
                     let _ = net.broadcast(&m);
                     if !live.dist_acked {
                         live.dist_acked = true;
@@ -604,7 +592,11 @@ where
                 }
                 Stage::Finalize => {
                     let key = live.duty.key();
-                    if live.nacked || !live.acked || live.proposal.is_none() || live.signature.is_none() {
+                    if live.nacked
+                        || !live.acked
+                        || live.proposal.is_none()
+                        || live.signature.is_none()
+                    {
                         // This node disputed — or never independently verified — the payload
                         // (C.5): the committee handled the duty; record Done locally without
                         // submitting anything.
@@ -829,10 +821,15 @@ pub(crate) mod test_support {
     }
     impl Bus {
         pub(crate) fn new(n: usize) -> Bus {
-            Bus { queues: Rc::new(RefCell::new(vec![VecDeque::new(); n])) }
+            Bus {
+                queues: Rc::new(RefCell::new(vec![VecDeque::new(); n])),
+            }
         }
         pub(crate) fn node(&self, index: usize) -> NodeNet {
-            NodeNet { bus: self.clone(), index }
+            NodeNet {
+                bus: self.clone(),
+                index,
+            }
         }
     }
     impl SessionTransport for NodeNet {
@@ -868,7 +865,10 @@ pub(crate) mod test_support {
         signers: &[u16],
         _attempt: u32,
     ) -> Result<Vec<u8>, String> {
-        assert!(!signers.is_empty(), "signing round must have a participant set");
+        assert!(
+            !signers.is_empty(),
+            "signing round must have a participant set"
+        );
         let d = sha256(message);
         let mut sig = Vec::with_capacity(64);
         sig.extend_from_slice(&d);
@@ -908,25 +908,57 @@ mod tests {
 
     #[test]
     fn session_key_is_deterministic_and_input_sensitive() {
-        let key = DutyKey { kind: DutyKind::Mint, id: [7u8; 32] , sub: 0};
+        let key = DutyKey {
+            kind: DutyKind::Mint,
+            id: [7u8; 32],
+            sub: 0,
+        };
         let a = session_key(Leg::Pevm, 2, &key);
-        assert_eq!(a, session_key(Leg::Pevm, 2, &key), "same inputs, same key (all nodes agree)");
+        assert_eq!(
+            a,
+            session_key(Leg::Pevm, 2, &key),
+            "same inputs, same key (all nodes agree)"
+        );
         // Two duties from the SAME transaction must not share a session (H-1/H-2).
         assert_ne!(
             a,
-            session_key(Leg::Pevm, 2, &DutyKey { kind: DutyKind::Mint, id: [7u8; 32], sub: 1 }),
+            session_key(
+                Leg::Pevm,
+                2,
+                &DutyKey {
+                    kind: DutyKind::Mint,
+                    id: [7u8; 32],
+                    sub: 1
+                }
+            ),
             "sub must be part of the session identity"
         );
         assert_ne!(a, session_key(Leg::Pgw, 2, &key), "leg-namespaced (S14)");
         assert_ne!(a, session_key(Leg::Pevm, 3, &key), "epoch-bound");
         assert_ne!(
             a,
-            session_key(Leg::Pevm, 2, &DutyKey { kind: DutyKind::Release, id: [7u8; 32] , sub: 0}),
+            session_key(
+                Leg::Pevm,
+                2,
+                &DutyKey {
+                    kind: DutyKind::Release,
+                    id: [7u8; 32],
+                    sub: 0
+                }
+            ),
             "kind-namespaced"
         );
         assert_ne!(
             a,
-            session_key(Leg::Pevm, 2, &DutyKey { kind: DutyKind::Mint, id: [8u8; 32] , sub: 0}),
+            session_key(
+                Leg::Pevm,
+                2,
+                &DutyKey {
+                    kind: DutyKind::Mint,
+                    id: [8u8; 32],
+                    sub: 0
+                }
+            ),
             "id-sensitive"
         );
     }
@@ -934,7 +966,14 @@ mod tests {
     // ---- multi-node harness (Bus/NodeNet/committee/mock_sign in test_support) ----
 
     fn mint_ev(amount: u128) -> MintEvent {
-        MintEvent { beldex_txid: [0x11; 32], output_index: 0, dst_chain: ChainId(1), key_epoch: 1, to: [0x22; 20], amount }
+        MintEvent {
+            beldex_txid: [0x11; 32],
+            output_index: 0,
+            dst_chain: ChainId(1),
+            key_epoch: 1,
+            to: [0x22; 20],
+            amount,
+        }
     }
 
     fn contracts() -> BTreeMap<u64, [u8; 20]> {
@@ -960,19 +999,24 @@ mod tests {
     fn make_node(n: usize, t: usize, index: usize, bus: &Bus) -> Node {
         let completions: Rc<RefCell<Vec<(DutyKey, Vec<u8>)>>> = Rc::new(RefCell::new(Vec::new()));
         let log = completions.clone();
-        let mut coord = Coordinator::new(
+        let coord = Coordinator::new(
             committee(n, t),
             index as u16,
-            MintPolicy { contracts: contracts() },
+            MintPolicy {
+                contracts: contracts(),
+            },
             mock_sign as fn(Leg, &[u8], &[u16], u32) -> Result<Vec<u8>, String>,
             Box::new(move |d: &Duty, _proposal: &[u8], sig: &[u8]| {
                 log.borrow_mut().push((d.key(), sig.to_vec()));
                 ExecOutcome::Submitted
             }) as Box<dyn FnMut(&Duty, &[u8], &[u8]) -> ExecOutcome>,
         );
-        // The in-process bus delivers synchronously, so ACKs need no settle delay.
-        coord.sign_settle_steps = 0;
-        Node { coord, orch: Orchestrator::new(), net: bus.node(index), completions }
+        Node {
+            coord,
+            orch: Orchestrator::new(),
+            net: bus.node(index),
+            completions,
+        }
     }
 
     fn run_steps(nodes: &mut [Node], live: &[usize], steps: usize) {
@@ -1005,8 +1049,14 @@ mod tests {
             sigs.push(done[0].1.clone());
             assert_eq!(node.orch.counts(), (0, 0, 1), "duty is Done everywhere");
         }
-        assert!(sigs.iter().all(|s| s == &sigs[0]), "all nodes hold the same aggregate");
-        assert!(nodes.iter().all(|nd| nd.coord.live_count() == 0), "sessions cleaned up");
+        assert!(
+            sigs.iter().all(|s| s == &sigs[0]),
+            "all nodes hold the same aggregate"
+        );
+        assert!(
+            nodes.iter().all(|nd| nd.coord.live_count() == 0),
+            "sessions cleaned up"
+        );
     }
 
     #[test]
@@ -1081,7 +1131,14 @@ mod tests {
         // Chain 999 has no registered contract → the actionability screen (which every node
         // runs against the shared registry before opening a session) abandons it everywhere —
         // no session, no proposal, no waiting on a leader that could never build one.
-        let ev = MintEvent { beldex_txid: [0x44; 32], output_index: 0, dst_chain: ChainId(999), key_epoch: 1, to: [0x22; 20], amount: 5 };
+        let ev = MintEvent {
+            beldex_txid: [0x44; 32],
+            output_index: 0,
+            dst_chain: ChainId(999),
+            key_epoch: 1,
+            to: [0x22; 20],
+            amount: 5,
+        };
         for node in &mut nodes {
             node.orch.observe(Duty::Mint(ev.clone()));
         }
@@ -1119,10 +1176,12 @@ mod tests {
         let mut nodes: Vec<Rec> = (0..n)
             .map(|i| {
                 let log = seen.clone();
-                let mut coord = Coordinator::new(
+                let coord = Coordinator::new(
                     committee(n, t),
                     i as u16,
-                    MintPolicy { contracts: contracts() },
+                    MintPolicy {
+                        contracts: contracts(),
+                    },
                     Box::new(move |_l: Leg, m: &[u8], s: &[u16], a: u32| {
                         log.borrow_mut().push((i, s.to_vec(), a));
                         Ok(sha256(m).to_vec())
@@ -1131,13 +1190,11 @@ mod tests {
                     Box::new(|_d: &Duty, _p: &[u8], _s: &[u8]| ExecOutcome::Submitted)
                         as Box<dyn FnMut(&Duty, &[u8], &[u8]) -> ExecOutcome>,
                 );
-                // A settle delay is REQUIRED, not an optimisation: `canonical_signers` is
-                // the lowest `t` of the acks a node currently holds, so two nodes reading
-                // at different moments derive different sets and the mesh barrier
-                // deadlocks. Production sets this > 0 for exactly this reason; 0 only
-                // happened to work here while the leader was node 0.
-                coord.sign_settle_steps = 2;
-                Rec { coord, orch: Orchestrator::new(), net: bus.node(i) }
+                Rec {
+                    coord,
+                    orch: Orchestrator::new(),
+                    net: bus.node(i),
+                }
             })
             .collect();
 
@@ -1156,12 +1213,25 @@ mod tests {
         // signed — the real mesh barrier waits on exactly this set, so any divergence would
         // deadlock the round.
         let (_, first_set, _) = &rounds[0];
-        assert_eq!(first_set.len(), t, "canonical set is exactly `threshold` members");
-        assert!(first_set.windows(2).all(|w| w[0] < w[1]), "ascending committee order");
+        assert_eq!(
+            first_set.len(),
+            t,
+            "canonical set is exactly `threshold` members"
+        );
+        assert!(
+            first_set.windows(2).all(|w| w[0] < w[1]),
+            "ascending committee order"
+        );
         for (node, set, attempt) in rounds.iter() {
-            assert_eq!(set, first_set, "node {node} disagreed on the participant set");
+            assert_eq!(
+                set, first_set,
+                "node {node} disagreed on the participant set"
+            );
             assert_eq!(*attempt, 0, "no retry happened, so attempt stays 0");
-            assert!(set.contains(&(*node as u16)), "a node only signs if it is in the set");
+            assert!(
+                set.contains(&(*node as u16)),
+                "a node only signs if it is in the set"
+            );
         }
     }
 
@@ -1183,7 +1253,11 @@ mod tests {
         run_steps(&mut nodes, &all, 4);
 
         for node in &nodes {
-            assert_eq!(node.completions.borrow().len(), 1, "completed exactly once, ever");
+            assert_eq!(
+                node.completions.borrow().len(),
+                1,
+                "completed exactly once, ever"
+            );
             assert_eq!(node.coord.live_count(), 0);
         }
     }

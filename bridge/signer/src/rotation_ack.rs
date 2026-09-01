@@ -78,7 +78,11 @@ impl SignedRotationAck {
     /// Start an ack from an observed rotation (no signatures yet). `epoch` is the observing
     /// committee's L1 epoch.
     pub fn new(ack: RotationAck, epoch: u64) -> SignedRotationAck {
-        SignedRotationAck { ack, epoch, observers: Vec::new() }
+        SignedRotationAck {
+            ack,
+            epoch,
+            observers: Vec::new(),
+        }
     }
 
     /// This node signs the ack with its bridge-signer ed25519 secret and adds itself as an
@@ -176,7 +180,11 @@ mod tests {
     }
 
     fn sample_ack() -> RotationAck {
-        RotationAck { chain_id: 42, key_epoch: 8, new_signer: [0xCD; 20] }
+        RotationAck {
+            chain_id: 42,
+            key_epoch: 8,
+            new_signer: [0xCD; 20],
+        }
     }
 
     #[test]
@@ -213,7 +221,10 @@ mod tests {
         // Member 4 "observes" but signs with member 5's key → invalid under member 4's pub.
         let sig = ed25519_sign_detached(&sks[5], &signed.ack.canonical(&genesis)).unwrap();
         signed.observers.push((4, sig));
-        assert!(!signed.verify(&committee, &genesis), "forged 4th signature does not count");
+        assert!(
+            !signed.verify(&committee, &genesis),
+            "forged 4th signature does not count"
+        );
     }
 
     #[test]
@@ -221,9 +232,21 @@ mod tests {
         let genesis = [1u8; 32];
         let base = sample_ack().canonical(&genesis);
         // A different chain, key epoch, or signer must change the bytes (no cross-binding).
-        let other_chain = RotationAck { chain_id: 43, ..sample_ack() }.canonical(&genesis);
-        let other_epoch = RotationAck { key_epoch: 9, ..sample_ack() }.canonical(&genesis);
-        let other_signer = RotationAck { new_signer: [0xEE; 20], ..sample_ack() }.canonical(&genesis);
+        let other_chain = RotationAck {
+            chain_id: 43,
+            ..sample_ack()
+        }
+        .canonical(&genesis);
+        let other_epoch = RotationAck {
+            key_epoch: 9,
+            ..sample_ack()
+        }
+        .canonical(&genesis);
+        let other_signer = RotationAck {
+            new_signer: [0xEE; 20],
+            ..sample_ack()
+        }
+        .canonical(&genesis);
         assert_ne!(base, other_chain);
         assert_ne!(base, other_epoch);
         assert_ne!(base, other_signer);
@@ -247,10 +270,20 @@ mod tests {
 
         let order: Vec<usize> = [0usize, 1, 3, 4]
             .iter()
-            .map(|i| json.find(&format!(r#""voter_index":{i},"#)).expect("observer present"))
+            .map(|i| {
+                json.find(&format!(r#""voter_index":{i},"#))
+                    .expect("observer present")
+            })
             .collect();
-        assert!(order.windows(2).all(|w| w[0] < w[1]), "observers must be ascending: {json}");
-        assert_eq!(json.matches(r#""voter_index""#).count(), 4, "no duplicate observers");
+        assert!(
+            order.windows(2).all(|w| w[0] < w[1]),
+            "observers must be ascending: {json}"
+        );
+        assert_eq!(
+            json.matches(r#""voter_index""#).count(),
+            4,
+            "no duplicate observers"
+        );
 
         assert!(json.contains(r#""chain_id":42"#));
         assert!(json.contains(r#""key_epoch":8"#));

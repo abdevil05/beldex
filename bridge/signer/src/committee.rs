@@ -28,8 +28,12 @@ pub enum CommitteeError {
 impl std::fmt::Display for CommitteeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CommitteeError::MissingField(k) => write!(f, "bridge.committee reply missing field: {k}"),
-            CommitteeError::BadValue(k) => write!(f, "bridge.committee reply has bad value for: {k}"),
+            CommitteeError::MissingField(k) => {
+                write!(f, "bridge.committee reply missing field: {k}")
+            }
+            CommitteeError::BadValue(k) => {
+                write!(f, "bridge.committee reply has bad value for: {k}")
+            }
             CommitteeError::BadMemberHex => write!(f, "bridge.committee member is not 32-byte hex"),
             CommitteeError::Inactive { epoch, height } => {
                 write!(f, "bridge inactive at epoch {epoch} (height {height})")
@@ -61,7 +65,9 @@ fn value_after_key<'a>(s: &'a str, key: &str) -> Option<&'a str> {
 fn json_u64(s: &str, key: &'static str) -> Result<u64, CommitteeError> {
     let v = value_after_key(s, key).ok_or(CommitteeError::MissingField(key))?;
     let end = v.find(|c: char| !c.is_ascii_digit()).unwrap_or(v.len());
-    v[..end].parse::<u64>().map_err(|_| CommitteeError::BadValue(key))
+    v[..end]
+        .parse::<u64>()
+        .map_err(|_| CommitteeError::BadValue(key))
 }
 
 /// Parse a boolean field (`true`/`false`).
@@ -260,7 +266,11 @@ impl CommitteeView {
     /// carries no network info (the caller then falls back to a peers file). The
     /// mesh port is a signer-side constant because the bridge mesh is a separate
     /// process from beldexd's quorumnet.
-    pub fn peer_transport(&self, self_index: usize, mesh_port: u16) -> Vec<(u16, String, MemberId)> {
+    pub fn peer_transport(
+        &self,
+        self_index: usize,
+        mesh_port: u16,
+    ) -> Vec<(u16, String, MemberId)> {
         if !self.has_network_info() {
             return Vec::new();
         }
@@ -432,7 +442,10 @@ mod tests {
                          \"self_index\":-1,\"size\":6,\"threshold\":4}";
         assert_eq!(
             CommitteeView::from_bridge_committee_json(inactive),
-            Err(CommitteeError::Inactive { epoch: 0, height: 0 })
+            Err(CommitteeError::Inactive {
+                epoch: 0,
+                height: 0
+            })
         );
     }
 
@@ -445,7 +458,8 @@ mod tests {
             Err(CommitteeError::MissingField("threshold"))
         ));
         // Member not 32-byte hex.
-        let bad2 = "{\"active\":true,\"epoch\":1,\"height\":120,\"threshold\":4,\"members\":[\"aa\"]}";
+        let bad2 =
+            "{\"active\":true,\"epoch\":1,\"height\":120,\"threshold\":4,\"members\":[\"aa\"]}";
         assert_eq!(
             CommitteeView::from_bridge_committee_json(bad2),
             Err(CommitteeError::BadMemberHex)
@@ -471,7 +485,11 @@ mod tests {
         assert_eq!(c.signer_key(1), Some([0x22u8; 32]));
         assert_eq!(
             c.auth_members(),
-            vec![(0u16, [0x11u8; 32]), (1u16, [0x22u8; 32]), (2u16, [0x33u8; 32])]
+            vec![
+                (0u16, [0x11u8; 32]),
+                (1u16, [0x22u8; 32]),
+                (2u16, [0x33u8; 32])
+            ]
         );
     }
 
@@ -498,8 +516,14 @@ mod tests {
         // Peer book for self_index 0, mesh port 5580: peers 1 and 2 only.
         let peers = c.peer_transport(0, 5580);
         assert_eq!(peers.len(), 2);
-        assert_eq!(peers[0], (1u16, "tcp://10.0.0.2:5580".to_string(), [0x55u8; 32]));
-        assert_eq!(peers[1], (2u16, "tcp://10.0.0.3:5580".to_string(), [0x66u8; 32]));
+        assert_eq!(
+            peers[0],
+            (1u16, "tcp://10.0.0.2:5580".to_string(), [0x55u8; 32])
+        );
+        assert_eq!(
+            peers[1],
+            (2u16, "tcp://10.0.0.3:5580".to_string(), [0x66u8; 32])
+        );
     }
 
     #[test]

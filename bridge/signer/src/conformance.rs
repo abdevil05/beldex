@@ -186,7 +186,10 @@ mod tests {
             assert!(!is_low_s_secp256k1(&high), "n-{k} should be high-S");
             let (norm, flipped) = normalize_low_s_secp256k1(&high);
             assert!(flipped, "n-{k} should flip");
-            assert!(is_low_s_secp256k1(&norm), "n-{k} did not normalise to low-S");
+            assert!(
+                is_low_s_secp256k1(&norm),
+                "n-{k} did not normalise to low-S"
+            );
             assert_eq!(norm, kbe, "n-(n-{k}) should be {k}");
         }
     }
@@ -196,10 +199,10 @@ mod tests {
         // No overflow, no flip: v = 27 + parity(R.y).
         assert_eq!(recovery_id_v(false, false, false), Some(27)); // even y
         assert_eq!(recovery_id_v(true, false, false), Some(28)); // odd y
-        // Low-S normalisation flipped s => recovered parity flips.
+                                                                 // Low-S normalisation flipped s => recovered parity flips.
         assert_eq!(recovery_id_v(false, false, true), Some(28)); // even y, flipped
         assert_eq!(recovery_id_v(true, false, true), Some(27)); // odd y, flipped
-        // A double flip (odd y XOR flipped) is idempotent back to the base case.
+                                                                // A double flip (odd y XOR flipped) is idempotent back to the base case.
         assert_eq!(
             recovery_id_v(true, false, true),
             recovery_id_v(false, false, false)
@@ -295,8 +298,7 @@ mod tests {
 
             // The normalised (low-S) signature + assembled recovery id must recover us.
             let recid = RecoveryId::from_byte(v - 27).unwrap();
-            let recovered =
-                VerifyingKey::recover_from_prehash(&prehash, &low_sig, recid).unwrap();
+            let recovered = VerifyingKey::recover_from_prehash(&prehash, &low_sig, recid).unwrap();
             assert_eq!(eth_address(&recovered), expected);
         }
     }

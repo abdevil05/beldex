@@ -65,7 +65,7 @@ fn real_cggmp21_dkg_no_dealer_agrees_on_wbdx_address() {
                 .await
         })
         .expect("cggmp21 keygen simulation errored")
-        .expect_ok()   // every party must return Ok(share)
+        .expect_ok() // every party must return Ok(share)
         .into_vec();
 
         assert_eq!(shares.len(), n as usize);

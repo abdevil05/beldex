@@ -136,9 +136,12 @@ impl DepositRecord {
             return;
         }
         if let Some(enc) = &self.enc_memo {
-            if let Ok(pt) =
-                crate::gateway_memo::decrypt(&enc.ciphertext, &enc.tx_pubkey, view_secret, enc.output_index)
-            {
+            if let Ok(pt) = crate::gateway_memo::decrypt(
+                &enc.ciphertext,
+                &enc.tx_pubkey,
+                view_secret,
+                enc.output_index,
+            ) {
                 if let Ok(fixed) = <[u8; MEMO_LEN]>::try_from(pt.as_slice()) {
                     self.memo = Some(fixed);
                 }
@@ -166,14 +169,20 @@ pub enum Resolution {
     /// A full, signable mint intent (`Pevm` will sign its digest).
     Mint(MintEvent),
     /// Not actionable — held pending policy (refund / manual), never silently minted.
-    Unresolved { deposit: DepositRecord, reason: UnresolvedReason },
+    Unresolved {
+        deposit: DepositRecord,
+        reason: UnresolvedReason,
+    },
 }
 
 /// Resolve a finalized deposit into a [`MintEvent`] via its A.5 memo + the E.3
 /// registry — the destination is derived deterministically from on-chain data, so
 /// every honest member converges on the same result (E.4).
 pub fn resolve_mint(deposit: &DepositRecord, registry: &ChainRegistry) -> Resolution {
-    let unresolved = |reason| Resolution::Unresolved { deposit: deposit.clone(), reason };
+    let unresolved = |reason| Resolution::Unresolved {
+        deposit: deposit.clone(),
+        reason,
+    };
 
     let Some(memo_bytes) = deposit.memo else {
         return unresolved(UnresolvedReason::NoMemo);
@@ -225,7 +234,10 @@ fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
     if s.len() % 2 != 0 {
         return None;
     }
-    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok()).collect()
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
 }
 
 fn hex_to_fixed<const N: usize>(s: &str) -> Option<[u8; N]> {
@@ -249,7 +261,9 @@ pub fn parse_deposit_events(page: &Value) -> Vec<DepositRecord> {
             continue;
         }
         let (Some(txid), Some(height), Some(amount)) = (
-            e.get("txid").and_then(Value::as_str).and_then(hex_to_fixed::<32>),
+            e.get("txid")
+                .and_then(Value::as_str)
+                .and_then(hex_to_fixed::<32>),
             e.get("height").and_then(Value::as_u64),
             e.get("amount").and_then(Value::as_u64),
         ) else {
@@ -258,17 +272,28 @@ pub fn parse_deposit_events(page: &Value) -> Vec<DepositRecord> {
         // Signer-decrypt path: the raw encrypted bundle {enc_memo, tx_pubkey,
         // out_index}. Present only if all three decode.
         let enc_memo = match (
-            e.get("enc_memo").and_then(Value::as_str).and_then(hex_to_bytes),
-            e.get("tx_pubkey").and_then(Value::as_str).and_then(hex_to_fixed::<32>),
+            e.get("enc_memo")
+                .and_then(Value::as_str)
+                .and_then(hex_to_bytes),
+            e.get("tx_pubkey")
+                .and_then(Value::as_str)
+                .and_then(hex_to_fixed::<32>),
             e.get("out_index").and_then(Value::as_u64),
         ) {
             (Some(ciphertext), Some(tx_pubkey), Some(output_index)) if !ciphertext.is_empty() => {
-                Some(EncMemo { ciphertext, tx_pubkey, output_index })
+                Some(EncMemo {
+                    ciphertext,
+                    tx_pubkey,
+                    output_index,
+                })
             }
             _ => None,
         };
         // Optional already-plaintext memo (kept for tests / a daemon-decrypt fallback).
-        let memo = e.get("memo").and_then(Value::as_str).and_then(hex_to_fixed::<MEMO_LEN>);
+        let memo = e
+            .get("memo")
+            .and_then(Value::as_str)
+            .and_then(hex_to_fixed::<MEMO_LEN>);
         let Some(output_index) = e
             .get("out_index")
             .and_then(Value::as_u64)
@@ -402,7 +427,10 @@ impl<C: BeldexRpc> BeldexWatcher<C> {
                     finalized.push(rec);
                 }
             }
-            let next = page.get("next_height").and_then(Value::as_u64).unwrap_or(u64::MAX);
+            let next = page
+                .get("next_height")
+                .and_then(Value::as_u64)
+                .unwrap_or(u64::MAX);
             if next > target {
                 covered = true;
                 break;
@@ -449,7 +477,10 @@ impl HttpBeldexRpc {
             url.pop();
         }
         url.push_str("/json_rpc");
-        HttpBeldexRpc { url, id: std::cell::Cell::new(1) }
+        HttpBeldexRpc {
+            url,
+            id: std::cell::Cell::new(1),
+        }
     }
 }
 
@@ -462,15 +493,23 @@ impl BeldexRpc for HttpBeldexRpc {
         let resp = ureq::post(&self.url)
             .send_json(req)
             .map_err(|e| RpcError::Transport(e.to_string()))?;
-        let v: Value = resp.into_json().map_err(|e| RpcError::BadResponse(e.to_string()))?;
+        let v: Value = resp
+            .into_json()
+            .map_err(|e| RpcError::BadResponse(e.to_string()))?;
         if let Some(err) = v.get("error") {
             return Err(RpcError::Rpc {
                 code: err.get("code").and_then(Value::as_i64).unwrap_or(0),
-                message: err.get("message").and_then(Value::as_str).unwrap_or_default().to_string(),
+                message: err
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
             });
         }
         // beldexd wraps command output under "result".
-        v.get("result").cloned().ok_or_else(|| RpcError::BadResponse("missing result".into()))
+        v.get("result")
+            .cloned()
+            .ok_or_else(|| RpcError::BadResponse("missing result".into()))
     }
 }
 
@@ -516,11 +555,17 @@ mod tests {
         ]});
         let recs = parse_deposit_events(&page);
         assert_eq!(recs.len(), 3, "three outputs parse as three deposits");
-        assert_eq!(recs.iter().map(|r| r.output_index).collect::<Vec<_>>(), vec![1, 2, 3]);
+        assert_eq!(
+            recs.iter().map(|r| r.output_index).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
 
         // the dedup key the watcher uses must separate them
         let mut seen = std::collections::BTreeSet::new();
-        let kept = recs.iter().filter(|r| seen.insert((r.beldex_txid, r.output_index))).count();
+        let kept = recs
+            .iter()
+            .filter(|r| seen.insert((r.beldex_txid, r.output_index)))
+            .count();
         assert_eq!(kept, 3, "H-2: all three survive the watcher's seen-set");
     }
 
@@ -539,7 +584,10 @@ mod tests {
 
     #[test]
     fn bridge_memo_round_trips() {
-        let m = BridgeMemo { chain_id: 137, evm_addr: [0xab; 20] };
+        let m = BridgeMemo {
+            chain_id: 137,
+            evm_addr: [0xab; 20],
+        };
         let enc = m.encode();
         // chain_id is little-endian at bytes 0..8, addr at 8..28, zero padding at 28..32.
         assert_eq!(&enc[0..8], &137u64.to_le_bytes());
@@ -557,9 +605,14 @@ mod tests {
     #[test]
     fn resolve_forms_full_mint_or_flags_reason() {
         let reg = registry(1, 1000);
-        let memo = BridgeMemo { chain_id: 1, evm_addr: [0x11; 20] }.encode();
+        let memo = BridgeMemo {
+            chain_id: 1,
+            evm_addr: [0x11; 20],
+        }
+        .encode();
         let dep = |amount, memo| DepositRecord {
-            beldex_txid: [0x01; 32], output_index: 0,
+            beldex_txid: [0x01; 32],
+            output_index: 0,
             amount,
             height: 100,
             enc_memo: None,
@@ -580,18 +633,31 @@ mod tests {
         // No memo (pre-A.5 / plain deposit) → held.
         assert!(matches!(
             resolve_mint(&dep(500, None), &reg),
-            Resolution::Unresolved { reason: UnresolvedReason::NoMemo, .. }
+            Resolution::Unresolved {
+                reason: UnresolvedReason::NoMemo,
+                ..
+            }
         ));
         // Unknown chain → held.
-        let other_chain = BridgeMemo { chain_id: 999, evm_addr: [0x11; 20] }.encode();
+        let other_chain = BridgeMemo {
+            chain_id: 999,
+            evm_addr: [0x11; 20],
+        }
+        .encode();
         assert!(matches!(
             resolve_mint(&dep(500, Some(other_chain)), &reg),
-            Resolution::Unresolved { reason: UnresolvedReason::UnknownChain(999), .. }
+            Resolution::Unresolved {
+                reason: UnresolvedReason::UnknownChain(999),
+                ..
+            }
         ));
         // Over the per-tx max → held.
         assert!(matches!(
             resolve_mint(&dep(5000, Some(memo)), &reg),
-            Resolution::Unresolved { reason: UnresolvedReason::OverPerTxMax { .. }, .. }
+            Resolution::Unresolved {
+                reason: UnresolvedReason::OverPerTxMax { .. },
+                ..
+            }
         ));
     }
 
@@ -607,14 +673,19 @@ mod tests {
             match method {
                 "get_info" => Ok(json!({ "immutable_height": self.immutable.get() })),
                 "gateway_get_history" => {
-                    let from = params.get("from_height").and_then(Value::as_u64).unwrap_or(0);
+                    let from = params
+                        .get("from_height")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
                     let hits: Vec<Value> = self
                         .events
                         .iter()
                         .filter(|e| e["height"].as_u64().unwrap() >= from)
                         .cloned()
                         .collect();
-                    Ok(json!({ "events": hits, "next_height": self.top + 1, "top_height": self.top }))
+                    Ok(
+                        json!({ "events": hits, "next_height": self.top + 1, "top_height": self.top }),
+                    )
                 }
                 other => Err(RpcError::Transport(format!("unmocked {other}"))),
             }
@@ -637,7 +708,11 @@ mod tests {
 
     #[test]
     fn watcher_finalizes_only_below_checkpoint_and_dedupes() {
-        let memo = BridgeMemo { chain_id: 1, evm_addr: [0x11; 20] }.encode();
+        let memo = BridgeMemo {
+            chain_id: 1,
+            evm_addr: [0x11; 20],
+        }
+        .encode();
         let daemon = MockDaemon {
             immutable: Cell::new(120),
             events: vec![
@@ -665,7 +740,10 @@ mod tests {
 
         // And it resolves to a full MintEvent via the registry.
         let reg = registry(1, 1000);
-        assert!(matches!(resolve_mint(&finals[0], &reg), Resolution::Mint(_)));
+        assert!(matches!(
+            resolve_mint(&finals[0], &reg),
+            Resolution::Mint(_)
+        ));
     }
 
     /// A `beldexd` on a chain that has never checkpointed: `get_info` omits
@@ -680,7 +758,10 @@ mod tests {
             match method {
                 "get_info" => Ok(json!({ "height": self.height.get() })),
                 "gateway_get_history" => {
-                    let from = params.get("from_height").and_then(Value::as_u64).unwrap_or(0);
+                    let from = params
+                        .get("from_height")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
                     let hits: Vec<Value> = self
                         .events
                         .iter()
@@ -697,7 +778,11 @@ mod tests {
 
     #[test]
     fn no_checkpoint_chain_is_strict_by_default_and_relaxes_only_on_request() {
-        let memo = BridgeMemo { chain_id: 1, evm_addr: [0x11; 20] }.encode();
+        let memo = BridgeMemo {
+            chain_id: 1,
+            evm_addr: [0x11; 20],
+        }
+        .encode();
         let events = vec![
             deposit_event(100, [0x01; 32], 500, Some(memo)),
             deposit_event(118, [0x02; 32], 700, Some(memo)),
@@ -706,7 +791,10 @@ mod tests {
         // Default: a missing checkpoint is an error, not an implicit `top - 0`. Nothing
         // finalizes and the caller can see why.
         let mut strict = BeldexWatcher::new(
-            NoCheckpointDaemon { height: Cell::new(121), events: events.clone() },
+            NoCheckpointDaemon {
+                height: Cell::new(121),
+                events: events.clone(),
+            },
             "gwTestGateway",
             1,
         );
@@ -715,7 +803,10 @@ mod tests {
 
         // Relaxed: frontier = top(120) - 10 = 110, so only the height-100 deposit.
         let mut relaxed = BeldexWatcher::new(
-            NoCheckpointDaemon { height: Cell::new(121), events: events.clone() },
+            NoCheckpointDaemon {
+                height: Cell::new(121),
+                events: events.clone(),
+            },
             "gwTestGateway",
             1,
         )
@@ -738,7 +829,11 @@ mod tests {
         // The daemon reports a checkpoint at 120. Even with the most permissive fallback
         // possible, a deposit above the checkpoint must not finalize — the fallback may
         // only ever apply where there is no frontier at all.
-        let memo = BridgeMemo { chain_id: 1, evm_addr: [0x11; 20] }.encode();
+        let memo = BridgeMemo {
+            chain_id: 1,
+            evm_addr: [0x11; 20],
+        }
+        .encode();
         let daemon = MockDaemon {
             immutable: Cell::new(120),
             events: vec![deposit_event(150, [0x02; 32], 700, Some(memo))],
@@ -771,20 +866,34 @@ mod tests {
         let output_index = 2u64;
 
         // Wallet-side: encode the destination + encrypt to the gateway view key.
-        let plaintext = BridgeMemo { chain_id: 1, evm_addr: [0x11; 20] }.encode();
+        let plaintext = BridgeMemo {
+            chain_id: 1,
+            evm_addr: [0x11; 20],
+        }
+        .encode();
         let ciphertext =
-            crate::gateway_memo::encrypt(&plaintext, &tx_secret, &view_public, output_index).unwrap();
+            crate::gateway_memo::encrypt(&plaintext, &tx_secret, &view_public, output_index)
+                .unwrap();
 
         let mut deposit = DepositRecord {
-            beldex_txid: [0x01; 32], output_index: 0,
+            beldex_txid: [0x01; 32],
+            output_index: 0,
             amount: 500,
             height: 100,
-            enc_memo: Some(EncMemo { ciphertext, tx_pubkey, output_index }),
+            enc_memo: Some(EncMemo {
+                ciphertext,
+                tx_pubkey,
+                output_index,
+            }),
             memo: None,
         };
         // Signer-side: decrypt with the shared view secret, then resolve.
         deposit.decrypt_memo(&view_secret);
-        assert_eq!(deposit.memo, Some(plaintext), "recovered the plaintext memo");
+        assert_eq!(
+            deposit.memo,
+            Some(plaintext),
+            "recovered the plaintext memo"
+        );
 
         let reg = registry(1, 1000);
         match resolve_mint(&deposit, &reg) {

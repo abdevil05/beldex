@@ -74,7 +74,10 @@ impl MeshAuth {
         verifier: Box<dyn Ed25519>,
         members: impl IntoIterator<Item = (u16, [u8; 32])>,
     ) -> MeshAuth {
-        MeshAuth { signer, book: AuthKeyBook::from_members(verifier, members) }
+        MeshAuth {
+            signer,
+            book: AuthKeyBook::from_members(verifier, members),
+        }
     }
 
     /// Build the mesh-auth context directly from a consensus committee view: the
@@ -177,8 +180,10 @@ impl OmqPeerTransport {
                 sock.set_curve_secretkey(&cfg.self_curve_secret)
                     .map_err(|e| MeshError::Io(format!("curve_secretkey: {e}")))?;
             }
-            // Don't block a broadcast on a slow/absent peer; drop instead.
-            sock.set_sndtimeo(0)
+            // Bound backpressure, but never report a dropped protocol frame as success.
+            // The caller can then abort/retry the session instead of waiting for peers to
+            // receive a message that was silently discarded at the local high-water mark.
+            sock.set_sndtimeo(1_000)
                 .map_err(|e| MeshError::Io(format!("sndtimeo: {e}")))?;
             sock.set_linger(0)
                 .map_err(|e| MeshError::Io(format!("linger: {e}")))?;
@@ -187,7 +192,12 @@ impl OmqPeerTransport {
             peers.insert(p.index, sock);
         }
 
-        Ok(OmqPeerTransport { _ctx: ctx, listener, peers, auth: None })
+        Ok(OmqPeerTransport {
+            _ctx: ctx,
+            listener,
+            peers,
+            auth: None,
+        })
     }
 
     /// Serialize a message for the wire: signed frame (`canonical ‖ sig`) when
@@ -213,12 +223,12 @@ impl OmqPeerTransport {
         }
     }
 
-    /// Send one frame non-blocking; a full-HWM / unroutable peer is a benign drop
-    /// (the session stage timeout drives the retry).
+    /// Send one frame. A full-HWM / unroutable peer is an explicit transport failure;
+    /// silently dropping DKG or signing material makes successful delivery unauditable.
     fn send_frame(sock: &zmq::Socket, bytes: &[u8]) -> Result<(), MeshError> {
         match sock.send(bytes, zmq::DONTWAIT) {
             Ok(()) => Ok(()),
-            Err(zmq::Error::EAGAIN) => Ok(()), // peer not ready; drop, engine retries
+            Err(zmq::Error::EAGAIN) => Err(MeshError::Io("peer send timed out".into())),
             Err(e) => Err(MeshError::Io(format!("send: {e}"))),
         }
     }
@@ -235,7 +245,10 @@ impl SessionTransport for OmqPeerTransport {
 
     fn send_to(&mut self, peer_index: u16, msg: &WireMsg) -> Result<(), MeshError> {
         let bytes = self.frame_out(msg)?;
-        let sock = self.peers.get(&peer_index).ok_or(MeshError::UnknownPeer(peer_index))?;
+        let sock = self
+            .peers
+            .get(&peer_index)
+            .ok_or(MeshError::UnknownPeer(peer_index))?;
         Self::send_frame(sock, &bytes)
     }
 
@@ -259,7 +272,14 @@ mod tests {
     use crate::wire::SessionMsg;
 
     fn wire(from: u16, body: SessionMsg) -> WireMsg {
-        WireMsg { leg: Leg::Pgw, epoch: 2, payload_hash: [7u8; 32], attempt: 0, from, body }
+        WireMsg {
+            leg: Leg::Pgw,
+            epoch: 2,
+            payload_hash: [7u8; 32],
+            attempt: 0,
+            from,
+            body,
+        }
     }
 
     /// Build a bidirectional 2-node pair on the given ports, curve on/off.

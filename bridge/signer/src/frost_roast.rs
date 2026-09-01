@@ -56,7 +56,9 @@ impl Default for RoastConfig {
 }
 
 fn id_of(index: u16) -> Result<Id, RoastError> {
-    (index + 1).try_into().map_err(|_| RoastError::BadSigner(index))
+    (index + 1)
+        .try_into()
+        .map_err(|_| RoastError::BadSigner(index))
 }
 
 /// Responsiveness oracle: does selected signer `index` contribute in `attempt`?
@@ -192,14 +194,23 @@ mod tests {
     fn dealer_keys(
         n: u16,
         t: u16,
-    ) -> (BTreeMap<u16, frost::keys::KeyPackage>, frost::keys::PublicKeyPackage, [u8; 32]) {
+    ) -> (
+        BTreeMap<u16, frost::keys::KeyPackage>,
+        frost::keys::PublicKeyPackage,
+        [u8; 32],
+    ) {
         let mut rng = rand::rngs::OsRng;
         let (shares, pubkey_package) =
             frost::keys::generate_with_dealer(n, t, frost::keys::IdentifierList::Default, &mut rng)
                 .expect("dealer keygen");
         let by_id: BTreeMap<Id, frost::keys::KeyPackage> = shares
             .into_iter()
-            .map(|(id, ss)| (id, frost::keys::KeyPackage::try_from(ss).expect("verify share")))
+            .map(|(id, ss)| {
+                (
+                    id,
+                    frost::keys::KeyPackage::try_from(ss).expect("verify share"),
+                )
+            })
             .collect();
         let mut by_index = BTreeMap::new();
         for i in 0..n {
@@ -237,7 +248,11 @@ mod tests {
         )
         .expect("roast should complete with 4 responsive signers");
 
-        assert_eq!(set, vec![2, 3, 4, 5], "should re-select onto the responsive set");
+        assert_eq!(
+            set,
+            vec![2, 3, 4, 5],
+            "should re-select onto the responsive set"
+        );
         assert!(
             ed25519_verify_consensus(&sig, message, &vk),
             "libsodium rejected the ROAST signature"

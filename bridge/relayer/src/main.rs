@@ -87,11 +87,15 @@ fn run_mint_digest(args: &[String]) -> Result<String, String> {
         match args[i].as_str() {
             "--chain-id" => chain_id = Some(val.parse().map_err(|_| "bad --chain-id".to_string())?),
             "--contract" => contract = Some(hex20(val, "--contract")?),
-            "--key-epoch" => key_epoch = Some(val.parse().map_err(|_| "bad --key-epoch".to_string())?),
+            "--key-epoch" => {
+                key_epoch = Some(val.parse().map_err(|_| "bad --key-epoch".to_string())?)
+            }
             "--to" => to = Some(hex20(val, "--to")?),
             "--amount" => amount = Some(val.parse().map_err(|_| "bad --amount".to_string())?),
             "--txid" => txid = Some(hex32(val, "--txid")?),
-            "--output-index" => output_index = Some(val.parse().map_err(|_| "bad --output-index".to_string())?),
+            "--output-index" => {
+                output_index = Some(val.parse().map_err(|_| "bad --output-index".to_string())?)
+            }
             other => return Err(format!("unknown flag {other}")),
         }
         i += 2;
@@ -99,7 +103,9 @@ fn run_mint_digest(args: &[String]) -> Result<String, String> {
 
     let chain_id = chain_id.ok_or("missing --chain-id")?;
     let contract = contract.ok_or("missing --contract")?;
-    let key_epoch = key_epoch.filter(|e| *e != 0).ok_or("missing or zero --key-epoch")?;
+    let key_epoch = key_epoch
+        .filter(|e| *e != 0)
+        .ok_or("missing or zero --key-epoch")?;
     let to = to.ok_or("missing --to")?;
     let amount = amount.ok_or("missing --amount")?;
     let txid = txid.ok_or("missing --txid")?;
@@ -109,10 +115,22 @@ fn run_mint_digest(args: &[String]) -> Result<String, String> {
     // `preimage` to BRIDGE_SIGNER_SIGN_PREIMAGE. `digest` = keccak256(preimage) is what the
     // contract recomputes and `ecrecover`s — shown for cross-checking.
     let preimage = beldex_bridge_relayer::mint_preimage(
-        chain_id, contract, key_epoch, to, amount, txid, output_index,
+        chain_id,
+        contract,
+        key_epoch,
+        to,
+        amount,
+        txid,
+        output_index,
     );
     let digest = beldex_bridge_relayer::mint_digest(
-        chain_id, contract, key_epoch, to, amount, txid, output_index,
+        chain_id,
+        contract,
+        key_epoch,
+        to,
+        amount,
+        txid,
+        output_index,
     );
     Ok(format!(
         "preimage: {}   # -> BRIDGE_SIGNER_SIGN_PREIMAGE (Pevm sign)\ndigest:   {}   # keccak256(preimage), the contract's ecrecover input\n",
@@ -122,13 +140,17 @@ fn run_mint_digest(args: &[String]) -> Result<String, String> {
 }
 
 fn hex20(s: &str, field: &str) -> Result<[u8; 20], String> {
-    let b = hex::decode(s.strip_prefix("0x").unwrap_or(s)).map_err(|_| format!("bad hex {field}"))?;
-    b.try_into().map_err(|_| format!("{field} must be 20 bytes"))
+    let b =
+        hex::decode(s.strip_prefix("0x").unwrap_or(s)).map_err(|_| format!("bad hex {field}"))?;
+    b.try_into()
+        .map_err(|_| format!("{field} must be 20 bytes"))
 }
 
 fn hex32(s: &str, field: &str) -> Result<[u8; 32], String> {
-    let b = hex::decode(s.strip_prefix("0x").unwrap_or(s)).map_err(|_| format!("bad hex {field}"))?;
-    b.try_into().map_err(|_| format!("{field} must be 32 bytes"))
+    let b =
+        hex::decode(s.strip_prefix("0x").unwrap_or(s)).map_err(|_| format!("bad hex {field}"))?;
+    b.try_into()
+        .map_err(|_| format!("{field} must be 32 bytes"))
 }
 
 #[cfg(feature = "json")]
@@ -158,8 +180,7 @@ fn run_relay(src: &str) -> Result<String, String> {
     use beldex_bridge_relayer::{ChainEndpoint, HttpSubmitter, RelayPayload, TxSubmitter};
 
     let json = read_source(src)?;
-    let payload =
-        RelayPayload::from_json(&json).map_err(|e| format!("invalid payload: {e:?}"))?;
+    let payload = RelayPayload::from_json(&json).map_err(|e| format!("invalid payload: {e:?}"))?;
 
     let key_hex = std::env::var("RELAYER_GAS_KEY")
         .map_err(|_| "set RELAYER_GAS_KEY (32-byte hex secp256k1 gas key)".to_string())?;
@@ -172,8 +193,14 @@ fn run_relay(src: &str) -> Result<String, String> {
     let arr = v.as_array().ok_or("RELAYER_CHAINS must be a JSON array")?;
     let mut chains = Vec::new();
     for c in arr {
-        let chain_id = c.get("chain_id").and_then(|x| x.as_u64()).ok_or("chain entry needs chain_id")?;
-        let rpc_url = c.get("rpc_url").and_then(|x| x.as_str()).ok_or("chain entry needs rpc_url")?;
+        let chain_id = c
+            .get("chain_id")
+            .and_then(|x| x.as_u64())
+            .ok_or("chain entry needs chain_id")?;
+        let rpc_url = c
+            .get("rpc_url")
+            .and_then(|x| x.as_str())
+            .ok_or("chain entry needs rpc_url")?;
         let mut ep = ChainEndpoint::new(chain_id, rpc_url);
         if let Some(x) = c.get("max_fee_cap_wei").and_then(|x| x.as_u64()) {
             ep.max_fee_cap_wei = x as u128;
@@ -201,15 +228,19 @@ fn run_relay(src: &str) -> Result<String, String> {
 
 #[cfg(not(feature = "submit-http"))]
 fn run_relay(_src: &str) -> Result<String, String> {
-    Err("built without the `submit-http` feature; rebuild with --features submit-http \
+    Err(
+        "built without the `submit-http` feature; rebuild with --features submit-http \
          (or use `prepare` + `cast send`, which needs no service)"
-        .into())
+            .into(),
+    )
 }
 
 fn read_source(src: &str) -> Result<String, String> {
     if src == "-" {
         let mut s = String::new();
-        std::io::stdin().read_to_string(&mut s).map_err(|e| format!("stdin: {e}"))?;
+        std::io::stdin()
+            .read_to_string(&mut s)
+            .map_err(|e| format!("stdin: {e}"))?;
         Ok(s)
     } else {
         std::fs::read_to_string(src).map_err(|e| format!("{src}: {e}"))

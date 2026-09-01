@@ -135,7 +135,10 @@ fn cggmp21_threshold_signature_recovers_wbdx_address() {
 
     eprintln!(
         "OK: {t}-of-{n} cggmp21 threshold ECDSA verified + ecrecover'd to wBDX signer 0x{} (v={})",
-        expected_addr.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+        expected_addr
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>(),
         27 + recovered.unwrap()
     );
 }

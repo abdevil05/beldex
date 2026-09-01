@@ -34,7 +34,12 @@ fn frost_gateway_release_signature_verifies_under_consensus() {
             .expect("dealer keygen");
     let key_packages: BTreeMap<_, _> = shares
         .into_iter()
-        .map(|(id, ss)| (id, frost::keys::KeyPackage::try_from(ss).expect("verify share")))
+        .map(|(id, ss)| {
+            (
+                id,
+                frost::keys::KeyPackage::try_from(ss).expect("verify share"),
+            )
+        })
         .collect();
 
     // The gateway-release digest the owner signs (S6 domain separation +
@@ -61,7 +66,8 @@ fn frost_gateway_release_signature_verifies_under_consensus() {
     for id in &signers {
         sig_shares.insert(
             *id,
-            frost::round2::sign(&signing_package, &nonces[id], &key_packages[id]).expect("round2 sign"),
+            frost::round2::sign(&signing_package, &nonces[id], &key_packages[id])
+                .expect("round2 sign"),
         );
     }
     let group_sig =

@@ -70,7 +70,11 @@ impl HttpSubmitter {
         let h = Keccak256::digest(&enc.as_bytes()[1..]);
         let mut address = [0u8; 20];
         address.copy_from_slice(&h[12..]);
-        Ok(HttpSubmitter { key, address, chains })
+        Ok(HttpSubmitter {
+            key,
+            address,
+            chains,
+        })
     }
 
     fn endpoint(&self, chain_id: u64) -> Result<&ChainEndpoint, SubmitError> {
@@ -120,12 +124,20 @@ impl TxSubmitter for HttpSubmitter {
 
         // Nonce: `pending` so back-to-back submissions from this process don't collide.
         let nonce = Self::hex_quantity(
-            &self.rpc(&ep.rpc_url, "eth_getTransactionCount", json!([from, "pending"]))?,
+            &self.rpc(
+                &ep.rpc_url,
+                "eth_getTransactionCount",
+                json!([from, "pending"]),
+            )?,
             "nonce",
         )? as u64;
 
         // Fees: base fee from the latest block + the configured tip, capped.
-        let block = self.rpc(&ep.rpc_url, "eth_getBlockByNumber", json!(["latest", false]))?;
+        let block = self.rpc(
+            &ep.rpc_url,
+            "eth_getBlockByNumber",
+            json!(["latest", false]),
+        )?;
         let base_fee = block
             .get("baseFeePerGas")
             .map(|v| Self::hex_quantity(v, "baseFeePerGas"))
@@ -209,8 +221,13 @@ mod tests {
 
     #[test]
     fn unknown_chain_is_reported_without_any_network_call() {
-        let s = HttpSubmitter::new(&test_key(), vec![ChainEndpoint::new(1, "http://unused")]).unwrap();
-        let call = PreparedCall { chain_id: 999, to: [0; 20], data: vec![] };
+        let s =
+            HttpSubmitter::new(&test_key(), vec![ChainEndpoint::new(1, "http://unused")]).unwrap();
+        let call = PreparedCall {
+            chain_id: 999,
+            to: [0; 20],
+            data: vec![],
+        };
         assert_eq!(s.submit(&call), Err(SubmitError::UnknownChain(999)));
     }
 
@@ -219,8 +236,13 @@ mod tests {
         // The envelope's signature must recover to `address`, or the node would charge a
         // different account (and the nonce we looked up would be the wrong one).
         use k256::ecdsa::VerifyingKey;
-        let s = HttpSubmitter::new(&test_key(), vec![ChainEndpoint::new(31337, "http://x")]).unwrap();
-        let call = PreparedCall { chain_id: 31337, to: [0x22; 20], data: vec![1, 2, 3] };
+        let s =
+            HttpSubmitter::new(&test_key(), vec![ChainEndpoint::new(31337, "http://x")]).unwrap();
+        let call = PreparedCall {
+            chain_id: 31337,
+            to: [0x22; 20],
+            data: vec![1, 2, 3],
+        };
         let tx = Eip1559Tx::from_call(&call, 1, 1_000, 2_000, 100_000);
         let sighash = tx.sighash();
         let (sig, recid) = s.key.sign_prehash_recoverable(&sighash).unwrap();
@@ -234,10 +256,19 @@ mod tests {
     fn fee_cap_is_enforced_before_broadcasting() {
         // A cap below the tip alone must reject: the check is `2*base + tip > cap`, and with
         // base unknown (no network here) we assert the arithmetic directly.
-        let ep = ChainEndpoint { max_fee_cap_wei: 1_000, priority_fee_wei: 5_000, ..ChainEndpoint::new(1, "http://x") };
+        let ep = ChainEndpoint {
+            max_fee_cap_wei: 1_000,
+            priority_fee_wei: 5_000,
+            ..ChainEndpoint::new(1, "http://x")
+        };
         let base_fee: u128 = 10_000;
-        let max_fee = base_fee.saturating_mul(2).saturating_add(ep.priority_fee_wei);
-        assert!(max_fee > ep.max_fee_cap_wei, "this configuration must trip the cap");
+        let max_fee = base_fee
+            .saturating_mul(2)
+            .saturating_add(ep.priority_fee_wei);
+        assert!(
+            max_fee > ep.max_fee_cap_wei,
+            "this configuration must trip the cap"
+        );
     }
 
     #[test]

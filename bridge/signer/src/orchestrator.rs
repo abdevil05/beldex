@@ -67,12 +67,16 @@ impl Duty {
     /// for a release — the transaction plus which event inside it.
     pub fn key(&self) -> DutyKey {
         match self {
-            Duty::Mint(e) => {
-                DutyKey { kind: DutyKind::Mint, id: e.beldex_txid, sub: e.output_index }
-            }
-            Duty::Release(e) => {
-                DutyKey { kind: DutyKind::Release, id: e.evm_txid, sub: e.log_index }
-            }
+            Duty::Mint(e) => DutyKey {
+                kind: DutyKind::Mint,
+                id: e.beldex_txid,
+                sub: e.output_index,
+            },
+            Duty::Release(e) => DutyKey {
+                kind: DutyKind::Release,
+                id: e.evm_txid,
+                sub: e.log_index,
+            },
         }
     }
 
@@ -109,7 +113,9 @@ pub struct Orchestrator {
 
 impl Orchestrator {
     pub fn new() -> Orchestrator {
-        Orchestrator { duties: BTreeMap::new() }
+        Orchestrator {
+            duties: BTreeMap::new(),
+        }
     }
 
     /// Ingest a finalized duty. Returns `true` iff it is **newly** registered (unknown key);
@@ -121,7 +127,13 @@ impl Orchestrator {
         if self.duties.contains_key(&key) {
             return false;
         }
-        self.duties.insert(key, Entry { duty, status: DutyStatus::Pending });
+        self.duties.insert(
+            key,
+            Entry {
+                duty,
+                status: DutyStatus::Pending,
+            },
+        );
         true
     }
 
@@ -317,7 +329,8 @@ mod tests {
 
     fn mint(txid: u8) -> Duty {
         Duty::Mint(MintEvent {
-            beldex_txid: [txid; 32], output_index: 0,
+            beldex_txid: [txid; 32],
+            output_index: 0,
             dst_chain: ChainId(1),
             key_epoch: 1,
             to: [0x11; 20],
@@ -326,7 +339,8 @@ mod tests {
     }
     fn release(txid: u8) -> Duty {
         Duty::Release(ReleaseEvent {
-            evm_txid: [txid; 32], log_index: 0,
+            evm_txid: [txid; 32],
+            log_index: 0,
             chain: ChainId(1),
             amount: 1000,
             beldex_recipient: b"bxRecipient".to_vec(),
@@ -337,7 +351,10 @@ mod tests {
     fn observe_dedups_and_assigns_the_right_leg() {
         let mut o = Orchestrator::new();
         assert!(o.observe(mint(1)));
-        assert!(!o.observe(mint(1)), "re-observing the same deposit is a no-op");
+        assert!(
+            !o.observe(mint(1)),
+            "re-observing the same deposit is a no-op"
+        );
         assert_eq!(o.counts(), (1, 0, 0));
 
         assert_eq!(mint(1).leg(), Leg::Pevm);
@@ -348,7 +365,10 @@ mod tests {
     fn mint_and_release_with_same_id_do_not_collide() {
         let mut o = Orchestrator::new();
         assert!(o.observe(mint(7)));
-        assert!(o.observe(release(7)), "same 32-byte id, different kind → distinct duty");
+        assert!(
+            o.observe(release(7)),
+            "same 32-byte id, different kind → distinct duty"
+        );
         assert_eq!(o.counts(), (2, 0, 0));
     }
 
@@ -436,16 +456,31 @@ mod tests {
         fn execute(&mut self, duty: &Duty) -> ExecOutcome {
             let key = duty.key();
             self.executed.push(key);
-            self.outcomes.get(&key).copied().unwrap_or(ExecOutcome::Submitted)
+            self.outcomes
+                .get(&key)
+                .copied()
+                .unwrap_or(ExecOutcome::Submitted)
         }
     }
 
     #[test]
     fn tick_ingests_executes_and_is_idempotent_across_ticks() {
-        let m = match mint(1) { Duty::Mint(e) => e, _ => unreachable!() };
-        let r = match release(2) { Duty::Release(e) => e, _ => unreachable!() };
-        let mut src = MockSource { mints: vec![m], releases: vec![r] };
-        let mut exec = MockExec { outcomes: BTreeMap::new(), executed: Vec::new() };
+        let m = match mint(1) {
+            Duty::Mint(e) => e,
+            _ => unreachable!(),
+        };
+        let r = match release(2) {
+            Duty::Release(e) => e,
+            _ => unreachable!(),
+        };
+        let mut src = MockSource {
+            mints: vec![m],
+            releases: vec![r],
+        };
+        let mut exec = MockExec {
+            outcomes: BTreeMap::new(),
+            executed: Vec::new(),
+        };
         let mut o = Orchestrator::new();
 
         // Tick 1: both observed, both submitted.
@@ -464,9 +499,15 @@ mod tests {
 
     #[test]
     fn tick_retries_then_completes() {
-        let m = match mint(1) { Duty::Mint(e) => e, _ => unreachable!() };
+        let m = match mint(1) {
+            Duty::Mint(e) => e,
+            _ => unreachable!(),
+        };
         let key = mint(1).key();
-        let mut src = MockSource { mints: vec![m], releases: Vec::new() };
+        let mut src = MockSource {
+            mints: vec![m],
+            releases: Vec::new(),
+        };
 
         // First execution retries; keep the source re-emitting so the retried duty is picked
         // up again next tick (this time it submits).
@@ -489,9 +530,15 @@ mod tests {
 
     #[test]
     fn tick_abandons_terminally() {
-        let m = match mint(1) { Duty::Mint(e) => e, _ => unreachable!() };
+        let m = match mint(1) {
+            Duty::Mint(e) => e,
+            _ => unreachable!(),
+        };
         let key = mint(1).key();
-        let mut src = MockSource { mints: vec![m], releases: Vec::new() };
+        let mut src = MockSource {
+            mints: vec![m],
+            releases: Vec::new(),
+        };
         let mut exec = MockExec {
             outcomes: [(key, ExecOutcome::Abandon)].into_iter().collect(),
             executed: Vec::new(),

@@ -51,7 +51,9 @@ const SIGN_SHARE: u8 = 2;
 
 /// Map a 0-based committee index to a FROST identifier (`index + 1`).
 fn id_of(index: u16) -> Result<Id, DriverError> {
-    (index + 1).try_into().map_err(|_| DriverError::BadCommittee)
+    (index + 1)
+        .try_into()
+        .map_err(|_| DriverError::BadCommittee)
 }
 
 /// One signer's participation in a `t`-of-`n` FROST signing, driven a frame at a
@@ -154,7 +156,9 @@ impl FrostSignDriver {
             return Err(DriverError::WrongLeg);
         }
         // Not this ceremony (different session / retry generation) — ignore.
-        if msg.epoch != self.epoch || msg.payload_hash != self.message || msg.attempt != self.attempt
+        if msg.epoch != self.epoch
+            || msg.payload_hash != self.message
+            || msg.attempt != self.attempt
         {
             return Ok(vec![]);
         }
@@ -393,7 +397,9 @@ mod tests {
     }
     impl Bus {
         fn new(n: u16) -> Bus {
-            Bus { inboxes: (0..n).map(|_| VecDeque::new()).collect() }
+            Bus {
+                inboxes: (0..n).map(|_| VecDeque::new()).collect(),
+            }
         }
         fn route(&mut self, from: u16, outs: Vec<Outbound>) {
             for o in outs {
@@ -416,7 +422,11 @@ mod tests {
     fn dkg_key_material(
         c: &CommitteeView,
         n: u16,
-    ) -> (BTreeMap<Id, frost::keys::KeyPackage>, frost::keys::PublicKeyPackage, [u8; 32]) {
+    ) -> (
+        BTreeMap<Id, frost::keys::KeyPackage>,
+        frost::keys::PublicKeyPackage,
+        [u8; 32],
+    ) {
         let mut rng = rand::rngs::OsRng;
         let mut drivers = Vec::new();
         let mut bus = Bus::new(n);
@@ -450,7 +460,12 @@ mod tests {
             .iter()
             .map(|(id, kp)| (*id, kp.verifying_share().clone()))
             .collect();
-        let group_vk = key_packages.values().next().unwrap().verifying_key().clone();
+        let group_vk = key_packages
+            .values()
+            .next()
+            .unwrap()
+            .verifying_key()
+            .clone();
         let pubkey_package = frost::keys::PublicKeyPackage::new(verifying_shares, group_vk);
         (key_packages, pubkey_package, vk0)
     }

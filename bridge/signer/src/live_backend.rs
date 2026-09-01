@@ -33,7 +33,11 @@ pub trait GatewayRpc {
 
     /// `gateway_submit_transfer`: inject the 64-byte ed25519 owner signature, finalize against
     /// the gateway's `Pgw` owner key, and relay. Returns the submitted txid (hex).
-    fn submit_transfer(&mut self, tx_blob_hex: &str, signature: &[u8; 64]) -> Result<String, String>;
+    fn submit_transfer(
+        &mut self,
+        tx_blob_hex: &str,
+        signature: &[u8; 64],
+    ) -> Result<String, String>;
 }
 
 /// The live autonomous backend. Generic over the injected mesh signers, the gateway RPC, and
@@ -100,15 +104,23 @@ impl HttpGatewayRpc {
         HttpGatewayRpc { url, id: 1 }
     }
 
-    fn call(&mut self, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
+    fn call(
+        &mut self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
         self.id = self.id.wrapping_add(1);
         let req = serde_json::json!({ "jsonrpc": "2.0", "id": self.id, "method": method, "params": params });
-        let resp = ureq::post(&self.url).send_json(req).map_err(|e| e.to_string())?;
+        let resp = ureq::post(&self.url)
+            .send_json(req)
+            .map_err(|e| e.to_string())?;
         let v: serde_json::Value = resp.into_json().map_err(|e| e.to_string())?;
         if let Some(err) = v.get("error") {
             return Err(format!("{method}: rpc error {err}"));
         }
-        v.get("result").cloned().ok_or_else(|| format!("{method}: missing result"))
+        v.get("result")
+            .cloned()
+            .ok_or_else(|| format!("{method}: missing result"))
     }
 }
 
@@ -155,14 +167,19 @@ impl HttpGatewayRpc {
             .ok_or("gateway_create_transfer: missing unsigned_tx_blob")?;
         let unsigned_tx_blob = hex_bytes(blob_hex)?;
         let hash_to_sign = hex32(
-            r.get("hash_to_sign").and_then(|v| v.as_str()).ok_or("gateway_create_transfer: missing hash_to_sign")?,
-        )?;
-        let tx_key = hex32(
-            r.get("tx_secret_key")
+            r.get("hash_to_sign")
                 .and_then(|v| v.as_str())
-                .ok_or("gateway_create_transfer: missing tx_secret_key (daemon too old for release builds?)")?,
+                .ok_or("gateway_create_transfer: missing hash_to_sign")?,
         )?;
-        Ok(crate::release_policy::BuiltRelease { unsigned_tx_blob, hash_to_sign, fee, tx_key })
+        let tx_key = hex32(r.get("tx_secret_key").and_then(|v| v.as_str()).ok_or(
+            "gateway_create_transfer: missing tx_secret_key (daemon too old for release builds?)",
+        )?)?;
+        Ok(crate::release_policy::BuiltRelease {
+            unsigned_tx_blob,
+            hash_to_sign,
+            fee,
+            tx_key,
+        })
     }
 
     /// This member's own reading of a proposed release (`gateway_decode_withdrawal` on its
@@ -188,18 +205,31 @@ impl HttpGatewayRpc {
 
         let src_id = get_str("source_gateway_id").ok_or("decode: missing source_gateway_id")?;
         let src_addr = get_str("source_gateway_address").unwrap_or_default();
-        let source_gateway = if configured_gateway.eq_ignore_ascii_case(&src_id) || configured_gateway == src_addr {
-            configured_gateway.to_string()
+        let source_gateway =
+            if configured_gateway.eq_ignore_ascii_case(&src_id) || configured_gateway == src_addr {
+                configured_gateway.to_string()
+            } else {
+                src_addr // will fail the policy's R4 equality, as it must
+            };
+        let all_match = r
+            .get("dest_all_outputs_match")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let dest = if all_match {
+            expected_recipient.as_bytes().to_vec()
         } else {
-            src_addr // will fail the policy's R4 equality, as it must
+            Vec::new()
         };
-        let all_match = r.get("dest_all_outputs_match").and_then(|v| v.as_bool()).unwrap_or(false);
-        let dest = if all_match { expected_recipient.as_bytes().to_vec() } else { Vec::new() };
         let amount = u128::from(get_u64("dest_amount").unwrap_or(0));
         let fee = get_u64("fee").ok_or("decode: missing fee")?;
-        let hash_to_sign =
-            hex32(&get_str("hash_to_sign").ok_or("decode: missing hash_to_sign")?)?;
-        Ok(crate::release_policy::ReleaseTxView { source_gateway, dest, amount, fee, hash_to_sign })
+        let hash_to_sign = hex32(&get_str("hash_to_sign").ok_or("decode: missing hash_to_sign")?)?;
+        Ok(crate::release_policy::ReleaseTxView {
+            source_gateway,
+            dest,
+            amount,
+            fee,
+            hash_to_sign,
+        })
     }
 }
 
@@ -245,10 +275,17 @@ impl GatewayRpc for HttpGatewayRpc {
         Ok((blob, hash))
     }
 
-    fn submit_transfer(&mut self, tx_blob_hex: &str, signature: &[u8; 64]) -> Result<String, String> {
+    fn submit_transfer(
+        &mut self,
+        tx_blob_hex: &str,
+        signature: &[u8; 64],
+    ) -> Result<String, String> {
         let params = serde_json::json!({ "tx_blob": tx_blob_hex, "signature": hexs(signature) });
         let r = self.call("gateway_submit_transfer", params)?;
-        Ok(r.get("tx_hash").and_then(|v| v.as_str()).map(String::from).unwrap_or_else(|| r.to_string()))
+        Ok(r.get("tx_hash")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .unwrap_or_else(|| r.to_string()))
     }
 }
 
@@ -278,11 +315,15 @@ where
         let Ok(recipient) = std::str::from_utf8(&ev.beldex_recipient) else {
             return ExecOutcome::Abandon; // malformed recipient → not actionable
         };
-        let (blob, hash) =
-            match self.rpc.create_transfer(&self.release_gateway, recipient, ev.amount, self.release_fee) {
-                Ok(x) => x,
-                Err(_) => return ExecOutcome::Retry,
-            };
+        let (blob, hash) = match self.rpc.create_transfer(
+            &self.release_gateway,
+            recipient,
+            ev.amount,
+            self.release_fee,
+        ) {
+            Ok(x) => x,
+            Err(_) => return ExecOutcome::Retry,
+        };
         let sig = match (self.pgw_sign)(&hash) {
             Ok(s) => s,
             Err(_) => return ExecOutcome::Retry,
@@ -300,7 +341,14 @@ mod tests {
     use crate::chain_registry::ChainId;
 
     fn mint_ev(chain: u64) -> MintEvent {
-        MintEvent { beldex_txid: [0xab; 32], output_index: 0, dst_chain: ChainId(chain), key_epoch: 1, to: [0x11; 20], amount: 1000 }
+        MintEvent {
+            beldex_txid: [0xab; 32],
+            output_index: 0,
+            dst_chain: ChainId(chain),
+            key_epoch: 1,
+            to: [0x11; 20],
+            amount: 1000,
+        }
     }
 
     /// A gateway RPC mock: records calls, returns canned blob/hash/txid, or a scripted error.
@@ -323,7 +371,13 @@ mod tests {
         }
     }
     impl GatewayRpc for MockRpc {
-        fn create_transfer(&mut self, s: &str, d: &str, a: u128, f: u64) -> Result<(String, [u8; 32]), String> {
+        fn create_transfer(
+            &mut self,
+            s: &str,
+            d: &str,
+            a: u128,
+            f: u64,
+        ) -> Result<(String, [u8; 32]), String> {
             self.create_calls.push((s.to_string(), d.to_string(), a, f));
             if self.create_err {
                 return Err("rpc down".into());
@@ -405,7 +459,13 @@ mod tests {
     #[test]
     fn release_creates_signs_and_submits_in_order() {
         let mut emitted: Vec<String> = Vec::new();
-        let ev = ReleaseEvent { evm_txid: [1; 32], log_index: 0, chain: ChainId(1), amount: 500, beldex_recipient: b"bxDest".to_vec() };
+        let ev = ReleaseEvent {
+            evm_txid: [1; 32],
+            log_index: 0,
+            chain: ChainId(1),
+            amount: 500,
+            beldex_recipient: b"bxDest".to_vec(),
+        };
         let mut b = LiveBackend {
             pevm_sign: |_p: &[u8]| Ok([0xcc; 65]),
             pgw_sign: |_d: &[u8; 32]| Ok([0xdd; 64]),
@@ -416,7 +476,15 @@ mod tests {
             release_fee: 100,
         };
         assert_eq!(b.handle_release(&ev), ExecOutcome::Submitted);
-        assert_eq!(b.rpc.create_calls, vec![("gwBRelease".to_string(), "bxDest".to_string(), 500u128, 100u64)]);
+        assert_eq!(
+            b.rpc.create_calls,
+            vec![(
+                "gwBRelease".to_string(),
+                "bxDest".to_string(),
+                500u128,
+                100u64
+            )]
+        );
         assert_eq!(b.rpc.submit_calls.len(), 1);
         assert_eq!(b.rpc.submit_calls[0].0, "deadbeef"); // the blob from create_transfer
         assert_eq!(b.rpc.submit_calls[0].1, [0xdd; 64]); // the Pgw signature
@@ -424,7 +492,13 @@ mod tests {
 
     #[test]
     fn release_rpc_and_sign_failures_retry() {
-        let ev = ReleaseEvent { evm_txid: [1; 32], log_index: 0, chain: ChainId(1), amount: 500, beldex_recipient: b"bxDest".to_vec() };
+        let ev = ReleaseEvent {
+            evm_txid: [1; 32],
+            log_index: 0,
+            chain: ChainId(1),
+            amount: 500,
+            beldex_recipient: b"bxDest".to_vec(),
+        };
         let mut emitted: Vec<String> = Vec::new();
 
         // create_transfer fails → Retry, never signs/submits.

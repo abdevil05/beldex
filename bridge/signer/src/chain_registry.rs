@@ -57,9 +57,18 @@ pub enum RegistryError {
     /// No row for this chain id.
     UnknownChain(ChainId),
     /// `amount` exceeds the chain's `per_tx_max`.
-    OverPerTxMax { chain: ChainId, amount: u128, max: u128 },
+    OverPerTxMax {
+        chain: ChainId,
+        amount: u128,
+        max: u128,
+    },
     /// This event would push the fixed-window epoch total past `per_epoch_cap`.
-    OverEpochCap { chain: ChainId, kind: CapKind, would_be: u128, cap: u128 },
+    OverEpochCap {
+        chain: ChainId,
+        kind: CapKind,
+        would_be: u128,
+        cap: u128,
+    },
     /// A row with a duplicate chain id was inserted.
     DuplicateChain(ChainId),
 }
@@ -98,16 +107,26 @@ impl ChainRegistry {
 
     /// Per-event validation independent of caps: known chain + `amount ≤ per_tx_max`.
     pub fn check_event(&self, chain: ChainId, amount: u128) -> Result<(), RegistryError> {
-        let row = self.rows.get(&chain).ok_or(RegistryError::UnknownChain(chain))?;
+        let row = self
+            .rows
+            .get(&chain)
+            .ok_or(RegistryError::UnknownChain(chain))?;
         if amount > row.per_tx_max {
-            return Err(RegistryError::OverPerTxMax { chain, amount, max: row.per_tx_max });
+            return Err(RegistryError::OverPerTxMax {
+                chain,
+                amount,
+                max: row.per_tx_max,
+            });
         }
         Ok(())
     }
 
     /// The current fixed-window total for `(chain, kind, epoch)`.
     pub fn window_total(&self, chain: ChainId, kind: CapKind, epoch: u64) -> u128 {
-        self.consumed.get(&(chain, kind, epoch)).copied().unwrap_or(0)
+        self.consumed
+            .get(&(chain, kind, epoch))
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Would `amount` fit under the per-epoch cap for this window? (Pure check.)
@@ -118,7 +137,10 @@ impl ChainRegistry {
         epoch: u64,
         amount: u128,
     ) -> Result<(), RegistryError> {
-        let row = self.rows.get(&chain).ok_or(RegistryError::UnknownChain(chain))?;
+        let row = self
+            .rows
+            .get(&chain)
+            .ok_or(RegistryError::UnknownChain(chain))?;
         let would_be = self.window_total(chain, kind, epoch).saturating_add(amount);
         if would_be > row.per_epoch_cap {
             return Err(RegistryError::OverEpochCap {
@@ -171,11 +193,18 @@ mod tests {
     fn unknown_chain_and_per_tx_max() {
         let mut reg = ChainRegistry::new();
         reg.add(row(1, 100, 1000)).unwrap();
-        assert_eq!(reg.check_event(ChainId(9), 10), Err(RegistryError::UnknownChain(ChainId(9))));
+        assert_eq!(
+            reg.check_event(ChainId(9), 10),
+            Err(RegistryError::UnknownChain(ChainId(9)))
+        );
         assert!(reg.check_event(ChainId(1), 100).is_ok()); // exactly at the max
         assert_eq!(
             reg.check_event(ChainId(1), 101),
-            Err(RegistryError::OverPerTxMax { chain: ChainId(1), amount: 101, max: 100 })
+            Err(RegistryError::OverPerTxMax {
+                chain: ChainId(1),
+                amount: 101,
+                max: 100
+            })
         );
     }
 
@@ -183,7 +212,10 @@ mod tests {
     fn duplicate_chain_rejected() {
         let mut reg = ChainRegistry::new();
         reg.add(row(1, 100, 1000)).unwrap();
-        assert_eq!(reg.add(row(1, 5, 5)), Err(RegistryError::DuplicateChain(ChainId(1))));
+        assert_eq!(
+            reg.add(row(1, 5, 5)),
+            Err(RegistryError::DuplicateChain(ChainId(1)))
+        );
     }
 
     #[test]
@@ -198,14 +230,23 @@ mod tests {
         // 200 + 100 > 250 → rejected, total unchanged.
         assert_eq!(
             reg.consume(c, CapKind::Mint, 5, 100),
-            Err(RegistryError::OverEpochCap { chain: c, kind: CapKind::Mint, would_be: 300, cap: 250 })
+            Err(RegistryError::OverEpochCap {
+                chain: c,
+                kind: CapKind::Mint,
+                would_be: 300,
+                cap: 250
+            })
         );
         assert_eq!(reg.window_total(c, CapKind::Mint, 5), 200);
 
         // New epoch → fresh window (fixed window, β = 1).
         reg.consume(c, CapKind::Mint, 6, 250).unwrap();
         assert_eq!(reg.window_total(c, CapKind::Mint, 6), 250);
-        assert_eq!(reg.window_total(c, CapKind::Mint, 5), 0, "stale window pruned");
+        assert_eq!(
+            reg.window_total(c, CapKind::Mint, 5),
+            0,
+            "stale window pruned"
+        );
     }
 
     #[test]
@@ -214,11 +255,16 @@ mod tests {
         reg.add(row(1, 1000, 200)).unwrap();
         let c = ChainId(1);
         reg.consume(c, CapKind::Mint, 5, 200).unwrap(); // mint window full
-        // Release window for the same epoch is untouched.
+                                                        // Release window for the same epoch is untouched.
         assert!(reg.consume(c, CapKind::Release, 5, 200).is_ok());
         assert_eq!(
             reg.consume(c, CapKind::Mint, 5, 1),
-            Err(RegistryError::OverEpochCap { chain: c, kind: CapKind::Mint, would_be: 201, cap: 200 })
+            Err(RegistryError::OverEpochCap {
+                chain: c,
+                kind: CapKind::Mint,
+                would_be: 201,
+                cap: 200
+            })
         );
     }
 }

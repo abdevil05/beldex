@@ -4,7 +4,7 @@
 #
 #   ./sign-pevm.sh <kind> <0x-preimage>
 #
-#     kind = mint    expects the 192-byte / 6-word mint tuple
+#     kind = mint    expects the 256-byte / 8-word Mint V2 tuple
 #            rotate  expects the 160-byte / 5-word rotation tuple
 #            raw     no length check (set FORCE_PREIMAGE=1 to mean the same thing)
 #
@@ -51,11 +51,12 @@ KIND="${1:-}"
 PREIMAGE="${2:-}"
 
 case "$KIND" in
-  mint)   WANT_HEX=384; WHAT="192-byte ABI-encoded mint tuple (6 words)" ;;
-  rotate) WANT_HEX=320; WHAT="160-byte ABI-encoded rotation tuple (5 words)" ;;
+  mint)   WANT_HEX=512; WHAT="256-byte ABI-encoded Mint V2 tuple (8 words)" ;;
+  rotate)   WANT_HEX=448; WHAT="224-byte ABI-encoded Rotation V2 tuple (7 words)" ;;
+  activate) WANT_HEX=320; WHAT="160-byte ABI-encoded activation tuple (5 words)" ;;
   raw)    WANT_HEX=0;   WHAT="arbitrary preimage" ;;
   *)
-    echo "usage: $0 <mint|rotate|raw> 0x<preimage>" >&2
+    echo "usage: $0 <mint|rotate|activate|raw> 0x<preimage>" >&2
     exit 1 ;;
 esac
 
@@ -148,6 +149,10 @@ if [ "$N_SHARES" -eq 0 ]; then
 fi
 
 THRESHOLD="${BRIDGE_SIGNER_COMMITTEE_THRESHOLD:-4}"
+MESH_USE_CURVE="${BRIDGE_SIGNER_MESH_USE_CURVE:-true}"
+if [ "$MESH_USE_CURVE" = "false" ] || [ "$MESH_USE_CURVE" = "0" ]; then
+  [ "${ALLOW_PLAINTEXT_MESH:-0}" = "1" ] || { echo "!! plaintext signing mesh refused" >&2; exit 1; }
+fi
 
 echo "  kind      : $KIND"
 echo "  signer    : $SIGNER"
@@ -178,16 +183,18 @@ for d in beldex-127.0.0.1-*/; do
   sock="$PWD/${d}devnet/beldexd.sock"
   key="$PWD/${d}devnet/key_ed25519"
   share="$PWD/${d}devnet/$SUBDIR"
+  node_port="${d%/}"; node_port="${node_port##*-}"
   # Same filter as sign-mint.sh: a node without a live socket and an ed25519 identity
   # cannot join the authenticated mesh, so it is not a participant.
   [ -S "$sock" ] && [ -f "$key" ] || continue
   ls "$share"/pevm-*.keyshare >/dev/null 2>&1 || continue
-  BRIDGE_SIGNER_BELDEXD_RPC_URL="http://127.0.0.1:19191" \
+  BRIDGE_SIGNER_BELDEXD_RPC_URL="http://127.0.0.1:$node_port" \
   BRIDGE_SIGNER_OXENMQ_ENDPOINT="ipc://$sock" \
   BRIDGE_SIGNER_GATEWAY_ID="$ANY32" BRIDGE_SIGNER_SELF_MN_PUBKEY="$ANY32" \
   BRIDGE_SIGNER_BRIDGE_EPOCH_BLOCKS=120 BRIDGE_SIGNER_COMMITTEE_THRESHOLD="$THRESHOLD" \
   BRIDGE_SIGNER_MN_KEY_FILE="$key" BRIDGE_SIGNER_MESH_PORT_BASE=6000 \
-  BRIDGE_SIGNER_MESH_USE_CURVE=false BRIDGE_SIGNER_SHARE_DIR="$share" \
+  BRIDGE_SIGNER_MESH_BIND_HOST=127.0.0.1 BRIDGE_SIGNER_MESH_USE_CURVE="$MESH_USE_CURVE" BRIDGE_SIGNER_ALLOW_FILE_SHARES=1 \
+  BRIDGE_SIGNER_SHARE_DIR="$share" \
   BRIDGE_SIGNER_SIGN_LEG=pevm BRIDGE_SIGNER_SIGN_PREIMAGE="$PREIMAGE" \
   BRIDGE_SIGNER_SIGN_TIMEOUT_SECS="${BRIDGE_SIGNER_SIGN_TIMEOUT_SECS:-600}" \
     "$SIGNER" sign > "${PREFIX}-sign-${d%/}.log" 2>&1 &

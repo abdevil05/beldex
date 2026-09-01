@@ -54,7 +54,8 @@ pub fn ed25519_keypair() -> Result<([u8; 32], [u8; 64]), &'static str> {
 pub fn ed25519_pk_to_x25519(ed_pk32: &[u8; 32]) -> Result<[u8; 32], &'static str> {
     let mut x = [0u8; 32];
     // SAFETY: both buffers are 32 bytes, the sizes libsodium reads/writes.
-    let rc = unsafe { sodium::crypto_sign_ed25519_pk_to_curve25519(x.as_mut_ptr(), ed_pk32.as_ptr()) };
+    let rc =
+        unsafe { sodium::crypto_sign_ed25519_pk_to_curve25519(x.as_mut_ptr(), ed_pk32.as_ptr()) };
     if rc != 0 {
         return Err("crypto_sign_ed25519_pk_to_curve25519 failed");
     }
@@ -67,7 +68,8 @@ pub fn ed25519_pk_to_x25519(ed_pk32: &[u8; 32]) -> Result<[u8; 32], &'static str
 pub fn ed25519_sk_to_x25519(ed_sk64: &[u8; 64]) -> Result<[u8; 32], &'static str> {
     let mut x = [0u8; 32];
     // SAFETY: output is 32 bytes, input is the 64-byte ed25519 secret libsodium expects.
-    let rc = unsafe { sodium::crypto_sign_ed25519_sk_to_curve25519(x.as_mut_ptr(), ed_sk64.as_ptr()) };
+    let rc =
+        unsafe { sodium::crypto_sign_ed25519_sk_to_curve25519(x.as_mut_ptr(), ed_sk64.as_ptr()) };
     if rc != 0 {
         return Err("crypto_sign_ed25519_sk_to_curve25519 failed");
     }
@@ -144,11 +146,18 @@ pub fn ed25519_verify_consensus(sig64: &[u8; 64], msg: &[u8], pubkey32: &[u8; 32
 
 /// `n · p` on ed25519 **without** clamping `n` (libsodium
 /// `crypto_scalarmult_ed25519_noclamp`). Fails on a small-order / identity result.
-pub fn ed25519_scalarmult_noclamp(scalar32: &[u8; 32], point32: &[u8; 32]) -> Result<[u8; 32], &'static str> {
+pub fn ed25519_scalarmult_noclamp(
+    scalar32: &[u8; 32],
+    point32: &[u8; 32],
+) -> Result<[u8; 32], &'static str> {
     let mut q = [0u8; 32];
     // SAFETY: all buffers are 32 bytes, the sizes libsodium reads/writes.
     let rc = unsafe {
-        sodium::crypto_scalarmult_ed25519_noclamp(q.as_mut_ptr(), scalar32.as_ptr(), point32.as_ptr())
+        sodium::crypto_scalarmult_ed25519_noclamp(
+            q.as_mut_ptr(),
+            scalar32.as_ptr(),
+            point32.as_ptr(),
+        )
     };
     if rc != 0 {
         return Err("crypto_scalarmult_ed25519_noclamp failed");
@@ -160,7 +169,9 @@ pub fn ed25519_scalarmult_noclamp(scalar32: &[u8; 32], point32: &[u8; 32]) -> Re
 pub fn ed25519_scalarmult_base_noclamp(scalar32: &[u8; 32]) -> Result<[u8; 32], &'static str> {
     let mut q = [0u8; 32];
     // SAFETY: 32-byte output; scalar is 32 bytes.
-    let rc = unsafe { sodium::crypto_scalarmult_ed25519_base_noclamp(q.as_mut_ptr(), scalar32.as_ptr()) };
+    let rc = unsafe {
+        sodium::crypto_scalarmult_ed25519_base_noclamp(q.as_mut_ptr(), scalar32.as_ptr())
+    };
     if rc != 0 {
         return Err("crypto_scalarmult_ed25519_base_noclamp failed");
     }
@@ -285,7 +296,10 @@ mod tests {
 
         let msg = b"pgw:2:0:<wiremsg canonical bytes>";
         let sig = ed25519_sign_detached(&sk, msg).expect("sign");
-        assert!(ed25519_verify_consensus(&sig, msg, &pk), "own signature must verify");
+        assert!(
+            ed25519_verify_consensus(&sig, msg, &pk),
+            "own signature must verify"
+        );
 
         // Tampered message -> reject.
         assert!(!ed25519_verify_consensus(&sig, b"a different message", &pk));

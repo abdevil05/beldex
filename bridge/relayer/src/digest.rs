@@ -58,7 +58,13 @@ pub fn mint_digest(
     output_index: u32,
 ) -> [u8; 32] {
     Keccak256::digest(mint_preimage(
-        chain_id, contract, key_epoch, to, amount, beldex_txid, output_index,
+        chain_id,
+        contract,
+        key_epoch,
+        to,
+        amount,
+        beldex_txid,
+        output_index,
     ))
     .into()
 }
@@ -73,8 +79,9 @@ mod tests {
         assert_eq!(
             mint_tag(),
             [
-                0x26, 0xd4, 0x8d, 0x33, 0xd4, 0x13, 0xc4, 0x4f, 0xc6, 0xf4, 0x27, 0x94, 0x83, 0xab, 0x40, 0xc9,
-                0x93, 0x1a, 0xec, 0xbd, 0x2d, 0x2b, 0x35, 0x5f, 0x50, 0x3e, 0x48, 0xd6, 0x9e, 0x40, 0xdb, 0xf1,
+                0x26, 0xd4, 0x8d, 0x33, 0xd4, 0x13, 0xc4, 0x4f, 0xc6, 0xf4, 0x27, 0x94, 0x83, 0xab,
+                0x40, 0xc9, 0x93, 0x1a, 0xec, 0xbd, 0x2d, 0x2b, 0x35, 0x5f, 0x50, 0x3e, 0x48, 0xd6,
+                0x9e, 0x40, 0xdb, 0xf1,
             ]
         );
     }
@@ -86,14 +93,14 @@ mod tests {
         let txid = [0xcdu8; 32];
         let p = mint_preimage(1, contract, 7, to, 1000, txid, 9);
         assert_eq!(p.len(), 32 * 8);
-        assert_eq!(&p[0..32], &mint_tag());            // MINT_TAG
-        assert_eq!(p[32 + 31], 1);                     // chainId in the low byte
-        assert_eq!(&p[64 + 12..96], &contract);        // wBDX (right-aligned)
-        assert_eq!(p[96 + 31], 7);                     // keyEpoch
-        assert_eq!(&p[128 + 12..160], &to);            // to (right-aligned)
+        assert_eq!(&p[0..32], &mint_tag()); // MINT_TAG
+        assert_eq!(p[32 + 31], 1); // chainId in the low byte
+        assert_eq!(&p[64 + 12..96], &contract); // wBDX (right-aligned)
+        assert_eq!(p[96 + 31], 7); // keyEpoch
+        assert_eq!(&p[128 + 12..160], &to); // to (right-aligned)
         assert_eq!(&p[160 + 16..192], &1000u128.to_be_bytes()); // amount low 16 bytes
-        assert_eq!(&p[192..224], &txid);               // beldexTxid verbatim
-        assert_eq!(p[224 + 31], 9);                    // outputIndex
+        assert_eq!(&p[192..224], &txid); // beldexTxid verbatim
+        assert_eq!(p[224 + 31], 9); // outputIndex
     }
 
     #[test]
@@ -114,9 +121,9 @@ mod tests {
         assert_eq!(
             base,
             [
-                0x34, 0x20, 0xcc, 0xd3, 0xb8, 0x9e, 0xd0, 0xc0, 0x0a, 0x28, 0x24, 0x0f,
-                0xdb, 0x5a, 0xe0, 0xbc, 0xac, 0xd7, 0x64, 0x87, 0x84, 0x8a, 0x96, 0x67,
-                0x73, 0x3c, 0xfb, 0x6f, 0x62, 0xa1, 0x8c, 0x21,
+                0x34, 0x20, 0xcc, 0xd3, 0xb8, 0x9e, 0xd0, 0xc0, 0x0a, 0x28, 0x24, 0x0f, 0xdb, 0x5a,
+                0xe0, 0xbc, 0xac, 0xd7, 0x64, 0x87, 0x84, 0x8a, 0x96, 0x67, 0x73, 0x3c, 0xfb, 0x6f,
+                0x62, 0xa1, 0x8c, 0x21,
             ],
             "must match keccak256(Solidity abi.encode V2 vector)"
         );

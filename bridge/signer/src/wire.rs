@@ -142,7 +142,14 @@ impl WireMsg {
             T_DIST_ACK => SessionMsg::DistributeAck,
             _ => return Err(WireError::BadTag),
         };
-        Ok(WireMsg { leg, epoch, payload_hash, attempt, from, body })
+        Ok(WireMsg {
+            leg,
+            epoch,
+            payload_hash,
+            attempt,
+            from,
+            body,
+        })
     }
 }
 
@@ -252,7 +259,14 @@ mod tests {
     use crate::session::Stage;
 
     fn wire(from: u16, body: SessionMsg, attempt: u32) -> WireMsg {
-        WireMsg { leg: Leg::Pgw, epoch: 2, payload_hash: [7u8; 32], attempt, from, body }
+        WireMsg {
+            leg: Leg::Pgw,
+            epoch: 2,
+            payload_hash: [7u8; 32],
+            attempt,
+            from,
+            body,
+        }
     }
 
     #[test]
@@ -302,8 +316,14 @@ mod tests {
     }
 
     fn new_session(n: usize, t: usize, self_index: usize) -> Session {
-        Session::start(&committee(n, t), Leg::Pgw, b"release".to_vec(), [7u8; 32], self_index)
-            .unwrap()
+        Session::start(
+            &committee(n, t),
+            Leg::Pgw,
+            b"release".to_vec(),
+            [7u8; 32],
+            self_index,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -340,7 +360,9 @@ mod tests {
     }
     impl Bus {
         fn new(n: usize, t: usize) -> Bus {
-            Bus { sessions: (0..n).map(|i| new_session(n, t, i)).collect() }
+            Bus {
+                sessions: (0..n).map(|i| new_session(n, t, i)).collect(),
+            }
         }
         fn broadcast(&mut self, from: u16, body: SessionMsg, attempt: u32) {
             let m = wire(from, body, attempt);
@@ -364,13 +386,19 @@ mod tests {
         for f in 0..n as u16 {
             bus.broadcast(f, SessionMsg::Ack, 0);
         }
-        assert!(bus.all_at(Stage::Sign), "all should reach Sign after n ACKs");
+        assert!(
+            bus.all_at(Stage::Sign),
+            "all should reach Sign after n ACKs"
+        );
 
         // Every member contributes a round message.
         for f in 0..n as u16 {
             bus.broadcast(f, SessionMsg::Round(vec![f as u8]), 0);
         }
-        assert!(bus.sessions.iter().all(|s| s.has_threshold_round_messages()));
+        assert!(bus
+            .sessions
+            .iter()
+            .all(|s| s.has_threshold_round_messages()));
 
         // The aggregator (leader) broadcasts the combined signature -> Distribute.
         let leader = bus.sessions[0].leader() as u16;

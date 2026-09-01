@@ -33,7 +33,9 @@
 //! feature, exactly like `frost_dkg` / `cggmp21_interop`.
 
 use crate::committee::CommitteeView;
-use crate::dkg::{decode_dkg_payload, encode_dkg_payload, DkgLeg, DkgSession, DKG_ROUND1, DKG_ROUND2};
+use crate::dkg::{
+    decode_dkg_payload, encode_dkg_payload, DkgLeg, DkgSession, DKG_ROUND1, DKG_ROUND2,
+};
 use crate::share_store::ShareStore;
 use crate::transport::Leg;
 use crate::wire::{SessionMsg, SessionTransport, WireMsg};
@@ -104,13 +106,9 @@ fn id_of(index: u16) -> Result<Id, DriverError> {
         .map_err(|_| DriverError::BadCommittee)
 }
 
-/// A stable 32-byte DKG session tag so all nodes route this ceremony's frames to
-/// one session (epoch ‖ key_generation, zero-padded — not a security value).
+/// A domain-separated 32-byte tag binding the fresh ceremony id, epoch and generation.
 fn dkg_payload_hash(epoch: u64, key_generation: u32) -> [u8; 32] {
-    let mut h = [0u8; 32];
-    h[0..8].copy_from_slice(&epoch.to_le_bytes());
-    h[8..12].copy_from_slice(&key_generation.to_le_bytes());
-    h
+    crate::dkg_tag::ceremony_tag(b"pgw", epoch, key_generation)
 }
 
 impl FrostDkgDriver {
@@ -164,7 +162,9 @@ impl FrostDkgDriver {
             .serialize()
             .map_err(|e| DriverError::Frost(format!("serialize r1: {e}")))?;
         driver.r1_pkgs.insert(self_id, r1_pkg);
-        let _ = driver.session.on_round1(self_index as usize, own_bytes.clone());
+        let _ = driver
+            .session
+            .on_round1(self_index as usize, own_bytes.clone());
 
         let broadcast = driver.wire(DKG_ROUND1, &own_bytes);
         Ok((driver, vec![Outbound::Broadcast(broadcast)]))
@@ -388,7 +388,14 @@ where
     S: ShareStore,
     R: RngCore + CryptoRng,
 {
-    let driver = drive_to_completion(committee, self_index, key_generation, transport, rng, timeout)?;
+    let driver = drive_to_completion(
+        committee,
+        self_index,
+        key_generation,
+        transport,
+        rng,
+        timeout,
+    )?;
     driver.store_share(store);
     driver.group_pubkey().ok_or(DriverError::BadCommittee)
 }
@@ -411,10 +418,19 @@ where
     T: SessionTransport,
     R: RngCore + CryptoRng,
 {
-    let driver = drive_to_completion(committee, self_index, key_generation, transport, rng, timeout)?;
+    let driver = drive_to_completion(
+        committee,
+        self_index,
+        key_generation,
+        transport,
+        rng,
+        timeout,
+    )?;
     let vk = driver.group_pubkey().ok_or(DriverError::BadCommittee)?;
     let kp = driver.key_package_blob().ok_or(DriverError::BadCommittee)?;
-    let pk = driver.pubkey_package_blob().ok_or(DriverError::BadCommittee)?;
+    let pk = driver
+        .pubkey_package_blob()
+        .ok_or(DriverError::BadCommittee)?;
     Ok((vk, kp, pk))
 }
 
@@ -533,7 +549,9 @@ pub mod live {
         let transport = OmqPeerTransport::bind(&mesh_cfg)
             .map_err(|e| DriverError::Transport(format!("mesh bind: {e:?}")))?;
         let auth = MeshAuth::from_committee(
-            Box::new(LibsodiumSigner { sk64: identity.ed25519_secret }),
+            Box::new(LibsodiumSigner {
+                sk64: identity.ed25519_secret,
+            }),
             Box::new(LibsodiumEd25519),
             committee,
         )
@@ -627,7 +645,9 @@ mod tests {
     }
     impl Bus {
         fn new(n: u16) -> Bus {
-            Bus { inboxes: (0..n).map(|_| VecDeque::new()).collect() }
+            Bus {
+                inboxes: (0..n).map(|_| VecDeque::new()).collect(),
+            }
         }
         fn route(&mut self, from: u16, outs: Vec<Outbound>) {
             for o in outs {
@@ -721,7 +741,12 @@ mod tests {
             .iter()
             .map(|(id, kp)| (*id, kp.verifying_share().clone()))
             .collect();
-        let group_vk = key_packages.values().next().unwrap().verifying_key().clone();
+        let group_vk = key_packages
+            .values()
+            .next()
+            .unwrap()
+            .verifying_key()
+            .clone();
         frost::keys::PublicKeyPackage::new(verifying_shares, group_vk)
     }
 
@@ -866,7 +891,12 @@ mod tests {
                 // Let every node bind + connect before the first round-1 sends.
                 std::thread::sleep(Duration::from_millis(800));
                 let vk = run_over_transport(
-                    &committee, i, 0, &mut transport, &mut store, &mut rng,
+                    &committee,
+                    i,
+                    0,
+                    &mut transport,
+                    &mut store,
+                    &mut rng,
                     Duration::from_secs(30),
                 );
                 tx.send((i, vk)).unwrap();
@@ -883,11 +913,17 @@ mod tests {
             h.join().unwrap();
         }
         // Every node completed the DKG over real sockets and agrees on the key.
-        assert!(vks.iter().all(|v| *v == vks[0]), "nodes disagree on the group key");
+        assert!(
+            vks.iter().all(|v| *v == vks[0]),
+            "nodes disagree on the group key"
+        );
         eprintln!(
             "OK: 6-node DKG over real {} sockets agreed on group key {}",
             if use_curve { "CURVE" } else { "plain" },
-            vks[0].iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            vks[0]
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>(),
         );
     }
 

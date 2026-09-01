@@ -110,7 +110,11 @@ mod tests {
     use super::*;
 
     fn call() -> PreparedCall {
-        PreparedCall { chain_id: 31337, to: [0x22; 20], data: vec![0xde, 0xad, 0xbe, 0xef] }
+        PreparedCall {
+            chain_id: 31337,
+            to: [0x22; 20],
+            data: vec![0xde, 0xad, 0xbe, 0xef],
+        }
     }
 
     fn tx() -> Eip1559Tx {
@@ -174,7 +178,10 @@ mod tests {
         r[31] = 1; // r == 1
         let raw = tx().encode_signed(0, &r, &[0xff; 32]);
         // …0x01 appears as the bare byte 0x01 (single byte < 0x80 → itself).
-        assert!(raw.windows(2).any(|w| w == [0x01, 0xa0]), "r=1 encoded minimally, then s (0xa0 = 32-byte string)");
+        assert!(
+            raw.windows(2).any(|w| w == [0x01, 0xa0]),
+            "r=1 encoded minimally, then s (0xa0 = 32-byte string)"
+        );
         // y_parity 0 is the empty string 0x80, not 0x00.
         assert!(raw.contains(&0x80));
     }
@@ -198,7 +205,7 @@ mod tests {
 
     #[test]
     fn value_is_always_zero_for_a_bridge_call() {
-        // wBDX mint/rotateSigner are non-payable: sending value would revert.
+        // wBDX mint/rotateSigner/activateRotation are non-payable: value would revert.
         assert_eq!(Eip1559Tx::from_call(&call(), 0, 1, 2, 3).value, 0);
     }
 }

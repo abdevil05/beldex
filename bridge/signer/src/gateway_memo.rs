@@ -193,13 +193,18 @@ mod tests {
         let tx_public = to32("0000000000000000000000000000000000000000000000000000000000000000");
         let view_secret = to32("0000000000000000000000000000000000000000000000000000000000000000");
         let output_index = 2u64;
-        let ciphertext = hex::decode(
-            "0000000000000000000000000000000000000000000000000000000000000000").unwrap();
+        let ciphertext =
+            hex::decode("0000000000000000000000000000000000000000000000000000000000000000")
+                .unwrap();
         // chain_id = 1 (8B LE) ‖ evm_addr (20B) ‖ 4 zero bytes
-        let expected_plaintext = hex::decode(
-            "0100000000000000a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b300000000").unwrap();
+        let expected_plaintext =
+            hex::decode("0100000000000000a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b300000000")
+                .unwrap();
 
         let pt = decrypt(&ciphertext, &tx_public, &view_secret, output_index).unwrap();
-        assert_eq!(pt, expected_plaintext, "Rust decrypt must match beldexd's ciphertext byte-for-byte");
+        assert_eq!(
+            pt, expected_plaintext,
+            "Rust decrypt must match beldexd's ciphertext byte-for-byte"
+        );
     }
 }

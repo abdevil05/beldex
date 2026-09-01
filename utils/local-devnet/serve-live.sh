@@ -55,7 +55,8 @@ fi
 if [ -n "$BRIDGE_SIGNER_GENESIS_HASH" ]; then
   echo "genesis: $BRIDGE_SIGNER_GENESIS_HASH"
 else
-  echo "!! could not fetch the genesis hash — mint-bus publications will not verify" >&2
+  echo "!! could not fetch the genesis hash — live mode refuses an unbound network domain" >&2
+  exit 1
 fi
 RELEASE_FEE="${RELEASE_FEE:-100000000}"
 # Mint hand-off: which node(s) auto-broadcast the signed mint payload, and with what.
@@ -68,6 +69,37 @@ RELAY_NODES="${RELAY_NODES:-0}"
 RELAY_STAGGER_MS="${RELAY_STAGGER_MS:-2000}"
 START_HEIGHT="${START_HEIGHT:-0}"
 POLL_SECS="${POLL_SECS:-5}"
+MESH_USE_CURVE="${BRIDGE_SIGNER_MESH_USE_CURVE:-true}"
+if [ "$MESH_USE_CURVE" = "false" ] || [ "$MESH_USE_CURVE" = "0" ]; then
+  [ "${ALLOW_PLAINTEXT_MESH:-0}" = "1" ] || {
+    echo "!! plaintext signing mesh refused; set ALLOW_PLAINTEXT_MESH=1 only for an explicit insecure test" >&2
+    exit 1
+  }
+fi
+ALLOW_REVERSIBLE_EVM="${ALLOW_REVERSIBLE_EVM:-0}"
+if [ "${SHARE_SUBDIR:-shares}" = "shares-pool" ] && [ "${ALLOW_POOLED_SHARES:-0}" != "1" ]; then
+  echo "!! pooled shares collapse the threshold boundary and are disabled by default." >&2
+  echo "   Fix committee/share indexing; set ALLOW_POOLED_SHARES=1 only for an explicit insecure test." >&2
+  exit 1
+fi
+
+# Read the registry values from the deployed proxy. The hardened signer refuses to
+# start when an operator-supplied epoch or cap drifts from live contract state.
+num() { printf '%s' "$1" | sed -n 's/^\([0-9][0-9]*\).*/\1/p'; }
+KEY_EPOCH="$(num "$(cast call "$WBDX" 'keyEpoch()(uint64)' --rpc-url "$EVM_RPC")")"
+PER_TX_MAX="$(num "$(cast call "$WBDX" 'perTxMax()(uint256)' --rpc-url "$EVM_RPC")")"
+WINDOW_MINT_CAP="$(num "$(cast call "$WBDX" 'windowMintCap()(uint256)' --rpc-url "$EVM_RPC")")"
+CONTRACT_BACKING="$(num "$(cast call "$WBDX" 'bondBackingCapLimit()(uint256)' --rpc-url "$EVM_RPC")")"
+for value in "$KEY_EPOCH" "$PER_TX_MAX" "$WINDOW_MINT_CAP" "$CONTRACT_BACKING"; do
+  [ -n "$value" ] || { echo "!! could not read epoch/caps from $WBDX at $EVM_RPC" >&2; exit 1; }
+done
+GLOBAL_BOND_BACKING="${GLOBAL_BOND_BACKING:-}"
+[ -n "$GLOBAL_BOND_BACKING" ] || {
+  echo "!! set GLOBAL_BOND_BACKING to an independently verified native bond allocation." >&2
+  echo "   The contract's governance-set bondBackingCapLimit cannot prove its own backing." >&2
+  exit 1
+}
+case "$GLOBAL_BOND_BACKING" in ''|*[!0-9]*) echo "!! GLOBAL_BOND_BACKING must be decimal" >&2; exit 1;; esac
 
 # Deposit finality. The signer's production rule is `get_info.immutable_height` — the
 # master-node checkpoint below which the chain cannot reorg. beldexd emits that field
@@ -85,6 +117,11 @@ POLL_SECS="${POLL_SECS:-5}"
 # ignores this outright, so it can never widen finality on a real network. Unset it
 # (BELDEX_CONFIRMATIONS= ) to restore strict behaviour and watch the gate stay shut.
 BELDEX_CONFIRMATIONS="${BELDEX_CONFIRMATIONS-10}"
+if [ -n "$BELDEX_CONFIRMATIONS" ] && [ "${ALLOW_NONCHECKPOINT_FINALITY:-0}" != "1" ]; then
+  echo "!! confirmation-only native finality is disabled by default." >&2
+  echo "   Run a checkpoint-capable network, or set ALLOW_NONCHECKPOINT_FINALITY=1 for an explicit devnet canary." >&2
+  exit 1
+fi
 
 # Startup signer-set gate. `build_live_signers` (main.rs) refuses to start a node whose
 # committee index is not in BRIDGE_SIGNER_SIGN_SIGNERS, and the default when the variable
@@ -100,26 +137,44 @@ SIGN_SIGNERS="${SIGN_SIGNERS:-0,1,2,3,4,5}"
 
 # Chain registry for the EVM watcher. The keys are exactly the ones
 # evm_watcher.rs::parse_evm_chains reads: chain_id, contract, confirmations, rpc,
-# per_tx_max, per_epoch_cap, and the optional start_block. Two traps here, both of
+# key_epoch, per_tx_max, per_epoch_cap, and the optional start_block. Two traps here, both of
 # which cost a devnet run:
 #   * the endpoint key is `rpc`, NOT `rpc_url` — the wrong spelling aborts every
 #     signer at startup with "chain[0]: missing/invalid `rpc`";
 #   * unrecognised keys are silently dropped, so a typo'd or invented key (this
 #     block used to carry an `epoch_blocks` that nothing ever read) looks applied
 #     and is not. `start_block` is the real name for "skip ahead".
-# Caps gate resolve_mint, not the contract — adjust to taste.
+# Caps gate resolve_mint, not the contract. Twelve EVM confirmations are the local default;
+# Anvil rollback remains arbitrary and is separately blocked unless explicitly acknowledged.
 EVM_START_BLOCK="${EVM_START_BLOCK:-0}"
-EVM_CHAINS=$(cat <<EOF
-[{"chain_id":${CHAIN_ID},"rpc":"${EVM_RPC}","contract":"${WBDX}","confirmations":1,
-  "per_epoch_cap":"1000000000000000","per_tx_max":"1000000000000000",
-  "start_block":${EVM_START_BLOCK}}]
-EOF
-)
-
+EVM_CONFIRMATIONS="${EVM_CONFIRMATIONS:-12}"
+if [ "${REQUIRE_DISTINCT_EVM_RPCS:-0}" = "1" ]; then
+  RPC_LIST=""
+  for rpc_index in 0 1 2 3 4 5; do
+    rpc_value="$(printenv "EVM_RPC_$rpc_index" 2>/dev/null || true)"
+    [ -n "$rpc_value" ] || {
+      echo "!! REQUIRE_DISTINCT_EVM_RPCS=1 needs EVM_RPC_$rpc_index" >&2; exit 1; }
+    RPC_LIST="$RPC_LIST\n$rpc_value"
+  done
+  RPC_UNIQUE="$(printf '%b\n' "$RPC_LIST" | grep -v '^$' | sort -u | wc -l | tr -d ' ')"
+  [ "$RPC_UNIQUE" -eq 6 ] || {
+    echo "!! EVM_RPC_0..5 are not six distinct endpoints" >&2; exit 1; }
+else
+  echo "WARNING: EVM RPC independence is not enforced; set REQUIRE_DISTINCT_EVM_RPCS=1 with EVM_RPC_0..5 to test oracle fault isolation"
+fi
 cd testdata
 
 SIGNER="${SIGNER:-$(git rev-parse --show-toplevel)/bridge/signer/target/debug/beldex-bridge-signer}"
 [ -x "$SIGNER" ] || { echo "build first: cargo build -p beldex-bridge-signer --features serve-live"; exit 1; }
+SIGNER_ROOT="$(git rev-parse --show-toplevel)"
+if find "$SIGNER_ROOT/bridge/signer/src" "$SIGNER_ROOT/bridge/signer/Cargo.toml" \
+    "$SIGNER_ROOT/bridge/signer/Cargo.lock" -newer "$SIGNER" -print -quit 2>/dev/null | grep -q .; then
+  echo "!! signer source/dependency metadata is newer than $SIGNER" >&2
+  echo "   rebuild: cargo build --manifest-path bridge/signer/Cargo.toml --features serve-live" >&2
+  exit 1
+fi
+echo "signer source : $(git -C "$SIGNER_ROOT" rev-parse HEAD)$(git -C "$SIGNER_ROOT" diff --quiet && echo '' || echo '-dirty')"
+echo "signer sha256 : $(sha256sum "$SIGNER" | awk '{print $1}')"
 ANY32=$(printf '11%.0s' {1..32})
 
 pkill -f 'beldex-bridge-signer serve' 2>/dev/null || true
@@ -137,6 +192,17 @@ for d in beldex-127.0.0.1-*/; do
   # Same knob name as sign-pevm.sh, deliberately.
   share="$PWD/${d}devnet/${SHARE_SUBDIR:-shares}"
   [ -S "$sock" ] && [ -f "$key" ] || continue
+  share_mode="$(stat -c '%a' "$share" 2>/dev/null || true)"
+  [ "$share_mode" = "700" ] || {
+    echo "skip ${d%/}: share directory mode is ${share_mode:-unknown}, require 700"; continue; }
+  private_bad=0
+  for private in "$share"/pevm-*.keyshare "$share"/pgw-*.keypackage; do
+    [ -f "$private" ] || continue
+    private_mode="$(stat -c '%a' "$private" 2>/dev/null || true)"
+    case "$private_mode" in 400|600) ;; *) private_bad=1 ;; esac
+  done
+  [ "$private_bad" -eq 0 ] || {
+    echo "skip ${d%/}: private share files must be mode 400 or 600"; continue; }
 
   # This node's committee index, from its own dkg share filename.
   # `|| true` is load-bearing: under `set -euo pipefail` the failing `ls` in this
@@ -155,6 +221,14 @@ for d in beldex-127.0.0.1-*/; do
     esac
   fi
 
+  node_port="${d%/}"; node_port="${node_port##*-}"
+  node_beldex_rpc="http://127.0.0.1:$node_port"
+  node_evm_rpc="$EVM_RPC"
+  node_evm_var="EVM_RPC_$idx"
+  node_evm_override="$(printenv "$node_evm_var" 2>/dev/null || true)"
+  [ -z "$node_evm_override" ] || node_evm_rpc="$node_evm_override"
+  node_evm_chains="[{\"chain_id\":${CHAIN_ID},\"rpc\":\"${node_evm_rpc}\",\"contract\":\"${WBDX}\",\"key_epoch\":${KEY_EPOCH},\"confirmations\":${EVM_CONFIRMATIONS},\"per_epoch_cap\":\"${WINDOW_MINT_CAP}\",\"per_tx_max\":\"${PER_TX_MAX}\",\"start_block\":${EVM_START_BLOCK}}]"
+
   # Give the relay hook only to the chosen node(s).
   node_relay=""
   if [ -n "$RELAY_CMD" ]; then
@@ -170,13 +244,18 @@ for d in beldex-127.0.0.1-*/; do
   BRIDGE_SIGNER_RELAY_CMD="$node_relay" \
   BRIDGE_SIGNER_RELAY_STAGGER_MS="$RELAY_STAGGER_MS" \
   BRIDGE_SIGNER_SERVE_LIVE=1 \
-  BRIDGE_SIGNER_BELDEXD_RPC_URL="http://127.0.0.1:19191" \
+  BRIDGE_SIGNER_BELDEXD_RPC_URL="$node_beldex_rpc" \
   BRIDGE_SIGNER_OXENMQ_ENDPOINT="ipc://$sock" \
   BRIDGE_SIGNER_SELF_MN_PUBKEY="$ANY32" \
   BRIDGE_SIGNER_BRIDGE_EPOCH_BLOCKS=120 BRIDGE_SIGNER_COMMITTEE_THRESHOLD=4 \
   BRIDGE_SIGNER_MN_KEY_FILE="$key" BRIDGE_SIGNER_SHARE_DIR="$share" \
+  BRIDGE_SIGNER_ALLOW_FILE_SHARES=1 \
+  BRIDGE_SIGNER_MINT_OUTBOX_DIR="$PWD/${d}devnet/mint-outbox" \
+  BRIDGE_SIGNER_WATCH_STATE_FILE="$PWD/${d}devnet/watch.state" \
+  BRIDGE_SIGNER_GLOBAL_BOND_BACKING="$GLOBAL_BOND_BACKING" \
   BRIDGE_SIGNER_MESH_PORT_BASE=6000 BRIDGE_SIGNER_MESH_PEVM_OFFSET=100 \
-  BRIDGE_SIGNER_MESH_COORD_OFFSET=200 BRIDGE_SIGNER_MESH_USE_CURVE=false \
+  BRIDGE_SIGNER_MESH_COORD_OFFSET=200 BRIDGE_SIGNER_MESH_BIND_HOST=127.0.0.1 BRIDGE_SIGNER_MESH_USE_CURVE="$MESH_USE_CURVE" \
+  BRIDGE_SIGNER_ALLOW_REVERSIBLE_EVM="$ALLOW_REVERSIBLE_EVM" \
   BRIDGE_SIGNER_SIGN_TIMEOUT_SECS="${BRIDGE_SIGNER_SIGN_TIMEOUT_SECS:-600}" \
   BRIDGE_SIGNER_STAGE_TIMEOUT_TICKS="${STAGE_TIMEOUT_TICKS:-4}" \
   BRIDGE_SIGNER_SIGN_SIGNERS="$SIGN_SIGNERS" \
@@ -184,7 +263,7 @@ for d in beldex-127.0.0.1-*/; do
   BRIDGE_SIGNER_GATEWAY_VIEW_SECRET="$VIEW_SECRET" \
   BRIDGE_SIGNER_BELDEX_START_HEIGHT="$START_HEIGHT" \
   BRIDGE_SIGNER_BELDEX_CONFIRMATIONS="$BELDEX_CONFIRMATIONS" \
-  BRIDGE_SIGNER_EVM_CHAINS="$EVM_CHAINS" \
+  BRIDGE_SIGNER_EVM_CHAINS="$node_evm_chains" \
   BRIDGE_SIGNER_WATCH_POLL_SECS="$POLL_SECS" \
   BRIDGE_SIGNER_RELEASE_GATEWAY="$RELEASE_GATEWAY" \
   BRIDGE_SIGNER_RELEASE_FEE="$RELEASE_FEE" \

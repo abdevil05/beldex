@@ -1,24 +1,20 @@
 //! Share-custody interface (**Phase D / D.1**).
 //!
 //! Holds each member's *own* shares of `Pevm` and `Pgw` (plus the Paillier
-//! private key for `Pevm`) and the preprocessed pools. The trait fixes the
-//! **duties**, not the hardware (auditors verify the duties, plan D.1):
+//! private key for `Pevm`). This blob interface provides versioning and erasure
+//! semantics for tests and local persistence; it does **not** itself provide
+//! hardware-backed non-exportability:
 //!
-//!   1. **Non-exportability** — the authenticated signer process may *use* a
-//!      share via key ops but never read the raw secret out; the interface here
-//!      is versioned blobs, and production backends (Vault transit, an enclave)
-//!      keep the secret sealed. A full OS compromise yields detectable live use,
-//!      not an exfiltrated share.
-//!   2. **Versioning** — every proactive refresh writes a new version; the store
+//!   1. **Versioning** — every proactive refresh writes a new version; the store
 //!      keeps enough to support the restore path (Phase J.2) without a reshare.
-//!   3. **Epoch-consistent erasure** — superseded shares, used presignatures and
-//!      consumed nonces are provably destroyed *including in backup history*
-//!      ([`ShareStore::erase_versions_below`]); a restorable pre-refresh share
+//!   2. **Epoch-consistent erasure** — superseded share versions are removed from
+//!      the active store ([`ShareStore::erase_versions_below`]); a restorable pre-refresh share
 //!      silently voids proactive security (Assumption 2).
 //!
 //! This scaffold ships the in-memory backend ([`MemoryShareStore`]) for tests and
-//! devnet; the Vault / enclave backends implement the same trait. **No key is
-//! ever assembled here (S1): the store holds individual shares only.**
+//! devnet. Production requires a separately reviewed Vault/enclave/HSM adapter whose
+//! API performs threshold operations without exporting the raw share. **No full key is
+//! assembled here (S1): this store holds individual shares only.**
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -56,7 +52,10 @@ impl MemoryShareStore {
 
 impl ShareStore for MemoryShareStore {
     fn put(&mut self, key: &str, version: u32, blob: Vec<u8>) {
-        self.map.entry(key.to_string()).or_default().insert(version, blob);
+        self.map
+            .entry(key.to_string())
+            .or_default()
+            .insert(version, blob);
     }
 
     fn get_latest(&self, key: &str) -> Option<(u32, Vec<u8>)> {
@@ -67,11 +66,17 @@ impl ShareStore for MemoryShareStore {
     }
 
     fn get_version(&self, key: &str, version: u32) -> Option<Vec<u8>> {
-        self.map.get(key).and_then(|versions| versions.get(&version)).cloned()
+        self.map
+            .get(key)
+            .and_then(|versions| versions.get(&version))
+            .cloned()
     }
 
     fn versions(&self, key: &str) -> Vec<u32> {
-        self.map.get(key).map(|v| v.keys().copied().collect()).unwrap_or_default()
+        self.map
+            .get(key)
+            .map(|v| v.keys().copied().collect())
+            .unwrap_or_default()
     }
 
     fn erase_key(&mut self, key: &str) {

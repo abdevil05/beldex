@@ -85,7 +85,11 @@ mod tests {
 
         let s56 = vec![0xaau8; 56];
         let e56 = encode_bytes(&s56);
-        assert_eq!(e56[0], 0xb7 + 1, "56 bytes uses long-form with a 1-byte length");
+        assert_eq!(
+            e56[0],
+            0xb7 + 1,
+            "56 bytes uses long-form with a 1-byte length"
+        );
         assert_eq!(e56[1], 56);
         assert_eq!(e56.len(), 58);
 
@@ -97,11 +101,19 @@ mod tests {
 
     #[test]
     fn integers_are_minimal_big_endian() {
-        assert_eq!(minimal_be(0), Vec::<u8>::new(), "zero is the EMPTY string, not 0x00");
+        assert_eq!(
+            minimal_be(0),
+            Vec::<u8>::new(),
+            "zero is the EMPTY string, not 0x00"
+        );
         assert_eq!(encode_uint(0), vec![0x80]);
         assert_eq!(minimal_be(1), vec![0x01]);
         assert_eq!(encode_uint(1), vec![0x01]);
-        assert_eq!(minimal_be(0x0100), vec![0x01, 0x00], "no leading zeros, inner zeros kept");
+        assert_eq!(
+            minimal_be(0x0100),
+            vec![0x01, 0x00],
+            "no leading zeros, inner zeros kept"
+        );
         assert_eq!(encode_uint(1024), vec![0x82, 0x04, 0x00]);
         assert_eq!(minimal_be(u128::MAX).len(), 16);
     }

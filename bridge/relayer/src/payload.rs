@@ -5,7 +5,7 @@
 //! authorizing signature is already inside the payload, and the destination contract checks
 //! it. If every relayer vanishes, any user can build the same [`PreparedCall`] and broadcast.
 
-use crate::abi::{build_mint_calldata, build_rotate_calldata};
+use crate::abi::{build_activate_calldata, build_mint_calldata, build_rotate_calldata};
 
 /// A ready-to-broadcast EVM call: send `data` to `to` on chain `chain_id`, paying gas.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +38,16 @@ pub enum RelayPayload {
         chain_id: u64,
         new_signer: [u8; 20],
         new_key_epoch: u64,
+        /// Single-use authorization nonce expected by `rotationNonce + 1`.
+        nonce: u64,
+        /// Absolute Unix timestamp after which the outgoing authorization is invalid.
+        deadline: u64,
+        sig: Vec<u8>,
+    },
+    /// An incoming-committee-signed `activateRotation` proof of possession.
+    Activate {
+        contract: [u8; 20],
+        chain_id: u64,
         sig: Vec<u8>,
     },
 }
@@ -45,31 +55,50 @@ pub enum RelayPayload {
 impl RelayPayload {
     pub fn chain_id(&self) -> u64 {
         match self {
-            RelayPayload::Mint { chain_id, .. } | RelayPayload::Rotate { chain_id, .. } => *chain_id,
+            RelayPayload::Mint { chain_id, .. }
+            | RelayPayload::Rotate { chain_id, .. }
+            | RelayPayload::Activate { chain_id, .. } => *chain_id,
         }
     }
 
     pub fn contract(&self) -> [u8; 20] {
         match self {
-            RelayPayload::Mint { contract, .. } | RelayPayload::Rotate { contract, .. } => *contract,
+            RelayPayload::Mint { contract, .. }
+            | RelayPayload::Rotate { contract, .. }
+            | RelayPayload::Activate { contract, .. } => *contract,
         }
     }
 
     /// The ABI calldata for this payload's wBDX call.
     pub fn calldata(&self) -> Vec<u8> {
         match self {
-            RelayPayload::Mint { to, amount, beldex_txid, output_index, sig, .. } => {
-                build_mint_calldata(*to, *amount, *beldex_txid, *output_index, sig)
-            }
-            RelayPayload::Rotate { new_signer, new_key_epoch, sig, .. } => {
-                build_rotate_calldata(*new_signer, *new_key_epoch, sig)
-            }
+            RelayPayload::Mint {
+                to,
+                amount,
+                beldex_txid,
+                output_index,
+                sig,
+                ..
+            } => build_mint_calldata(*to, *amount, *beldex_txid, *output_index, sig),
+            RelayPayload::Rotate {
+                new_signer,
+                new_key_epoch,
+                nonce,
+                deadline,
+                sig,
+                ..
+            } => build_rotate_calldata(*new_signer, *new_key_epoch, *nonce, *deadline, sig),
+            RelayPayload::Activate { sig, .. } => build_activate_calldata(sig),
         }
     }
 
     /// The exact `{chain_id, to, data}` to broadcast (or hand to `cast send` / a wallet).
     pub fn to_prepared(&self) -> PreparedCall {
-        PreparedCall { chain_id: self.chain_id(), to: self.contract(), data: self.calldata() }
+        PreparedCall {
+            chain_id: self.chain_id(),
+            to: self.contract(),
+            data: self.calldata(),
+        }
     }
 }
 
@@ -109,7 +138,9 @@ mod json {
     use serde_json::Value;
 
     fn get_str<'a>(v: &'a Value, field: &'static str) -> Result<&'a str, PayloadError> {
-        v.get(field).and_then(Value::as_str).ok_or(PayloadError::MissingField(field))
+        v.get(field)
+            .and_then(Value::as_str)
+            .ok_or(PayloadError::MissingField(field))
     }
 
     impl RelayPayload {
@@ -120,19 +151,26 @@ mod json {
         ///   "key_epoch": 1, "amount": "1000", "beldex_txid": "<64hex>",
         ///   "output_index": 0, "sig": "<130hex>" }
         /// { "kind": "rotate", "contract": "<40hex>", "chain_id": 1,
-        ///   "new_signer": "<40hex>", "new_key_epoch": 7, "sig": "<130hex>" }
+        ///   "new_signer": "<40hex>", "new_key_epoch": 7, "nonce": 3,
+        ///   "deadline": 1900000000, "sig": "<130hex>" }
+        /// { "kind": "activate", "contract": "<40hex>", "chain_id": 1,
+        ///   "sig": "<130hex>" }
         /// ```
         ///
         /// `amount` is a decimal **string** (a wBDX unit is 1 atomic BDX; u128 to be safe).
         pub fn from_json(s: &str) -> Result<RelayPayload, PayloadError> {
-            let v: Value = serde_json::from_str(s).map_err(|e| PayloadError::Json(e.to_string()))?;
+            let v: Value =
+                serde_json::from_str(s).map_err(|e| PayloadError::Json(e.to_string()))?;
             let kind = get_str(&v, "kind")?;
             // Reject an unknown kind BEFORE parsing shared fields, so a bad kind
             // surfaces as UnknownKind rather than a field error on contract/sig.
-            if kind != "mint" && kind != "rotate" {
+            if kind != "mint" && kind != "rotate" && kind != "activate" {
                 return Err(PayloadError::UnknownKind(kind.to_string()));
             }
-            let chain_id = v.get("chain_id").and_then(Value::as_u64).ok_or(PayloadError::MissingField("chain_id"))?;
+            let chain_id = v
+                .get("chain_id")
+                .and_then(Value::as_u64)
+                .ok_or(PayloadError::MissingField("chain_id"))?;
             let contract = hex_fixed::<20>(get_str(&v, "contract")?, "contract")?;
             let sig = hex_var(get_str(&v, "sig")?, "sig")?;
             if sig.len() != 65 {
@@ -158,7 +196,14 @@ mod json {
                     let output_index = u32::try_from(output_index_u64)
                         .map_err(|_| PayloadError::BadInteger("output_index"))?;
                     Ok(RelayPayload::Mint {
-                        contract, chain_id, key_epoch, to, amount, beldex_txid, output_index, sig,
+                        contract,
+                        chain_id,
+                        key_epoch,
+                        to,
+                        amount,
+                        beldex_txid,
+                        output_index,
+                        sig,
                     })
                 }
                 "rotate" => {
@@ -167,8 +212,31 @@ mod json {
                         .get("new_key_epoch")
                         .and_then(Value::as_u64)
                         .ok_or(PayloadError::MissingField("new_key_epoch"))?;
-                    Ok(RelayPayload::Rotate { contract, chain_id, new_signer, new_key_epoch, sig })
+                    let nonce = v
+                        .get("nonce")
+                        .and_then(Value::as_u64)
+                        .filter(|n| *n != 0)
+                        .ok_or(PayloadError::BadInteger("nonce"))?;
+                    let deadline = v
+                        .get("deadline")
+                        .and_then(Value::as_u64)
+                        .filter(|d| *d != 0)
+                        .ok_or(PayloadError::BadInteger("deadline"))?;
+                    Ok(RelayPayload::Rotate {
+                        contract,
+                        chain_id,
+                        new_signer,
+                        new_key_epoch,
+                        nonce,
+                        deadline,
+                        sig,
+                    })
                 }
+                "activate" => Ok(RelayPayload::Activate {
+                    contract,
+                    chain_id,
+                    sig,
+                }),
                 other => Err(PayloadError::UnknownKind(other.to_string())),
             }
         }
@@ -178,21 +246,58 @@ mod json {
             let hexs = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
             match self {
                 RelayPayload::Mint {
-                    contract, chain_id, key_epoch, to, amount, beldex_txid, output_index, sig,
+                    contract,
+                    chain_id,
+                    key_epoch,
+                    to,
+                    amount,
+                    beldex_txid,
+                    output_index,
+                    sig,
                 } => format!(
                     concat!(
                         r#"{{"kind":"mint","contract":"{}","chain_id":{},"to":"{}","#,
                         r#""key_epoch":{},"amount":"{}","beldex_txid":"{}","output_index":{},"sig":"{}"}}"#
                     ),
-                    hexs(contract), chain_id, hexs(to), key_epoch, amount, hexs(beldex_txid),
-                    output_index, hexs(sig),
+                    hexs(contract),
+                    chain_id,
+                    hexs(to),
+                    key_epoch,
+                    amount,
+                    hexs(beldex_txid),
+                    output_index,
+                    hexs(sig),
                 ),
-                RelayPayload::Rotate { contract, chain_id, new_signer, new_key_epoch, sig } => format!(
+                RelayPayload::Rotate {
+                    contract,
+                    chain_id,
+                    new_signer,
+                    new_key_epoch,
+                    nonce,
+                    deadline,
+                    sig,
+                } => format!(
                     concat!(
                         r#"{{"kind":"rotate","contract":"{}","chain_id":{},"#,
-                        r#""new_signer":"{}","new_key_epoch":{},"sig":"{}"}}"#
+                        r#""new_signer":"{}","new_key_epoch":{},"nonce":{},"deadline":{},"sig":"{}"}}"#
                     ),
-                    hexs(contract), chain_id, hexs(new_signer), new_key_epoch, hexs(sig),
+                    hexs(contract),
+                    chain_id,
+                    hexs(new_signer),
+                    new_key_epoch,
+                    nonce,
+                    deadline,
+                    hexs(sig),
+                ),
+                RelayPayload::Activate {
+                    contract,
+                    chain_id,
+                    sig,
+                } => format!(
+                    r#"{{"kind":"activate","contract":"{}","chain_id":{},"sig":"{}"}}"#,
+                    hexs(contract),
+                    chain_id,
+                    hexs(sig),
                 ),
             }
         }
@@ -210,7 +315,8 @@ mod tests {
             key_epoch: 1,
             to: [0x11; 20],
             amount: 1000,
-            beldex_txid: [0xcd; 32], output_index: 0,
+            beldex_txid: [0xcd; 32],
+            output_index: 0,
             sig: vec![0xab; 65],
         }
     }
@@ -227,7 +333,7 @@ mod tests {
 
     #[cfg(feature = "json")]
     #[test]
-    fn json_round_trips_mint_and_rotate() {
+    fn json_round_trips_all_payloads() {
         let m = sample_mint();
         assert_eq!(RelayPayload::from_json(&m.to_json()).unwrap(), m);
 
@@ -236,9 +342,18 @@ mod tests {
             chain_id: 42,
             new_signer: [0x33; 20],
             new_key_epoch: 7,
+            nonce: 3,
+            deadline: 1_900_000_000,
             sig: vec![0xee; 65],
         };
         assert_eq!(RelayPayload::from_json(&r.to_json()).unwrap(), r);
+
+        let a = RelayPayload::Activate {
+            contract: [0x22; 20],
+            chain_id: 42,
+            sig: vec![0xdd; 65],
+        };
+        assert_eq!(RelayPayload::from_json(&a.to_json()).unwrap(), a);
     }
 
     #[cfg(feature = "json")]
@@ -255,8 +370,13 @@ mod tests {
         // A 19-byte contract is the wrong length.
         let bad = format!(
             r#"{{"kind":"mint","contract":"{}","chain_id":1,"to":"{}","amount":"1","beldex_txid":"{}","sig":"ab"}}"#,
-            "11".repeat(19), "22".repeat(20), "cd".repeat(32)
+            "11".repeat(19),
+            "22".repeat(20),
+            "cd".repeat(32)
         );
-        assert_eq!(RelayPayload::from_json(&bad), Err(PayloadError::BadLength("contract")));
+        assert_eq!(
+            RelayPayload::from_json(&bad),
+            Err(PayloadError::BadLength("contract"))
+        );
     }
 }

@@ -112,8 +112,9 @@ pub fn run_cggmp21_sign_over_transport<T: SessionTransport>(
     let tag = sign_tag(&digest32);
 
     // Deserialize this node's complete key share; capture the group key first.
-    let key_share: KeyShare<Secp256k1, SecurityLevel128> = serde_json::from_slice(key_share_blob)
-        .map_err(|e| DriverError::Protocol(format!("deserialize key share: {e}")))?;
+    let key_share: KeyShare<Secp256k1, SecurityLevel128> =
+        serde_json::from_slice(key_share_blob)
+            .map_err(|e| DriverError::Protocol(format!("deserialize key share: {e}")))?;
     let x33: [u8; 33] = {
         use cggmp21::key_share::AnyKeyShare;
         let x = key_share.shared_public_key().to_bytes(true);
@@ -131,14 +132,22 @@ pub fn run_cggmp21_sign_over_transport<T: SessionTransport>(
     loop {
         let _ = transport.broadcast(&hello);
         while let Ok(Some(w)) = transport.poll() {
-            if w.leg != Leg::Pevm || w.epoch != epoch || w.payload_hash != tag || w.attempt != attempt {
+            if w.leg != Leg::Pevm
+                || w.epoch != epoch
+                || w.payload_hash != tag
+                || w.attempt != attempt
+            {
                 continue;
             }
             if !signer_set.contains(&w.from) {
                 continue; // only signers take part
             }
-            let SessionMsg::Round(payload) = &w.body else { continue };
-            let Some((kind, rest)) = payload.split_first() else { continue };
+            let SessionMsg::Round(payload) = &w.body else {
+                continue;
+            };
+            let Some((kind, rest)) = payload.split_first() else {
+                continue;
+            };
             if *kind == CGGMP_HELLO {
                 seen.insert(w.from);
             } else {
@@ -230,12 +239,21 @@ pub fn run_cggmp21_sign_over_transport<T: SessionTransport>(
             .map_err(|e| DriverError::Protocol(format!("serialize outgoing: {e}")))?;
         match out.recipient {
             MessageDestination::AllParties => {
-                let _ = transport.broadcast(&wire(epoch, tag, attempt, self_index, CGGMP_BCAST, &bytes));
+                let _ = transport.broadcast(&wire(
+                    epoch,
+                    tag,
+                    attempt,
+                    self_index,
+                    CGGMP_BCAST,
+                    &bytes,
+                ));
             }
             MessageDestination::OneParty(pos) => {
                 if let Some(&peer_idx) = parties.get(pos as usize) {
-                    let _ = transport
-                        .send_to(peer_idx, &wire(epoch, tag, attempt, self_index, CGGMP_P2P, &bytes));
+                    let _ = transport.send_to(
+                        peer_idx,
+                        &wire(epoch, tag, attempt, self_index, CGGMP_P2P, &bytes),
+                    );
                 }
             }
         }
@@ -248,8 +266,17 @@ pub fn run_cggmp21_sign_over_transport<T: SessionTransport>(
             parties.iter().position(|&x| x == from),
             serde_json::from_slice::<SigningMsg>(&bytes),
         ) {
-            let msg_type = if kind == CGGMP_BCAST { MessageType::Broadcast } else { MessageType::P2P };
-            let _ = in_tx.send(Incoming { id: next_id, sender: sender_pos as u16, msg_type, msg });
+            let msg_type = if kind == CGGMP_BCAST {
+                MessageType::Broadcast
+            } else {
+                MessageType::P2P
+            };
+            let _ = in_tx.send(Incoming {
+                id: next_id,
+                sender: sender_pos as u16,
+                msg_type,
+                msg,
+            });
             next_id += 1;
         }
     }
@@ -264,24 +291,39 @@ pub fn run_cggmp21_sign_over_transport<T: SessionTransport>(
                 Ok(None) => break,
                 Err(_) => break,
             };
-            if w.leg != Leg::Pevm || w.epoch != epoch || w.payload_hash != tag || w.attempt != attempt {
+            if w.leg != Leg::Pevm
+                || w.epoch != epoch
+                || w.payload_hash != tag
+                || w.attempt != attempt
+            {
                 continue;
             }
             let Some(sender_pos) = parties.iter().position(|&x| x == w.from) else {
                 continue; // not a signer
             };
-            let SessionMsg::Round(payload) = &w.body else { continue };
-            let Some((kind, msg_bytes)) = payload.split_first() else { continue };
+            let SessionMsg::Round(payload) = &w.body else {
+                continue;
+            };
+            let Some((kind, msg_bytes)) = payload.split_first() else {
+                continue;
+            };
             if *kind == CGGMP_HELLO {
                 continue;
             }
-            let Ok(msg) = serde_json::from_slice::<SigningMsg>(msg_bytes) else { continue };
+            let Ok(msg) = serde_json::from_slice::<SigningMsg>(msg_bytes) else {
+                continue;
+            };
             let msg_type = if *kind == CGGMP_BCAST {
                 MessageType::Broadcast
             } else {
                 MessageType::P2P
             };
-            let _ = in_tx.send(Incoming { id: next_id, sender: sender_pos as u16, msg_type, msg });
+            let _ = in_tx.send(Incoming {
+                id: next_id,
+                sender: sender_pos as u16,
+                msg_type,
+                msg,
+            });
             next_id += 1;
         }
 
@@ -382,10 +424,15 @@ mod tests {
     }
     impl SharedBus {
         fn new(n: u16) -> SharedBus {
-            SharedBus { inboxes: Arc::new((0..n).map(|_| Mutex::new(VecDeque::new())).collect()) }
+            SharedBus {
+                inboxes: Arc::new((0..n).map(|_| Mutex::new(VecDeque::new())).collect()),
+            }
         }
         fn endpoint(&self, me: u16) -> BusEndpoint {
-            BusEndpoint { bus: self.clone(), me }
+            BusEndpoint {
+                bus: self.clone(),
+                me,
+            }
         }
     }
     impl SessionTransport for BusEndpoint {
@@ -398,11 +445,17 @@ mod tests {
             Ok(())
         }
         fn send_to(&mut self, peer: u16, msg: &WireMsg) -> Result<(), MeshError> {
-            self.bus.inboxes[peer as usize].lock().unwrap().push_back(msg.clone());
+            self.bus.inboxes[peer as usize]
+                .lock()
+                .unwrap()
+                .push_back(msg.clone());
             Ok(())
         }
         fn poll(&mut self) -> Result<Option<WireMsg>, MeshError> {
-            Ok(self.bus.inboxes[self.me as usize].lock().unwrap().pop_front())
+            Ok(self.bus.inboxes[self.me as usize]
+                .lock()
+                .unwrap()
+                .pop_front())
         }
     }
 
@@ -421,8 +474,10 @@ mod tests {
             .set_threshold(Some(t))
             .generate_shares(&mut rng)
             .expect("dealer shares");
-        let blobs: Vec<Vec<u8>> =
-            shares.iter().map(|s| serde_json::to_vec(s).expect("serialize share")).collect();
+        let blobs: Vec<Vec<u8>> = shares
+            .iter()
+            .map(|s| serde_json::to_vec(s).expect("serialize share"))
+            .collect();
 
         let preimage = b"BELDEX_BRIDGE_MINT_V2 || chainid || wBDX || keyEpoch || to || amount || beldexTxid || outputIndex";
         let digest32: [u8; 32] = Keccak256::digest(preimage).into();
@@ -441,7 +496,14 @@ mod tests {
             let pre = preimage.to_vec();
             handles.push(std::thread::spawn(move || {
                 run_cggmp21_sign_over_transport(
-                    &c, idx, &signers, &blob, &pre, 0, &mut ep, Duration::from_secs(120),
+                    &c,
+                    idx,
+                    &signers,
+                    &blob,
+                    &pre,
+                    0,
+                    &mut ep,
+                    Duration::from_secs(120),
                 )
             }));
         }
@@ -472,7 +534,10 @@ mod tests {
                 }
             }
         }
-        assert!(recovered.is_some(), "ecrecover did not recover the wBDX signer address");
+        assert!(
+            recovered.is_some(),
+            "ecrecover did not recover the wBDX signer address"
+        );
         eprintln!(
             "OK: {t}-of-{n} cggmp21 signing over the mesh -> ecrecover'd to wBDX signer 0x{} (v={})",
             expected.iter().map(|b| format!("{b:02x}")).collect::<String>(),

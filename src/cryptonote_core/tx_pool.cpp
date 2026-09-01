@@ -949,19 +949,26 @@ namespace cryptonote
   //---------------------------------------------------------------------------------
   bool tx_memory_pool::insert_key_images(const transaction_prefix &tx, const crypto::hash &id, bool kept_by_block, std::string *out_gw_reason)
   {
+    // Validate the complete key-image set before mutating any pool index.  In particular,
+    // startup may encounter a corrupt/stale persisted transaction; returning false must
+    // not leave the key images processed before the bad input permanently marked spent.
+    std::unordered_set<crypto::key_image> tx_key_images;
     for(const auto& in: tx.vin)
     {
       // HF22: gateway withdrawal inputs carry no key image; their double-spend
       // protection is the per-(gateway,asset) tracker (insert_gateway_spends).
       if (std::holds_alternative<txin_gateway>(in))
         continue;
-      CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, txin, false);
-      std::unordered_set<crypto::hash>& kei_image_set = m_spent_key_images[txin.k_image];
-      CHECK_AND_ASSERT_MES(kept_by_block || kei_image_set.size() == 0, false, "internal error: kept_by_block=" << kept_by_block
-                                          << ",  kei_image_set.size()=" << kei_image_set.size() << "\ntxin.k_image=" << txin.k_image
-                                          << "\ntx_id=" << id );
-      auto ins_res = kei_image_set.insert(id);
-      CHECK_AND_ASSERT_MES(ins_res.second, false, "internal error: try to insert duplicate iterator in key_image set");
+      const auto* txin = std::get_if<txin_to_key>(&in);
+      CHECK_AND_ASSERT_MES(txin, false, "internal error: unsupported tx input while indexing tx " << id);
+      CHECK_AND_ASSERT_MES(tx_key_images.insert(txin->k_image).second, false,
+          "internal error: duplicate key image within tx " << id << ": " << txin->k_image);
+      auto existing = m_spent_key_images.find(txin->k_image);
+      CHECK_AND_ASSERT_MES(kept_by_block || existing == m_spent_key_images.end() || existing->second.empty(), false,
+          "internal error: kept_by_block=" << kept_by_block
+          << ", key image already spent\ntxin.k_image=" << txin->k_image << "\ntx_id=" << id);
+      CHECK_AND_ASSERT_MES(existing == m_spent_key_images.end() || existing->second.count(id) == 0, false,
+          "internal error: duplicate transaction id in key-image index for tx " << id);
     }
     // HF22: track gateway withdrawals / register op for pool txs only (block txs
     // are authoritative and go straight to the chain). Reject pool overdraws.
@@ -973,6 +980,29 @@ namespace cryptonote
         MERROR("gateway pool check failed for tx " << id << ": " << gw_reason);
         if (out_gw_reason)
           *out_gw_reason = std::move(gw_reason);
+        return false;
+      }
+    }
+    for (const auto& key_image : tx_key_images)
+    {
+      auto& key_image_set = m_spent_key_images[key_image];
+      const auto inserted = key_image_set.insert(id);
+      if (!inserted.second)
+      {
+        // This is unreachable after validation unless the index was concurrently
+        // mutated (the caller holds the pool lock), but keep failure atomic.
+        for (const auto& rollback : tx_key_images)
+        {
+          auto it = m_spent_key_images.find(rollback);
+          if (it == m_spent_key_images.end())
+            continue;
+          it->second.erase(id);
+          if (it->second.empty())
+            m_spent_key_images.erase(it);
+        }
+        if (!kept_by_block)
+          remove_gateway_spends(tx);
+        MERROR("Failed to commit key-image index for tx " << id);
         return false;
       }
     }
@@ -2156,6 +2186,8 @@ end:
     m_txpool_max_weight = max_txpool_weight ? max_txpool_weight : DEFAULT_MEMPOOL_MAX_WEIGHT;
     m_txs_by_fee_and_receive_time.clear();
     m_spent_key_images.clear();
+    m_gateway_pending_spends.clear();
+    m_gateway_pending_registers.clear();
     m_txpool_weight = 0;
     std::vector<crypto::hash> remove;
 
@@ -2176,8 +2208,10 @@ end:
         }
         if (!insert_key_images(tx, txid, meta.kept_by_block))
         {
-          MFATAL("Failed to insert key images from txpool tx");
-          return false;
+          MWARNING("Invalid persisted txpool transaction " << txid
+              << " failed index restoration; removing it and continuing startup");
+          remove.push_back(txid);
+          return true;
         }
 
         const bool non_standard_tx = !tx.is_transfer();

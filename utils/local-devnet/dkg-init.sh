@@ -63,12 +63,21 @@ fi
 
 THRESHOLD="${BRIDGE_SIGNER_COMMITTEE_THRESHOLD:-4}"
 TIMEOUT="${BRIDGE_SIGNER_DKG_TIMEOUT_SECS:-600}"
+MESH_USE_CURVE="${BRIDGE_SIGNER_MESH_USE_CURVE:-true}"
+if [ "$MESH_USE_CURVE" = "false" ] || [ "$MESH_USE_CURVE" = "0" ]; then
+  [ "${ALLOW_PLAINTEXT_MESH:-0}" = "1" ] || {
+    echo "!! plaintext DKG refused; set up CURVE or explicitly acknowledge with ALLOW_PLAINTEXT_MESH=1" >&2
+    exit 1
+  }
+fi
 ANY32=$(printf '11%.0s' {1..32})   # placeholder gateway_id / self pubkey (the DKG uses neither)
+CEREMONY_ID="${BRIDGE_SIGNER_DKG_CEREMONY_ID:-$(openssl rand -hex 32)}"
 
 echo "  signer     : $SIGNER"
 echo "  target     : <node>/devnet/shares  (both legs)"
 echo "  threshold  : $THRESHOLD"
 echo "  timeout    : ${TIMEOUT}s"
+echo "  ceremony   : $CEREMONY_ID"
 echo ""
 
 pkill -f 'beldex-bridge-signer dkg' 2>/dev/null || true
@@ -79,15 +88,18 @@ PIDS=""
 for d in beldex-127.0.0.1-*/; do
   sock="$PWD/${d}devnet/beldexd.sock"
   key="$PWD/${d}devnet/key_ed25519"
+  node_port="${d%/}"; node_port="${node_port##*-}"
   # No live socket or no ed25519 identity ⇒ the node cannot join the authenticated mesh.
   [ -S "$sock" ] && [ -f "$key" ] || continue
-  BRIDGE_SIGNER_BELDEXD_RPC_URL="http://127.0.0.1:19191" \
+  BRIDGE_SIGNER_BELDEXD_RPC_URL="http://127.0.0.1:$node_port" \
   BRIDGE_SIGNER_OXENMQ_ENDPOINT="ipc://$sock" \
   BRIDGE_SIGNER_GATEWAY_ID="$ANY32" BRIDGE_SIGNER_SELF_MN_PUBKEY="$ANY32" \
   BRIDGE_SIGNER_BRIDGE_EPOCH_BLOCKS=120 BRIDGE_SIGNER_COMMITTEE_THRESHOLD="$THRESHOLD" \
   BRIDGE_SIGNER_MN_KEY_FILE="$key" BRIDGE_SIGNER_MESH_PORT_BASE=6000 \
-  BRIDGE_SIGNER_MESH_USE_CURVE=false \
+  BRIDGE_SIGNER_MESH_BIND_HOST=127.0.0.1 BRIDGE_SIGNER_MESH_USE_CURVE="$MESH_USE_CURVE" \
+  BRIDGE_SIGNER_ALLOW_FILE_SHARES=1 \
   BRIDGE_SIGNER_DKG_TIMEOUT_SECS="$TIMEOUT" \
+  BRIDGE_SIGNER_DKG_CEREMONY_ID="$CEREMONY_ID" \
   BRIDGE_SIGNER_SHARE_DIR="$PWD/${d}devnet/shares" \
     "$SIGNER" dkg > "dkg-${d%/}.log" 2>&1 &
   PIDS="$PIDS $!"

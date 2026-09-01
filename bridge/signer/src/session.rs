@@ -207,7 +207,12 @@ impl Session {
         if self_index >= committee.members.len() {
             return Err(SessionError::UnknownMember);
         }
-        let id = SessionId { leg, epoch: committee.epoch, payload_hash, attempt: 0 };
+        let id = SessionId {
+            leg,
+            epoch: committee.epoch,
+            payload_hash,
+            attempt: 0,
+        };
         let excluded = BTreeSet::new();
         let leader = Self::pick_leader(committee.members.len(), &id, &excluded)
             .ok_or(SessionError::Terminal(Stage::Aborted))?;
@@ -280,16 +285,26 @@ impl Session {
     }
 
     /// The **canonical** signing participant set: the lowest `threshold` ACKers in committee
-    /// order. Every honest node must feed the *same* set to the scheme driver (its mesh
-    /// barrier waits on exactly those peers), so the rule is a deterministic function of the
-    /// ACK set — and callers must let ACKs settle before reading it (ACKs are broadcast, so
-    /// one full step after reaching `Sign` every live node holds the same set).
-    /// `None` if fewer than `threshold` ACKs are in.
+    /// order. The set is withheld while any lower-indexed eligible member could still ACK
+    /// and displace its last member. This is an information-completeness gate, not a timing
+    /// delay: a node returns `None` until every lower index has ACKed, NACKed, or been
+    /// deterministically excluded. Thus incomplete views wait instead of choosing a
+    /// conflicting mesh participant set.
     pub fn canonical_signers(&self) -> Option<Vec<u16>> {
         if self.acks.len() < self.threshold {
             return None;
         }
-        Some(self.ack_set().into_iter().take(self.threshold).collect())
+        let prefix: Vec<u16> = self.ack_set().into_iter().take(self.threshold).collect();
+        let highest = *prefix.last()? as usize;
+        for member in 0..highest {
+            if !self.acks.contains(&member)
+                && !self.nacks.contains(&member)
+                && !self.excluded.contains(&member)
+            {
+                return None;
+            }
+        }
+        Some(prefix)
     }
 
     fn check_member(&self, m: usize) -> Result<(), SessionError> {
@@ -351,7 +366,8 @@ impl Session {
         }
         self.check_member(member)?;
         if self.nacks.insert(member) {
-            self.transcript.push(TranscriptEntry::Nack { member, reason });
+            self.transcript
+                .push(TranscriptEntry::Nack { member, reason });
         }
         if self.max_possible_acks() < self.threshold {
             self.retry();
@@ -374,7 +390,8 @@ impl Session {
             return Ok(());
         }
         if self.round_msgs.insert(member) {
-            self.transcript.push(TranscriptEntry::RoundMessage { member, bytes });
+            self.transcript
+                .push(TranscriptEntry::RoundMessage { member, bytes });
         }
         Ok(())
     }
@@ -391,7 +408,8 @@ impl Session {
         if self.stage != Stage::Sign {
             return Err(SessionError::WrongStage(self.stage));
         }
-        self.transcript.push(TranscriptEntry::Signature { bytes: signature });
+        self.transcript
+            .push(TranscriptEntry::Signature { bytes: signature });
         self.stage = Stage::Distribute;
         Ok(())
     }
@@ -521,7 +539,10 @@ mod tests {
         assert!(a.leader() < 6);
         assert_eq!(a.stage(), Stage::Consensus);
         // The proposal is the transcript root.
-        assert!(matches!(a.transcript()[0], TranscriptEntry::Proposal { .. }));
+        assert!(matches!(
+            a.transcript()[0],
+            TranscriptEntry::Proposal { .. }
+        ));
     }
 
     #[test]
@@ -561,6 +582,48 @@ mod tests {
         s.on_ack(0).unwrap(); // duplicate ignored
         assert_eq!(s.ack_count(), 2);
         assert_eq!(s.stage(), Stage::Consensus);
+    }
+
+    #[test]
+    fn canonical_signers_are_independent_of_ack_arrival_order() {
+        let mut a = start_session(6, 4);
+        let mut b = start_session(6, 4);
+        for member in [4, 1, 3, 0, 2] {
+            a.on_ack(member).unwrap();
+        }
+        for member in [2, 0, 4, 3, 1] {
+            b.on_ack(member).unwrap();
+        }
+        assert_eq!(a.canonical_signers(), Some(vec![0, 1, 2, 3]));
+        assert_eq!(a.canonical_signers(), b.canonical_signers());
+    }
+
+    #[test]
+    fn canonical_signers_wait_while_lower_index_can_displace_a_member() {
+        let mut s = start_session(6, 4);
+        for member in [0, 2, 3, 4] {
+            s.on_ack(member).unwrap();
+        }
+        assert_eq!(s.stage(), Stage::Sign);
+        assert_eq!(
+            s.canonical_signers(),
+            None,
+            "member 1 could still displace member 4"
+        );
+        s.on_ack(1).unwrap();
+        assert_eq!(s.canonical_signers(), Some(vec![0, 1, 2, 3]));
+    }
+
+    #[test]
+    fn canonical_signers_resolve_after_lower_index_is_excluded() {
+        let mut s = start_session(6, 4);
+        for member in [0, 2, 3, 4] {
+            s.on_ack(member).unwrap();
+        }
+        assert_eq!(s.canonical_signers(), None);
+        // Exclusions are attempt-wide deterministic state populated by retry handling.
+        s.excluded.insert(1);
+        assert_eq!(s.canonical_signers(), Some(vec![0, 2, 3, 4]));
     }
 
     #[test]
@@ -642,7 +705,10 @@ mod tests {
     fn wrong_stage_events_are_rejected() {
         let mut s = start_session(6, 4);
         // round message before consensus completes
-        assert_eq!(s.on_round_message(0, vec![1]), Err(SessionError::WrongStage(Stage::Consensus)));
+        assert_eq!(
+            s.on_round_message(0, vec![1]),
+            Err(SessionError::WrongStage(Stage::Consensus))
+        );
         for m in 0..4 {
             s.on_ack(m).unwrap();
         }
@@ -652,7 +718,11 @@ mod tests {
         assert_eq!(s.stage(), Stage::Sign);
         s.on_ack(4).unwrap();
         assert_eq!(s.ack_count(), 5);
-        assert_eq!(s.stage(), Stage::Sign, "a late ACK does not re-transition the stage");
+        assert_eq!(
+            s.stage(),
+            Stage::Sign,
+            "a late ACK does not re-transition the stage"
+        );
     }
 
     #[test]

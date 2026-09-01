@@ -101,6 +101,13 @@ if [ "$EXISTING" -ne 0 ] && [ "${ALLOW_CLOBBER:-0}" != "1" ]; then
 fi
 
 THRESHOLD="${BRIDGE_SIGNER_COMMITTEE_THRESHOLD:-4}"
+MESH_USE_CURVE="${BRIDGE_SIGNER_MESH_USE_CURVE:-true}"
+if [ "$MESH_USE_CURVE" = "false" ] || [ "$MESH_USE_CURVE" = "0" ]; then
+  [ "${ALLOW_PLAINTEXT_MESH:-0}" = "1" ] || {
+    echo "!! plaintext DKG refused; set up CURVE or explicitly acknowledge with ALLOW_PLAINTEXT_MESH=1" >&2
+    exit 1
+  }
+fi
 
 echo "  signer     : $SIGNER"
 echo "  target     : devnet/$SUBDIR  (the CURRENT key in devnet/shares is untouched)"
@@ -116,23 +123,27 @@ sleep 1
 rm -f dkg-next-*.log
 
 ANY32=$(printf '11%.0s' {1..32})
+CEREMONY_ID="${BRIDGE_SIGNER_DKG_CEREMONY_ID:-$(openssl rand -hex 32)}"
 
 PIDS=""
 for d in beldex-127.0.0.1-*/; do
   sock="$PWD/${d}devnet/beldexd.sock"
   key="$PWD/${d}devnet/key_ed25519"
+  node_port="${d%/}"; node_port="${node_port##*-}"
   share="$PWD/${d}devnet/$SUBDIR"
   # Same participant filter as sign-mint.sh: no live socket or no ed25519 identity means
   # the node cannot join the authenticated mesh.
   [ -S "$sock" ] && [ -f "$key" ] || continue
   mkdir -p "$share"
-  BRIDGE_SIGNER_BELDEXD_RPC_URL="http://127.0.0.1:19191" \
+  BRIDGE_SIGNER_BELDEXD_RPC_URL="http://127.0.0.1:$node_port" \
   BRIDGE_SIGNER_OXENMQ_ENDPOINT="ipc://$sock" \
   BRIDGE_SIGNER_GATEWAY_ID="$ANY32" BRIDGE_SIGNER_SELF_MN_PUBKEY="$ANY32" \
   BRIDGE_SIGNER_BRIDGE_EPOCH_BLOCKS=120 BRIDGE_SIGNER_COMMITTEE_THRESHOLD="$THRESHOLD" \
   BRIDGE_SIGNER_MN_KEY_FILE="$key" BRIDGE_SIGNER_MESH_PORT_BASE=6000 \
-  BRIDGE_SIGNER_MESH_USE_CURVE=false BRIDGE_SIGNER_SHARE_DIR="$share" \
+  BRIDGE_SIGNER_MESH_BIND_HOST=127.0.0.1 BRIDGE_SIGNER_MESH_USE_CURVE="$MESH_USE_CURVE" BRIDGE_SIGNER_ALLOW_FILE_SHARES=1 \
+  BRIDGE_SIGNER_SHARE_DIR="$share" \
   BRIDGE_SIGNER_DKG_LEG=pevm BRIDGE_SIGNER_DKG_KEYGEN="$KEYGEN" \
+  BRIDGE_SIGNER_DKG_CEREMONY_ID="$CEREMONY_ID" \
   BRIDGE_SIGNER_DKG_TIMEOUT_SECS="${BRIDGE_SIGNER_DKG_TIMEOUT_SECS:-900}" \
     "$SIGNER" dkg > "dkg-next-${d%/}.log" 2>&1 &
   PIDS="$PIDS $!"

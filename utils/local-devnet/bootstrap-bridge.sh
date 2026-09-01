@@ -21,9 +21,11 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 export PATH="$HOME/.foundry/bin:$PATH"
+umask 077
 
 RPC=http://127.0.0.1:19191
-BC="${BC:-$HOME/Desktop/beldex/bridge-contract}"
+ROOT="$(git rev-parse --show-toplevel)"
+BC="${BC:-$(dirname "$ROOT")/bridge-contract}"
 ENVFILE="$PWD/devnet-bridge.env"
 
 jrpc() { # jrpc <method> [params-json]
@@ -78,10 +80,41 @@ done
 [ "$N" = "6" ] || { echo "!! no 6-member committee after 10min (last count: $N) — check the harness"; exit 1; }
 echo "committee active (6 members)"
 
+# Build the exact signer source in this working tree before generating any key material.
+# This prevents a green run against an older target/debug binary left by a prior checkout.
+say "build + attest bridge signer"
+cargo build --manifest-path "$ROOT/bridge/signer/Cargo.toml" --features serve-live
+SIGNER_BIN="$ROOT/bridge/signer/target/debug/beldex-bridge-signer"
+[ -x "$SIGNER_BIN" ] || { echo "!! signer build produced no executable" >&2; exit 1; }
+echo "source commit : $(git -C "$ROOT" rev-parse HEAD)$(git -C "$ROOT" diff --quiet && echo '' || echo '-dirty')"
+echo "signer sha256 : $(sha256sum "$SIGNER_BIN" | awk '{print $1}')"
+
+# A successful link does not prove that the system libzmq was compiled with libsodium.
+# Probe before any DKG traffic so a secure ceremony cannot fail halfway through. The
+# only bypass is an intentionally noisy local-canary mode requiring two independent
+# opt-ins; neither variable is defaulted here.
+if ! "$SIGNER_BIN" check-curve; then
+  if [ "${ALLOW_PLAINTEXT_MESH:-0}" = "1" ] \
+      && [ "${BRIDGE_SIGNER_MESH_USE_CURVE:-true}" = "false" ]; then
+    echo "!! INSECURE LOCAL CANARY: CURVE unavailable and plaintext mesh explicitly enabled" >&2
+  else
+    echo "!! encrypted signer mesh is unavailable; refusing to start DKG" >&2
+    echo "   Install/rebuild libzmq with libsodium, or for a disposable localhost-only canary set:" >&2
+    echo "   ALLOW_PLAINTEXT_MESH=1 BRIDGE_SIGNER_MESH_USE_CURVE=false" >&2
+    exit 1
+  fi
+fi
+
 # ── 3. dual DKG ──────────────────────────────────────────────────────────────
 say "dual DKG"
-if ls testdata/beldex-127.0.0.1-*/devnet/shares/pgw-*.groupvk >/dev/null 2>&1; then
-  echo "shares already present — skipping (wipe testdata to force a fresh DKG)"
+PGW_COUNT="$(find testdata -path '*/devnet/shares/pgw-*.keypackage' -type f | wc -l | tr -d ' ')"
+PEVM_COUNT="$(find testdata -path '*/devnet/shares/pevm-*.keyshare' -type f | wc -l | tr -d ' ')"
+if [ "$PGW_COUNT" -eq 6 ] && [ "$PEVM_COUNT" -eq 6 ]; then
+  echo "six complete dual-share trees already present — validating before reuse"
+elif [ "$PGW_COUNT" -ne 0 ] || [ "$PEVM_COUNT" -ne 0 ]; then
+  echo "!! partial/stale DKG state: Pgw=$PGW_COUNT Pevm=$PEVM_COUNT (expected 6/6 or 0/0)" >&2
+  echo "   Refusing to combine keys from different ceremonies; wipe testdata and restart." >&2
+  exit 1
 else
   ./dkg-init.sh
 fi
@@ -90,6 +123,8 @@ PGW_GROUP_VK="$(od -An -v -tx1 < "$GVK_FILE" | tr -d ' \n')"
 # all nodes must agree
 DISTINCT=$(for f in testdata/beldex-127.0.0.1-*/devnet/shares/pgw-*.groupvk; do od -An -v -tx1 < "$f" | tr -d ' \n'; echo; done | sort -u | wc -l | tr -d ' ')
 [ "$DISTINCT" = "1" ] || { echo "!! nodes disagree on the Pgw group key — do not proceed"; exit 1; }
+PEVM_DISTINCT=$(for f in testdata/beldex-127.0.0.1-*/devnet/shares/pevm-*.groupkey; do od -An -v -tx1 < "$f" | tr -d ' \n'; echo; done | sort -u | wc -l | tr -d ' ')
+[ "$PEVM_DISTINCT" = "1" ] || { echo "!! nodes disagree on the Pevm group key — do not proceed"; exit 1; }
 echo "PGW_GROUP_VK=$PGW_GROUP_VK"
 
 # ── 4. Pevm signer address ───────────────────────────────────────────────────
@@ -113,15 +148,34 @@ echo "PEVM_ADDR=$PEVM_ADDR"
 # ── 5. deploy wBDX ───────────────────────────────────────────────────────────
 say "deploy WrappedBDX"
 [ -d "$BC" ] || { echo "!! bridge-contract repo not found at $BC (set BC=…)"; exit 1; }
-CUR=""
+CUR=""; REUSE_CONTRACT=0
 if [ -f "$BC/devnet/mint.env" ]; then
   PROXY_OLD=$(grep '^PROXY=' "$BC/devnet/mint.env" | cut -d= -f2)
   CUR=$(cast call "$PROXY_OLD" 'currentSigner()(address)' --rpc-url http://127.0.0.1:8545 2>/dev/null \
         | tr 'A-Z' 'a-z' || true)
+  ADMIN_OLD=$(cast call "$PROXY_OLD" 'admin()(address)' --rpc-url http://127.0.0.1:8545 2>/dev/null | tr 'A-Z' 'a-z' || true)
+  GUARDIAN_OLD=$(cast call "$PROXY_OLD" 'guardian()(address)' --rpc-url http://127.0.0.1:8545 2>/dev/null | tr 'A-Z' 'a-z' || true)
+  NETWORK_OLD=$(cast call "$PROXY_OLD" 'beldexNetwork()(uint8)' --rpc-url http://127.0.0.1:8545 2>/dev/null | sed -n 's/^\([0-9][0-9]*\).*/\1/p')
+  MIN_REDEEM_OLD=$(cast call "$PROXY_OLD" 'minRedeemAmount()(uint256)' --rpc-url http://127.0.0.1:8545 2>/dev/null | sed -n 's/^\([0-9][0-9]*\).*/\1/p')
+  TAG_OLD=$(cast call "$PROXY_OLD" 'MINT_TAG()(bytes32)' --rpc-url http://127.0.0.1:8545 2>/dev/null | tr 'A-Z' 'a-z' || true)
+  ADMIN_CODE=$(cast code "$ADMIN_OLD" --rpc-url http://127.0.0.1:8545 2>/dev/null || true)
+  EXPECT_GUARDIAN=$(grep '^GUARDIAN=' "$BC/devnet/mint.env" | cut -d= -f2 | tr 'A-Z' 'a-z')
+  EXPECT_IMPL=$(grep '^IMPL=' "$BC/devnet/mint.env" | cut -d= -f2 | tr 'A-Z' 'a-z')
+  IMPL_SLOT=$(cast storage "$PROXY_OLD" 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc --rpc-url http://127.0.0.1:8545 2>/dev/null | tr 'A-Z' 'a-z' || true)
+  LIVE_IMPL="0x${IMPL_SLOT: -40}"
+  EXPECT_TAG=0x26d48d33d413c44fc6f4279483ab40c9931aecbd2d2b355f503e48d69e40dbf1
+  if [ -n "$CUR" ] \
+      && [ "$CUR" = "$(echo "$PEVM_ADDR" | tr 'A-Z' 'a-z')" ] \
+      && [ -n "$ADMIN_OLD" ] && [ "$ADMIN_CODE" != "0x" ] && [ -n "$ADMIN_CODE" ] \
+      && [ "$GUARDIAN_OLD" = "$EXPECT_GUARDIAN" ] && [ "$NETWORK_OLD" = "2" ] \
+      && [ "${MIN_REDEEM_OLD:-0}" -gt 0 ] && [ "$TAG_OLD" = "$EXPECT_TAG" ] \
+      && [ "$LIVE_IMPL" = "$EXPECT_IMPL" ]; then
+    REUSE_CONTRACT=1
+  fi
 fi
-if [ -n "$CUR" ] && [ "$CUR" = "$(echo "$PEVM_ADDR" | tr 'A-Z' 'a-z')" ]; then
+if [ "$REUSE_CONTRACT" -eq 1 ]; then
   WBDX="$PROXY_OLD"
-  echo "already deployed for this committee: $WBDX"
+  echo "validated existing timelocked devnet deployment for this committee: $WBDX"
 else
   (cd "$BC" && SIGNER_ADDR="$PEVM_ADDR" ./devnet/01-deploy.sh)
   WBDX=$(grep '^PROXY=' "$BC/devnet/mint.env" | cut -d= -f2)
@@ -132,9 +186,26 @@ echo "WBDX=$WBDX"
 say "bridge gateway"
 EXISTING=$(jrpc get_all_gateways | python3 -c 'import sys,json; r=json.load(sys.stdin)["result"]; print(r.get("total",0))')
 if [ "$EXISTING" != "0" ] && [ -f "$ENVFILE" ] && grep -q VIEW_SECRET "$ENVFILE"; then
-  echo "gateway already registered and its secret is in $ENVFILE — reusing"
   # shellcheck disable=SC1090
   . "$ENVFILE"
+  INFO=$(jrpc get_gateway_info "{\"gateway_address\":\"$GATEWAY_ID\"}")
+  INFO_CHECK=$(python3 - "$PGW_GROUP_VK" "$INFO" <<'PY'
+import json,sys
+want=sys.argv[1].lower(); r=json.loads(sys.argv[2]).get("result",{})
+ok=(r.get("registered") is True and r.get("bridge_reserve") is True and
+    r.get("frozen") is False and r.get("owner_key_type")==2 and
+    str(r.get("owner_key","")).lower()==want)
+print("ok" if ok else json.dumps(r,sort_keys=True))
+PY
+  )
+  [ "$INFO_CHECK" = "ok" ] || {
+    echo "!! persisted gateway does not match the active Pgw bridge reserve:" >&2
+    echo "   $INFO_CHECK" >&2; exit 1; }
+  echo "validated existing bridge gateway and view-secret binding — reusing"
+elif [ "$EXISTING" != "0" ]; then
+  echo "!! $EXISTING gateway(s) exist but no validated $ENVFILE binding is available." >&2
+  echo "   Refusing to guess that the newest gateway belongs to this ceremony." >&2
+  exit 1
 else
   VIEW_SECRET="$(openssl rand -hex 31)00"
   # a funded devnet wallet-rpc (Mike = the one with a balance)
@@ -156,12 +227,23 @@ else
   echo "registration tx submitted; mining it in…"
   ./mine.sh 12 >/dev/null
 fi
-# read the (only) gateway back — fresh chain, so newest == ours
+# Read the gateway back. Existing-state reuse was validated above; a newly registered
+# fresh chain has exactly one gateway, so there is no ambiguous "last one wins" binding.
 GWJSON=$(jrpc get_all_gateways)
 GATEWAY_ID=$(echo "$GWJSON"   | python3 -c 'import sys,json; g=json.load(sys.stdin)["result"]["gateways"]; print(g[-1]["gateway_id"])')
 GATEWAY_ADDR=$(echo "$GWJSON" | python3 -c 'import sys,json; g=json.load(sys.stdin)["result"]["gateways"]; print(g[-1]["address"])')
 echo "GATEWAY_ID=$GATEWAY_ID"
 echo "GATEWAY_ADDR=$GATEWAY_ADDR"
+FINAL_INFO=$(jrpc get_gateway_info "{\"gateway_address\":\"$GATEWAY_ID\"}")
+python3 - "$PGW_GROUP_VK" "$FINAL_INFO" <<'PY'
+import json,sys
+want=sys.argv[1].lower(); r=json.loads(sys.argv[2]).get("result",{})
+assert r.get("registered") is True, "gateway not registered"
+assert r.get("bridge_reserve") is True, "gateway is not bridge_reserve"
+assert r.get("frozen") is False, "gateway is frozen"
+assert r.get("owner_key_type")==2, "gateway owner is not EdDSA"
+assert str(r.get("owner_key","")).lower()==want, "gateway owner != active Pgw"
+PY
 
 # ── 7. persist + launch ──────────────────────────────────────────────────────
 say "persist + launch"
@@ -175,6 +257,7 @@ VIEW_SECRET=$VIEW_SECRET
 GATEWAY_ID=$GATEWAY_ID
 GATEWAY_ADDR=$GATEWAY_ADDR
 EOF
+chmod 600 "$ENVFILE"
 echo "wrote $ENVFILE"
 
 GATEWAY_ID="$GATEWAY_ID" VIEW_SECRET="$VIEW_SECRET" WBDX="$WBDX" ./serve-live.sh
@@ -186,13 +269,9 @@ Bridge is up. Next, from a CLI wallet (fund it per DEVNET_SETUP.md §4):
 
   transfer $GATEWAY_ADDR 50 31337:0x<20-byte evm address>
 
-and to auto-broadcast mints, in another shell:
-
-  BRIDGE_SIGNER_OXENMQ_ENDPOINT=ipc://\$PWD/testdata/beldex-127.0.0.1-19191/devnet/beldexd.sock \\
-  BRIDGE_SIGNER_RELAY_CMD='$HOME/Desktop/beldex/beldex/dkg-tss/beldex/bridge/relayer/target/debug/beldex-bridge-relayer relay -' \\
-  RELAYER_GAS_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \\
-  RELAYER_CHAINS='[{"chain_id":31337,"rpc_url":"http://127.0.0.1:8545"}]' \\
-    $HOME/Desktop/beldex/beldex/dkg-tss/beldex/bridge/signer/target/debug/beldex-bridge-signer relay-watch
+Signed mint payloads are written under each node's configured mint-outbox
+directory. Relay them only after checking their chain ID, contract, epoch,
+deposit ID, output index, recipient and amount. See the local DKG runbook.
 
 Watch:  tail -f testdata/serve-*.log
 ────────────────────────────────────────────────────────────────────────────

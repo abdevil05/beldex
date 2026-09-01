@@ -99,7 +99,10 @@ pub struct AuthKeyBook<E: Ed25519> {
 impl<E: Ed25519> AuthKeyBook<E> {
     /// Create an empty key book backed by ed25519 primitive `ed`.
     pub fn new(ed: E) -> Self {
-        AuthKeyBook { keys: BTreeMap::new(), ed }
+        AuthKeyBook {
+            keys: BTreeMap::new(),
+            ed,
+        }
     }
 
     /// Build from `(index, signer_ed25519)` pairs (self + peers).
@@ -304,7 +307,14 @@ mod tests {
     }
 
     fn wire(from: u16, body: SessionMsg) -> WireMsg {
-        WireMsg { leg: Leg::Pgw, epoch: 2, payload_hash: [7u8; 32], attempt: 0, from, body }
+        WireMsg {
+            leg: Leg::Pgw,
+            epoch: 2,
+            payload_hash: [7u8; 32],
+            attempt: 0,
+            from,
+            body,
+        }
     }
 
     fn book() -> AuthKeyBook<MockEd> {
@@ -365,7 +375,10 @@ mod tests {
 
     #[test]
     fn truncated_frame_is_rejected() {
-        assert_eq!(book().authenticate(&[0u8; 10]), Err(AuthVerifyError::Truncated));
+        assert_eq!(
+            book().authenticate(&[0u8; 10]),
+            Err(AuthVerifyError::Truncated)
+        );
     }
 
     #[test]
@@ -406,14 +419,22 @@ mod tests {
         let bad_frame = sign_wire(&forger, &spoof).unwrap();
         assert_eq!(
             apply_signed(&mut session, &b, &bad_frame),
-            Err(AuthDispatchError::Auth(AuthVerifyError::Auth(AuthError::BadSignature(1))))
+            Err(AuthDispatchError::Auth(AuthVerifyError::Auth(
+                AuthError::BadSignature(1)
+            )))
         );
-        assert_eq!(session.ack_count(), 0, "a forged ACK must not enter the transcript");
+        assert_eq!(
+            session.ack_count(),
+            0,
+            "a forged ACK must not enter the transcript"
+        );
 
         // Genuine ACKs from members 0 and 1 (each signed by its own key) advance
         // the session to Sign (t+1 = 2).
         for m in 0u16..2 {
-            let signer = MockSigner { key: key(0x10 + m as u8) };
+            let signer = MockSigner {
+                key: key(0x10 + m as u8),
+            };
             let mut msg = wire(m, SessionMsg::Ack);
             msg.payload_hash = [7u8; 32];
             let frame = sign_wire(&signer, &msg).unwrap();

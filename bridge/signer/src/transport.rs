@@ -72,7 +72,10 @@ impl LoopbackTransport {
 
     /// Bind this endpoint to a single leg so foreign-leg messages are rejected.
     pub fn bound_to(leg: Leg) -> Self {
-        LoopbackTransport { bound_leg: Some(leg), ..Self::default() }
+        LoopbackTransport {
+            bound_leg: Some(leg),
+            ..Self::default()
+        }
     }
 
     /// Queue an inbound message (as if received from the mesh).
