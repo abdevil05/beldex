@@ -230,6 +230,8 @@ pub struct RotationEvent {
     /// The EVM tx that emitted the event (for the watcher's reorg/finality tracking).
     pub evm_txid: [u8; 32],
     pub chain: ChainId,
+    pub contract: [u8; 20],
+    pub log_index: u32,
     /// The contract's new monotonic key epoch after this rotation.
     pub key_epoch: u64,
     /// The incoming `Pevm` address the contract now trusts as mint authority.
@@ -284,6 +286,8 @@ pub fn decode_rotated_log(
     let inclusion_height = hex_to_u64(field("blockNumber")?).ok_or(DecodeError::BadHex)?;
     let block_hash = hex_to_fixed32(field("blockHash")?).ok_or(DecodeError::BadHex)?;
     let evm_txid = hex_to_fixed32(field("transactionHash")?).ok_or(DecodeError::BadHex)?;
+    let log_index_u64 = hex_to_u64(field("logIndex")?).ok_or(DecodeError::BadHex)?;
+    let log_index = u32::try_from(log_index_u64).map_err(|_| DecodeError::AmountOverflow)?;
 
     // data = abi.encode(uint64 newKeyEpoch): one 32-byte word, value in the low 8 bytes.
     let data = hex_to_bytes(field("data")?).ok_or(DecodeError::BadHex)?;
@@ -299,6 +303,8 @@ pub fn decode_rotated_log(
         event: RotationEvent {
             evm_txid,
             chain,
+            contract,
+            log_index,
             key_epoch,
             new_signer,
         },
@@ -333,6 +339,39 @@ pub struct EvmWatcher<C: JsonRpcClient> {
     tracker: Tracker<ReleaseEvent>,
     /// Next block to scan (inclusive).
     next_scan: u64,
+    finality: EvmFinality,
+    /// Last consensus-finalized anchor accepted by this watcher. In strong
+    /// finality modes every later poll proves this anchor is still canonical;
+    /// a regression or conflicting finalized ancestry halts releases.
+    last_actionable_anchor: Option<(u64, [u8; 32])>,
+}
+
+/// Which EVM consensus boundary is allowed to authorize an irreversible native
+/// release. `Confirmations` is retained for explicit development use; production
+/// deployments should consume the RPC's consensus-aware `safe` or `finalized` tag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvmFinality {
+    Confirmations,
+    Safe,
+    Finalized,
+}
+
+impl EvmFinality {
+    pub fn is_consensus_aware(self) -> bool {
+        matches!(self, Self::Safe | Self::Finalized)
+    }
+
+    fn rpc_tag(self) -> Option<&'static str> {
+        match self {
+            Self::Confirmations => None,
+            Self::Safe => Some("safe"),
+            Self::Finalized => Some("finalized"),
+        }
+    }
+
+    pub fn settlement_tag(self) -> &'static str {
+        self.rpc_tag().unwrap_or("latest")
+    }
 }
 
 impl<C: JsonRpcClient> EvmWatcher<C> {
@@ -349,7 +388,23 @@ impl<C: JsonRpcClient> EvmWatcher<C> {
             contract,
             tracker: Tracker::new(confirmations),
             next_scan: start_block,
+            finality: EvmFinality::Confirmations,
+            last_actionable_anchor: None,
         }
+    }
+
+    pub fn with_finality(mut self, finality: EvmFinality) -> Self {
+        self.finality = finality;
+        if finality.is_consensus_aware() {
+            self.tracker = Tracker::new(0);
+        }
+        self
+    }
+
+    /// Restore the last fsynced safe/finalized anchor after a restart.
+    pub fn with_finalized_anchor(mut self, height: u64, hash: [u8; 32]) -> Self {
+        self.last_actionable_anchor = Some((height, hash));
+        self
     }
 
     /// Current chain head (`eth_blockNumber`).
@@ -358,6 +413,38 @@ impl<C: JsonRpcClient> EvmWatcher<C> {
         v.as_str()
             .and_then(hex_to_u64)
             .ok_or_else(|| RpcError::BadResponse("eth_blockNumber".into()))
+    }
+
+    /// Highest block the configured consensus finality policy permits us to act
+    /// upon. Safe/finalized tags are resolved by the node itself; unsupported tags
+    /// fail closed instead of silently degrading to confirmation depth.
+    pub fn actionable_tip(&self) -> Result<u64, RpcError> {
+        self.actionable_anchor().map(|(height, _)| height)
+    }
+
+    fn actionable_anchor(&self) -> Result<(u64, Option<[u8; 32]>), RpcError> {
+        let Some(tag) = self.finality.rpc_tag() else {
+            return self.tip().map(|height| (height, None));
+        };
+        let v = self
+            .client
+            .call("eth_getBlockByNumber", json!([tag, false]))?;
+        if v.is_null() {
+            return Err(RpcError::BadResponse(format!(
+                "eth_getBlockByNumber({tag}) unsupported or unavailable"
+            )));
+        }
+        let height = v
+            .get("number")
+            .and_then(Value::as_str)
+            .and_then(hex_to_u64)
+            .ok_or_else(|| RpcError::BadResponse(format!("{tag} block.number")))?;
+        let hash = v
+            .get("hash")
+            .and_then(Value::as_str)
+            .and_then(hex_to_fixed32)
+            .ok_or_else(|| RpcError::BadResponse(format!("{tag} block.hash")))?;
+        Ok((height, Some(hash)))
     }
 
     fn get_logs(&self, from: u64, to: u64) -> Result<Vec<Observation<ReleaseEvent>>, RpcError> {
@@ -392,14 +479,67 @@ impl<C: JsonRpcClient> EvmWatcher<C> {
     /// the current chain (reorg-aware). Returns what became final (actionable
     /// [`ReleaseEvent`]s) and what dropped this step.
     pub fn advance(&mut self) -> Result<TrackerUpdate<ReleaseEvent>, RpcError> {
-        let tip = self.tip()?;
+        let chain_tip = self.tip()?;
+        let actionable_tip = self.validate_finality()?;
 
-        if tip >= self.next_scan {
-            let scan_to = tip.min(self.next_scan.saturating_add(MAX_LOG_BLOCK_RANGE - 1));
-            for obs in self.get_logs(self.next_scan, scan_to)? {
+        self.advance_at(chain_tip, actionable_tip)
+    }
+
+    /// Recheck accepted ancestry before signing or retrying any native payment,
+    /// including duties that were observed during a previous process lifetime.
+    pub fn validate_finality(&mut self) -> Result<u64, RpcError> {
+        let (actionable_tip, actionable_hash) = self.actionable_anchor()?;
+
+        if self.finality.is_consensus_aware() {
+            let actionable_hash = actionable_hash.expect("strong finality returns a hash");
+            if let Some((previous_height, previous_hash)) = self.last_actionable_anchor {
+                if actionable_tip < previous_height {
+                    return Err(RpcError::BadResponse(format!(
+                        "{} head regressed from {previous_height} to {actionable_tip}",
+                        self.finality.rpc_tag().expect("strong finality tag")
+                    )));
+                }
+                let still_canonical = self.block_hash_at(previous_height)?;
+                if still_canonical != Some(previous_hash) {
+                    return Err(RpcError::BadResponse(format!(
+                        "{} ancestry changed at previously accepted height {previous_height}",
+                        self.finality.rpc_tag().expect("strong finality tag")
+                    )));
+                }
+            }
+            self.last_actionable_anchor = Some((actionable_tip, actionable_hash));
+        }
+        Ok(actionable_tip)
+    }
+
+    fn advance_at(
+        &mut self,
+        chain_tip: u64,
+        actionable_tip: u64,
+    ) -> Result<TrackerUpdate<ReleaseEvent>, RpcError> {
+        // With depth finality, rescan the entire still-reorgable window on every
+        // poll. This catches replacement blocks that add a burn at a height already
+        // scanned (including heights where the old block contained no burn). Strong
+        // safe/finalized modes only scan newly-finalized blocks: by definition a
+        // finalized prefix cannot be replaced without violating the chain's safety.
+        let scan_from = if self.finality == EvmFinality::Confirmations {
+            self.next_scan
+                .min(chain_tip.saturating_sub(self.tracker.required_confirmations()))
+        } else {
+            self.next_scan
+        };
+        let scan_tip = if self.finality == EvmFinality::Confirmations {
+            chain_tip
+        } else {
+            actionable_tip
+        };
+
+        if scan_tip >= scan_from {
+            let scan_to = scan_tip.min(scan_from.saturating_add(MAX_LOG_BLOCK_RANGE - 1));
+            for obs in self.get_logs(scan_from, scan_to)? {
                 self.tracker.observe(obs);
             }
-            self.next_scan = scan_to.saturating_add(1);
+            self.next_scan = self.next_scan.max(scan_to.saturating_add(1));
         }
 
         // Pre-fetch the current hash at each pending inclusion height (so `poll`'s
@@ -415,7 +555,7 @@ impl<C: JsonRpcClient> EvmWatcher<C> {
             current.insert(h, self.block_hash_at(h)?);
         }
 
-        Ok(self.tracker.poll(tip, |h, hash| {
+        Ok(self.tracker.poll(actionable_tip, |h, hash| {
             current.get(&h).copied().flatten() == Some(*hash)
         }))
     }
@@ -438,6 +578,13 @@ impl<C: JsonRpcClient> EvmWatcher<C> {
             .map(|o| o.inclusion_height)
             .min()
             .unwrap_or(self.next_scan)
+    }
+
+    pub fn durable_finality_anchor(&self) -> Option<(u64, [u8; 32])> {
+        self.finality
+            .is_consensus_aware()
+            .then_some(self.last_actionable_anchor)
+            .flatten()
     }
 }
 
@@ -496,6 +643,7 @@ pub struct EvmChainConfig {
     pub contract: [u8; 20],
     pub key_epoch: u64,
     pub confirmations: u64,
+    pub finality: EvmFinality,
     pub rpc_url: String,
     pub per_tx_max: u128,
     pub per_epoch_cap: u128,
@@ -563,6 +711,20 @@ pub fn parse_evm_chains(json: &str) -> Result<Vec<EvmChainConfig>, String> {
             .get("confirmations")
             .and_then(Value::as_u64)
             .ok_or_else(|| miss("confirmations"))?;
+        let finality = match row
+            .get("finality")
+            .and_then(Value::as_str)
+            .unwrap_or("confirmations")
+        {
+            "confirmations" => EvmFinality::Confirmations,
+            "safe" => EvmFinality::Safe,
+            "finalized" => EvmFinality::Finalized,
+            _ => {
+                return Err(format!(
+                    "chain[{i}]: `finality` must be confirmations, safe, or finalized"
+                ))
+            }
+        };
         let rpc_url = row
             .get("rpc")
             .and_then(Value::as_str)
@@ -591,6 +753,7 @@ pub fn parse_evm_chains(json: &str) -> Result<Vec<EvmChainConfig>, String> {
             contract,
             key_epoch,
             confirmations,
+            finality,
             rpc_url,
             per_tx_max,
             per_epoch_cap,
@@ -745,6 +908,7 @@ impl EvmChainConfig {
             self.confirmations,
             self.start_block,
         )
+        .with_finality(self.finality)
     }
 }
 
@@ -847,7 +1011,7 @@ mod tests {
     /// requested block range), and a height→hash map for the canonical check.
     struct MockNode {
         tip: Cell<u64>,
-        logs: Vec<Value>,
+        logs: RefCell<Vec<Value>>,
         hashes: RefCell<BTreeMap<u64, [u8; 32]>>,
     }
     impl JsonRpcClient for MockNode {
@@ -859,6 +1023,7 @@ mod tests {
                     let to = hex_to_u64(params[0]["toBlock"].as_str().unwrap()).unwrap();
                     let hits: Vec<Value> = self
                         .logs
+                        .borrow()
                         .iter()
                         .filter(|l| {
                             let b = hex_to_u64(l["blockNumber"].as_str().unwrap()).unwrap();
@@ -869,7 +1034,16 @@ mod tests {
                     Ok(json!(hits))
                 }
                 "eth_getBlockByNumber" => {
-                    let h = hex_to_u64(params[0].as_str().unwrap()).unwrap();
+                    let requested = params[0].as_str().unwrap();
+                    if requested == "safe" || requested == "finalized" {
+                        return Ok(json!({
+                            "number": to_hex_quantity(self.tip.get()),
+                            "hash": to_hex_bytes(
+                                &self.hashes.borrow().get(&self.tip.get()).copied().unwrap_or([0; 32])
+                            )
+                        }));
+                    }
+                    let h = hex_to_u64(requested).unwrap();
                     Ok(match self.hashes.borrow().get(&h) {
                         Some(hash) => json!({ "hash": to_hex_bytes(hash) }),
                         None => Value::Null,
@@ -927,6 +1101,7 @@ mod tests {
             "blockNumber": to_hex_quantity(block),
             "blockHash": to_hex_bytes(&block_hash),
             "transactionHash": to_hex_bytes(&txid),
+            "logIndex": "0x0",
         })
     }
 
@@ -938,6 +1113,8 @@ mod tests {
         assert_eq!(obs.inclusion_height, 200);
         assert_eq!(obs.block_hash, [0xBB; 32]);
         assert_eq!(obs.event.chain, ChainId(42));
+        assert_eq!(obs.event.contract, [0x22; 20]);
+        assert_eq!(obs.event.log_index, 0);
         assert_eq!(obs.event.key_epoch, 7);
         assert_eq!(obs.event.new_signer, signer);
         assert_eq!(obs.event.evm_txid, [0x02u8; 32]);
@@ -968,7 +1145,13 @@ mod tests {
     fn watcher_finalizes_after_confirmations() {
         let node = MockNode {
             tip: Cell::new(105),
-            logs: vec![burn_log(100, [0xAA; 32], [0x01; 32], 500, b"bxRecipient")],
+            logs: RefCell::new(vec![burn_log(
+                100,
+                [0xAA; 32],
+                [0x01; 32],
+                500,
+                b"bxRecipient",
+            )]),
             hashes: RefCell::new([(100u64, [0xAA; 32])].into_iter().collect()),
         };
         let mut w = EvmWatcher::new(node, ChainId(1), [0x22; 20], 12, 100);
@@ -1005,6 +1188,7 @@ mod tests {
         assert_eq!(cfgs[0].contract, [0x22; 20]);
         assert_eq!(cfgs[0].key_epoch, 1);
         assert_eq!(cfgs[0].confirmations, 12);
+        assert_eq!(cfgs[0].finality, EvmFinality::Confirmations);
         assert_eq!(cfgs[0].per_tx_max, 1_000_000_000u128);
         assert_eq!(cfgs[0].start_block, 18_000_000);
         assert_eq!(cfgs[1].chain_id, 137);
@@ -1041,7 +1225,7 @@ mod tests {
     fn watcher_drops_reorged_burn() {
         let node = MockNode {
             tip: Cell::new(105),
-            logs: vec![burn_log(100, [0xAA; 32], [0x01; 32], 500, b"bx")],
+            logs: RefCell::new(vec![burn_log(100, [0xAA; 32], [0x01; 32], 500, b"bx")]),
             hashes: RefCell::new([(100u64, [0xAA; 32])].into_iter().collect()),
         };
         let mut w = EvmWatcher::new(node, ChainId(1), [0x22; 20], 12, 100);
@@ -1054,5 +1238,86 @@ mod tests {
         assert!(u.finalized.is_empty(), "reorged burn is never finalized");
         assert_eq!(u.dropped.len(), 1);
         assert_eq!(w.pending_len(), 0);
+    }
+
+    /// Regression for H-03: a previously scanned block can be replaced by one
+    /// containing a new burn. The overlap scan must discover that replacement log.
+    #[test]
+    fn watcher_rescans_reorg_window_for_new_replacement_logs() {
+        let node = MockNode {
+            tip: Cell::new(105),
+            logs: RefCell::new(Vec::new()),
+            hashes: RefCell::new([(100u64, [0xAA; 32])].into_iter().collect()),
+        };
+        let mut w = EvmWatcher::new(node, ChainId(1), [0x22; 20], 12, 100);
+        assert!(w.advance().unwrap().finalized.is_empty());
+
+        // Height 100 was already scanned without a burn. A reorg replaces it with
+        // a block that does contain one; at depth 12 it must be rediscovered.
+        w.client.hashes.borrow_mut().insert(100, [0xBB; 32]);
+        w.client.logs.borrow_mut().push(burn_log(
+            100,
+            [0xBB; 32],
+            [0x02; 32],
+            700,
+            b"bxReplacement",
+        ));
+        w.client.tip.set(112);
+        let update = w.advance().unwrap();
+        assert_eq!(update.finalized.len(), 1);
+        assert_eq!(update.finalized[0].evm_txid, [0x02; 32]);
+    }
+
+    #[test]
+    fn finalized_policy_uses_consensus_tag_without_depth_fallback() {
+        let node = MockNode {
+            tip: Cell::new(100),
+            logs: RefCell::new(vec![burn_log(100, [0xAA; 32], [0x03; 32], 900, b"bxFinal")]),
+            hashes: RefCell::new([(100u64, [0xAA; 32])].into_iter().collect()),
+        };
+        let mut watcher = EvmWatcher::new(node, ChainId(1), [0x22; 20], 12, 100)
+            .with_finality(EvmFinality::Finalized);
+        let update = watcher.advance().unwrap();
+        assert_eq!(update.finalized.len(), 1);
+        assert_eq!(update.finalized[0].evm_txid, [0x03; 32]);
+    }
+
+    #[test]
+    fn finalized_policy_halts_on_regression_or_conflicting_ancestry() {
+        let node = MockNode {
+            tip: Cell::new(100),
+            logs: RefCell::new(vec![]),
+            hashes: RefCell::new([(100u64, [0xAA; 32])].into_iter().collect()),
+        };
+        let mut watcher = EvmWatcher::new(node, ChainId(1), [0x22; 20], 12, 100)
+            .with_finality(EvmFinality::Finalized);
+        watcher.advance().unwrap();
+        assert_eq!(watcher.durable_finality_anchor(), Some((100, [0xAA; 32])));
+
+        watcher.client.tip.set(99);
+        watcher.client.hashes.borrow_mut().insert(99, [0x99; 32]);
+        assert!(matches!(
+            watcher.advance(),
+            Err(RpcError::BadResponse(message)) if message.contains("regressed")
+        ));
+
+        // A restart restores the fsynced anchor. Even if the finalized head moves
+        // forward, changing its already-finalized ancestor is a safety violation.
+        let node = MockNode {
+            tip: Cell::new(101),
+            logs: RefCell::new(vec![]),
+            hashes: RefCell::new(
+                [(100u64, [0xBB; 32]), (101u64, [0xCC; 32])]
+                    .into_iter()
+                    .collect(),
+            ),
+        };
+        let mut restored = EvmWatcher::new(node, ChainId(1), [0x22; 20], 12, 101)
+            .with_finality(EvmFinality::Finalized)
+            .with_finalized_anchor(100, [0xAA; 32]);
+        assert!(matches!(
+            restored.advance(),
+            Err(RpcError::BadResponse(message)) if message.contains("ancestry changed")
+        ));
     }
 }

@@ -1,5 +1,34 @@
 # beldex-bridge-signer
 
+## Standalone mint-relay recovery changes
+
+`relay-watch` now requires a build with `--features serve-live` for durable outbox and
+settlement reconciliation support. Running this subcommand still requires **no bridge
+private key or share material**. The old `omq-client`-only build refuses this subcommand.
+
+Required environment:
+
+- `BRIDGE_SIGNER_OXENMQ_ENDPOINT`: comma-separated mint-bus endpoints.
+- `BRIDGE_SIGNER_RELAY_OUTBOX_DIR`: persistent directory dedicated to received mint payloads.
+- `BRIDGE_SIGNER_EVM_CHAINS`: canonical chain/contract/RPC configuration, using
+  `finality: "finalized"` in strict mode.
+- `BRIDGE_SIGNER_RELAY_CMD`: optional override for `beldex-bridge-relayer relay -`.
+- `RELAYER_STATE_DIR`: private, persistent gas-wallet transaction state shared by all
+  relay processes using the same wallet; see [relayer recovery notes](../relayer/README.md).
+- The relay command's existing gas key and `RELAYER_CHAINS` configuration.
+
+The worker commits incoming payloads before relay attempts and revisits the disk queue
+every 30 seconds. Failed or successful broadcasts do not retire records; only destination
+reconciliation does. JSON parsing replaces fragile substring deduplication, and queue
+identities separate chains and payload variants. Unknown chain/contract pairs are rejected.
+The bus does not replace the destination contract's signature verification.
+Relay hooks require GNU `timeout`: they receive TERM after 60 seconds and KILL after a
+further 5 seconds. A timed-out invocation remains retryable through its durable state.
+
+Preserve both the received-payload outbox and gas-transaction state through restart. This
+does not close the remaining native handoff, live rotation-acknowledgement or topology
+findings, and does not make a single-host/Anvil exercise production-ready.
+
 The off-chain **threshold signer** each bridge-seated masternode runs alongside
 `beldexd`, for the Beldex Sovereign Bridge (`../docs/IMPLEMENTATION.md`,
 **Phase C**).

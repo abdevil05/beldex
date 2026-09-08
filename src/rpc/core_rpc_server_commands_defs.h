@@ -2848,10 +2848,9 @@ namespace cryptonote::rpc {
   /// settled release duties against consensus instead of re-opening sessions for
   /// work already on-chain.
   ///
-  /// NOTE the retention horizon: refs are pruned below the previous release
-  /// window, so `discharged=false` for a very old burn means "not in the retained
-  /// set", not "provably never released". `retained_from_window` is returned so
-  /// the caller can tell the two apart.
+  /// The permanent LMDB index is chain-lifetime and rewound with its containing
+  /// block. It also stores the inclusion height so clients can distinguish
+  /// mempool/mined state from checkpoint-final settlement.
   ///
   /// Inputs (three parallel arrays, one entry per burn to check):
   /// - `gateway_id` -- gwB… address or 64-char hex id of the bridge gateway.
@@ -2861,7 +2860,10 @@ namespace cryptonote::rpc {
   ///
   /// Output:
   /// - `discharged` -- parallel to the inputs: true iff recorded as released.
-  /// - `retained_from_window` -- lowest release window still retained (0 if none).
+  /// - `inclusion_heights` -- parallel inclusion heights (0 means absent or a
+  ///   legacy presence-only row whose finality cannot be established).
+  /// - `retained_from_window` -- always 0; retained for wire compatibility.
+  /// - `retention_complete` -- true for the chain-lifetime index.
   /// - `status` -- Generic RPC error code. "OK" is the success value.
   struct GATEWAY_RELEASE_REF_STATUS : PUBLIC
   {

@@ -831,18 +831,28 @@ namespace cryptonote
   // L1 epoch — a resolver hint that is NOT part of the signed bytes.
   struct tx_extra_bridge_rotation_ack
   {
-    uint8_t              version = 0;
+    uint8_t              version = 1;
     uint64_t             chain_id = 0;      // EVM chain id (E.3 registry key)
+    std::vector<uint8_t> contract;           // exact wBDX proxy (20 bytes)
     uint64_t             key_epoch = 0;     // the contract's new key epoch after the rotation
     std::vector<uint8_t> new_signer;        // the incoming Pevm address (exactly 20 bytes)
-    uint64_t             epoch = 0;         // observing L1 committee epoch (unsigned resolver hint)
+    std::vector<uint8_t> evm_txid;           // transaction emitting Rotated (32 bytes)
+    uint32_t             log_index = 0;      // exact log within evm_txid
+    uint64_t             inclusion_height = 0;
+    std::vector<uint8_t> block_hash;         // finalized inclusion block (32 bytes)
+    uint64_t             epoch = 0;          // signed observing L1 committee epoch
     std::vector<bridge_rotation_signature> observers; // >= t+1 distinct committee signers
 
     BEGIN_SERIALIZE()
       FIELD(version)
       VARINT_FIELD(chain_id)
+      FIELD(contract)
       VARINT_FIELD(key_epoch)
       FIELD(new_signer)
+      FIELD(evm_txid)
+      VARINT_FIELD(log_index)
+      VARINT_FIELD(inclusion_height)
+      FIELD(block_hash)
       VARINT_FIELD(epoch)
       FIELD(observers)
     END_SERIALIZE()

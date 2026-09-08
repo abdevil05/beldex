@@ -1846,9 +1846,11 @@ public:
   // Permanent HF23 release replay index. Unlike the recent, reorg-oriented
   // account buckets, these keys are never age-pruned: an EVM burn can discharge
   // native reserves exactly once for the lifetime of the chain.
-  virtual void add_gateway_release_ref(const crypto::public_key& gateway_addr, const crypto::hash& ref) = 0;
+  virtual void add_gateway_release_ref(const crypto::public_key& gateway_addr, const crypto::hash& ref, uint64_t height) = 0;
   virtual void remove_gateway_release_ref(const crypto::public_key& gateway_addr, const crypto::hash& ref) = 0;
   virtual bool has_gateway_release_ref(const crypto::public_key& gateway_addr, const crypto::hash& ref) const = 0;
+  /// Inclusion height of a permanent release ref, or 0 when absent/legacy-unversioned.
+  virtual uint64_t get_gateway_release_ref_height(const crypto::public_key& gateway_addr, const crypto::hash& ref) const = 0;
 
   // This function accepts an empty timestamps/difficulties array to fill, or
   // a prior timestamps/difficulties array that was filled by a previous call to

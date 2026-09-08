@@ -455,9 +455,10 @@ private:
   void add_gateway_tx(const crypto::public_key& gateway_addr, uint64_t height, const crypto::hash& tx_hash) override;
   void remove_gateway_tx(const crypto::public_key& gateway_addr, uint64_t height, const crypto::hash& tx_hash) override;
   std::vector<crypto::hash> get_gateway_txs(const crypto::public_key& gateway_addr, uint64_t offset, uint64_t count) const override;
-  void add_gateway_release_ref(const crypto::public_key& gateway_addr, const crypto::hash& ref) override;
+  void add_gateway_release_ref(const crypto::public_key& gateway_addr, const crypto::hash& ref, uint64_t height) override;
   void remove_gateway_release_ref(const crypto::public_key& gateway_addr, const crypto::hash& ref) override;
   bool has_gateway_release_ref(const crypto::public_key& gateway_addr, const crypto::hash& ref) const override;
+  uint64_t get_gateway_release_ref_height(const crypto::public_key& gateway_addr, const crypto::hash& ref) const override;
 
 private:
   template <typename T,

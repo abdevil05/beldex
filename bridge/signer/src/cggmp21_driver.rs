@@ -53,8 +53,8 @@ const CGGMP_P2P: u8 = 2;
 const CGGMP_HELLO: u8 = 9;
 
 /// A domain-separated tag binding the fresh ceremony id, epoch and generation.
-fn payload_tag(epoch: u64, key_generation: u32) -> [u8; 32] {
-    crate::dkg_tag::ceremony_tag(b"pevm", epoch, key_generation)
+fn payload_tag(committee: &CommitteeView, key_generation: u32) -> Result<[u8; 32], DriverError> {
+    crate::dkg_tag::ceremony_tag(b"pevm", committee, key_generation).map_err(DriverError::Protocol)
 }
 
 fn wire(epoch: u64, tag: [u8; 32], from: u16, kind: u8, msg_bytes: &[u8]) -> WireMsg {
@@ -93,7 +93,8 @@ pub fn run_cggmp21_keygen_over_transport<T: SessionTransport>(
         return Err(DriverError::BadCommittee);
     }
     let epoch = committee.epoch;
-    let tag = payload_tag(epoch, key_generation);
+    let tag = payload_tag(committee, key_generation)?;
+    crate::dkg_tag::reserve_execution(&tag, self_index).map_err(DriverError::Protocol)?;
 
     // --- connection barrier ---------------------------------------------------
     // Because the two DKG legs run back-to-back, peers reach the `Pevm` phase at
@@ -160,7 +161,12 @@ pub fn run_cggmp21_keygen_over_transport<T: SessionTransport>(
     // Protocol thread: drive the cggmp21 keygen state machine synchronously.
     let proto = std::thread::spawn(move || -> Result<([u8; 33], Vec<u8>), String> {
         let mut rng = rand::rngs::OsRng;
-        let eid = ExecutionId::new(b"beldex-pevm-live-dkg");
+        // cggmp21 requires a globally unique execution id for every protocol run.
+        // `tag` binds the operator-provided random ceremony id, protocol phase,
+        // committee epoch, and monotonically fresh key generation.  Reusing the
+        // old constant here made distinct DKG transcripts cryptographically share
+        // an identity even though the outer mesh routing tags differed.
+        let eid = ExecutionId::new(&tag);
         let mut state = wrap_protocol(|party| async move {
             cggmp21::keygen::<Secp256k1>(eid, self_index, n)
                 .set_threshold(t)

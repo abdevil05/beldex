@@ -106,7 +106,9 @@ impl<M: DutyReconciler, R: DutyReconciler> DutyReconciler for DualReconciler<M, 
 /// chain absent from the map is undeterminable (`None`), never "unsettled".
 #[cfg(feature = "evm-watcher")]
 pub struct EvmMintReconciler<C: crate::evm_watcher::JsonRpcClient> {
-    pub chains: std::collections::BTreeMap<u64, (C, [u8; 20])>,
+    /// client, contract, and the same consensus-aware block tag used by the
+    /// watcher. Settlement is never inferred from an unfinalized head.
+    pub chains: std::collections::BTreeMap<u64, (C, [u8; 20], String)>,
 }
 
 /// `processedDeposits(bytes32)` selector = first 4 bytes of its keccak signature hash.
@@ -133,7 +135,7 @@ pub fn deposit_id(beldex_txid: &[u8; 32], output_index: u32) -> [u8; 32] {
 impl<C: crate::evm_watcher::JsonRpcClient> DutyReconciler for EvmMintReconciler<C> {
     fn is_settled(&mut self, duty: &Duty) -> Option<bool> {
         let Duty::Mint(ev) = duty else { return None };
-        let (client, contract) = self.chains.get(&ev.dst_chain.0)?;
+        let (client, contract, settlement_tag) = self.chains.get(&ev.dst_chain.0)?;
         let hexs = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
         let ask = |key: [u8; 32]| -> Option<bool> {
             let mut data = Vec::with_capacity(4 + 32);
@@ -141,7 +143,7 @@ impl<C: crate::evm_watcher::JsonRpcClient> DutyReconciler for EvmMintReconciler<
             data.extend_from_slice(&key);
             let params = serde_json::json!([
                 { "to": format!("0x{}", hexs(contract)), "data": format!("0x{}", hexs(&data)) },
-                "latest"
+                settlement_tag
             ]);
             let raw = client.call("eth_call", params).ok()?;
             let s = raw
@@ -149,11 +151,16 @@ impl<C: crate::evm_watcher::JsonRpcClient> DutyReconciler for EvmMintReconciler<
                 .strip_prefix("0x")
                 .unwrap_or_default()
                 .to_string();
-            if s.is_empty() {
-                return None; // empty return = not a contract / wrong address: undeterminable
+            // Solidity bool is exactly a 32-byte ABI word containing 0 or 1.
+            // Malformed data must never retire a pending payment.
+            if s.len() != 64 || !s.bytes().take(63).all(|b| b == b'0') {
+                return None;
             }
-            // Any non-zero nibble in the returned word means `true`.
-            Some(s.chars().any(|c| c != '0'))
+            match s.as_bytes()[63] {
+                b'0' => Some(false),
+                b'1' => Some(true),
+                _ => None,
+            }
         };
 
         // Mirror the contract's own two checks, in the same order (H-2): the legacy raw-txid
@@ -175,6 +182,7 @@ pub struct GatewayReleaseReconciler {
     pub rpc_url: String,
     pub gateway_id: String,
     id: std::cell::Cell<u64>,
+    fallback_confirmations: Option<u64>,
 }
 
 #[cfg(feature = "autonomy")]
@@ -189,7 +197,15 @@ impl GatewayReleaseReconciler {
             rpc_url: url,
             gateway_id: gateway_id.into(),
             id: std::cell::Cell::new(1),
+            fallback_confirmations: None,
         }
+    }
+
+    /// Development-only depth fallback for chains without checkpoint immutable
+    /// height. Production leaves this unset and requires checkpoint finality.
+    pub fn with_fallback_confirmations(mut self, confirmations: Option<u64>) -> Self {
+        self.fallback_confirmations = confirmations.filter(|v| *v > 0);
+        self
     }
 }
 
@@ -215,7 +231,39 @@ impl DutyReconciler for GatewayReleaseReconciler {
         // A missing/malformed field is a transport-level unknown, not a negative (the `?`s
         // above and here all yield `None` = undetermined).
         let discharged = result.get("discharged")?.as_array()?.first()?.as_bool()?;
-        Some(discharged)
+        if !discharged {
+            return Some(false);
+        }
+        let inclusion_height = result
+            .get("inclusion_heights")?
+            .as_array()?
+            .first()?
+            .as_u64()?;
+        if inclusion_height == 0 {
+            return None; // legacy presence-only index is not proof of finality
+        }
+
+        let info_id = self.id.get();
+        self.id.set(info_id.wrapping_add(1));
+        let info_req = serde_json::json!({
+            "jsonrpc": "2.0", "id": info_id, "method": "get_info", "params": {}
+        });
+        let info_resp = ureq::post(&self.rpc_url).send_json(info_req).ok()?;
+        let info: serde_json::Value = info_resp.into_json().ok()?;
+        let info = info.get("result")?;
+        let immutable = info
+            .get("immutable_height")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        let finalized_height = if immutable > 0 {
+            immutable
+        } else {
+            let depth = self.fallback_confirmations?;
+            info.get("height")
+                .and_then(serde_json::Value::as_u64)?
+                .saturating_sub(depth)
+        };
+        Some(inclusion_height <= finalized_height)
     }
 }
 
@@ -268,6 +316,37 @@ mod tests {
             to: [0x11; 20],
             amount: 1000,
         })
+    }
+    #[cfg(all(feature = "evm-watcher", feature = "tss-integration"))]
+    #[test]
+    fn settlement_requires_canonical_bool_at_finalized_tag() {
+        struct Reply(String);
+        impl crate::evm_watcher::JsonRpcClient for Reply {
+            fn call(
+                &self,
+                method: &str,
+                params: serde_json::Value,
+            ) -> Result<serde_json::Value, crate::evm_watcher::RpcError> {
+                assert_eq!(method, "eth_call");
+                assert_eq!(params[1], "finalized");
+                Ok(serde_json::Value::String(self.0.clone()))
+            }
+        }
+        for (word, expected) in [
+            (format!("0x{:064x}", 0), Some(false)),
+            (format!("0x{:064x}", 1), Some(true)),
+            (format!("0x{:064x}", 2), None),
+            ("0x1".to_string(), None),
+            (format!("0x{}", "g".repeat(64)), None),
+            ("".to_string(), None),
+        ] {
+            let mut rec = EvmMintReconciler {
+                chains: [(1, (Reply(word), [0x11; 20], "finalized".to_string()))]
+                    .into_iter()
+                    .collect(),
+            };
+            assert_eq!(rec.is_settled(&mint(1)), expected);
+        }
     }
     fn release(txid: u8) -> Duty {
         Duty::Release(ReleaseEvent {

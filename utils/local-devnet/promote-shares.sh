@@ -4,10 +4,9 @@
 #   runlog ./promote-shares.sh            # promote shares-next -> shares
 #   runlog ./promote-shares.sh --dry-run  # show what would move, touch nothing
 #
-# `dkg-next.sh` rotates Pevm only. Pgw remains the native gateway owner until an explicit,
-# separately-authorized owner re-point occurs. Before swapping trees this script therefore
-# carries each node's matching Pgw material forward. It refuses index/membership drift:
-# that case needs a dual-key ceremony plus a native owner change, not a directory rename.
+# dkg-next.sh creates fresh Pevm and Pgw keys. Promotion is refused until the native
+# gateway descriptor is finalized with the successor Pgw owner key; this prevents a
+# committee handoff from silently leaving native withdrawal authority with retired nodes.
 #
 # This exists as a script rather than a paste-into-your-terminal loop for two reasons:
 #   * macOS defaults to zsh, where an unmatched glob is a hard error that aborts the command
@@ -95,23 +94,20 @@ if [ "$MISMATCH" -ne 0 ]; then
 fi
 NEWKEY="$(od -An -v -tx1 < "$FIRST" | tr -d ' \n')"
 
-# A Pevm-only rotation must preserve the live Pgw authority byte-for-byte. Require the
-# incoming Pevm index to match the old Pgw index on every participant; otherwise this is a
-# membership change and promotion would either brick releases or retain authority for the
-# wrong committee. Also require one common Pgw group key across every incoming node.
+# Both successor legs must use the same committee index on each participant and all
+# participants must agree on one successor Pgw group key.
 PGW_FIRST=""; PGW_MISMATCH=0
 for d in $INCOMING; do
   pevm_idx="$(one_index pevm keyshare "$d/$SUBDIR" || true)"
-  pgw_idx="$(one_index pgw keypackage "$d/shares" || true)"
+  pgw_idx="$(one_index pgw keypackage "$d/$SUBDIR" || true)"
   if [ -z "$pevm_idx" ] || [ -z "$pgw_idx" ] || [ "$pevm_idx" != "$pgw_idx" ]; then
-    echo "!! $d cannot carry Pgw forward safely (incoming Pevm index '${pevm_idx:-none}', live Pgw index '${pgw_idx:-none}')." >&2
-    echo "   Committee membership/index changed. Run an explicit dual-key DKG and native" >&2
-    echo "   gateway owner re-point; do not use this Pevm-only promotion path." >&2
+    echo "!! $d has mismatched successor indices (Pevm '${pevm_idx:-none}', Pgw '${pgw_idx:-none}')." >&2
+    echo "   Re-run the dual DKG for the current committee; do not promote a partial key set." >&2
     exit 1
   fi
-  pgw_vk="$d/shares/pgw-$pgw_idx.groupvk"
-  pgw_kp="$d/shares/pgw-$pgw_idx.keypackage"
-  pgw_pub="$d/shares/pgw-$pgw_idx.pubkeypackage"
+  pgw_vk="$d/$SUBDIR/pgw-$pgw_idx.groupvk"
+  pgw_kp="$d/$SUBDIR/pgw-$pgw_idx.keypackage"
+  pgw_pub="$d/$SUBDIR/pgw-$pgw_idx.pubkeypackage"
   [ -f "$pgw_vk" ] && [ -f "$pgw_kp" ] && [ -f "$pgw_pub" ] || {
     echo "!! $d/shares has incomplete Pgw material — refusing promotion." >&2; exit 1; }
   [ "$(wc -c < "$pgw_vk" | tr -d ' ')" -eq 32 ] || {
@@ -122,6 +118,32 @@ for d in $INCOMING; do
 done
 [ "$PGW_MISMATCH" -eq 0 ] || { echo "!! live nodes disagree on the Pgw group key." >&2; exit 1; }
 PGWKEY="$(od -An -v -tx1 < "$PGW_FIRST" | tr -d ' \n')"
+
+# Verify the native chain, not an operator assertion. The governance/owner-update
+# transaction itself is separate because it requires checkpoint-quorum authorization,
+# but promotion cannot proceed until that transaction is finalized.
+if [ -f ../devnet-bridge.env ]; then
+  # shellcheck disable=SC1091
+  . ../devnet-bridge.env
+fi
+: "${GATEWAY_ID:?set GATEWAY_ID (or keep utils/local-devnet/devnet-bridge.env)}"
+BELDEX_RPC="${BELDEX_RPC:-http://127.0.0.1:19191}"
+GW_INFO="$(curl -fsS "$BELDEX_RPC/json_rpc" -H 'Content-Type: application/json' -d "{
+  \"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"get_gateway_info\",
+  \"params\":{\"gateway_address\":\"$GATEWAY_ID\"}}")" || {
+  echo "!! cannot verify the native gateway owner at $BELDEX_RPC" >&2; exit 1; }
+LIVE_PGW="$(printf '%s' "$GW_INFO" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("result",{}).get("owner_key",""))' | tr 'A-F' 'a-f')"
+OWNER_FINALIZED="$(printf '%s' "$GW_INFO" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("result",{}).get("owner_key_finalized") is True)')"
+[ "$OWNER_FINALIZED" = "True" ] || {
+  echo "!! successor native owner is not checkpoint-finalized (or daemon cannot prove it); promotion refused." >&2
+  exit 1
+}
+if [ "$LIVE_PGW" != "$PGWKEY" ]; then
+  echo "!! native gateway still trusts 0x${LIVE_PGW:-unknown}; successor Pgw is 0x$PGWKEY." >&2
+  echo "   Finalize the checkpoint-quorum gateway owner re-point to the successor Pgw key," >&2
+  echo "   then rerun this promotion. Retired native authority is never carried forward." >&2
+  exit 1
+fi
 
 OLDKEY=""
 for d in $INCOMING; do
@@ -156,7 +178,7 @@ for d in $INCOMING; do
 done
 
 echo "  incoming tree : $(printf '%-12s' "$SUBDIR") ($N node(s), group key 0x${NEWKEY:0:12}…)"
-echo "  Pgw retained  : $(printf '%-12s' shares) (owner key 0x${PGWKEY:0:12}…)"
+echo "  Pgw successor : $(printf '%-12s' "$SUBDIR") (finalized owner key 0x${PGWKEY:0:12}…)"
 echo "  retiring to   : $(printf '%-12s' "$ARCHIVE") (group key 0x${OLDKEY:0:12}…)"
 [ "$DRY" -eq 1 ] && echo "  MODE          : dry run, nothing will be moved"
 if [ -n "$NONMEMBER" ]; then
@@ -168,14 +190,6 @@ echo ""
 
 # --- swap ------------------------------------------------------------------------------------------
 for d in $INCOMING; do
-  pevm_idx="$(one_index pevm keyshare "$d/$SUBDIR")"
-  if [ "$DRY" -ne 1 ]; then
-    cp -p "$d/shares/pgw-$pevm_idx.keypackage" "$d/$SUBDIR/"
-    cp -p "$d/shares/pgw-$pevm_idx.pubkeypackage" "$d/$SUBDIR/"
-    cp -p "$d/shares/pgw-$pevm_idx.groupvk" "$d/$SUBDIR/"
-    chmod 600 "$d/$SUBDIR/pgw-$pevm_idx.keypackage" \
-      "$d/$SUBDIR/pgw-$pevm_idx.pubkeypackage" "$d/$SUBDIR/pgw-$pevm_idx.groupvk"
-  fi
   if ! [ -d "$d/shares" ]; then
     # A node that joined the committee at this rotation has an incoming tree but nothing to
     # retire. Moving it in is still correct; there is just no archive step.
@@ -198,7 +212,7 @@ fi
 echo ""
 echo "── promoted ──────────────────────────────────────────────────────────"
 echo "  $(printf '%-12s' shares) : 0x$NEWKEY"
-echo "  $(printf '%-12s' 'Pgw owner') : 0x$PGWKEY   (unchanged)"
+echo "  $(printf '%-12s' 'Pgw owner') : 0x$PGWKEY   (rotated and chain-verified)"
 echo "  $(printf '%-12s' "$ARCHIVE") : 0x$OLDKEY   (retained)"
 echo ""
 echo "  The retired tree is kept, not deleted: it is the only record of what the previous"

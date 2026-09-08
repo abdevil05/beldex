@@ -44,8 +44,9 @@ const AUX_P2P: u8 = 2;
 const AUX_HELLO: u8 = 9;
 
 /// A domain-separated aux-info tag binding the fresh ceremony id, epoch and generation.
-fn aux_tag(epoch: u64, key_generation: u32) -> [u8; 32] {
-    crate::dkg_tag::ceremony_tag(b"pevm-aux", epoch, key_generation)
+fn aux_tag(committee: &CommitteeView, key_generation: u32) -> Result<[u8; 32], DriverError> {
+    crate::dkg_tag::ceremony_tag(b"pevm-aux", committee, key_generation)
+        .map_err(DriverError::Protocol)
 }
 
 fn wire(epoch: u64, tag: [u8; 32], from: u16, kind: u8, msg_bytes: &[u8]) -> WireMsg {
@@ -98,7 +99,8 @@ pub fn run_cggmp21_aux_over_transport<T: SessionTransport>(
         return Err(DriverError::BadCommittee);
     }
     let epoch = committee.epoch;
-    let tag = aux_tag(epoch, key_generation);
+    let tag = aux_tag(committee, key_generation)?;
+    crate::dkg_tag::reserve_execution(&tag, self_index).map_err(DriverError::Protocol)?;
 
     // --- connection barrier ---------------------------------------------------
     // Exchange HELLOs until every peer is reachable (all mesh links up), buffering
@@ -159,7 +161,9 @@ pub fn run_cggmp21_aux_over_transport<T: SessionTransport>(
     // Protocol thread: generate safe primes, then drive the aux-info state machine.
     let proto = std::thread::spawn(move || -> Result<Vec<u8>, String> {
         let mut rng = rand::rngs::OsRng;
-        let eid = ExecutionId::new(b"beldex-pevm-live-aux");
+        // The internal cryptographic transcript must use the same unique identity
+        // as the authenticated outer session, not a process-wide constant.
+        let eid = ExecutionId::new(&tag);
         let primes = PregeneratedPrimes::<SecurityLevel128>::generate(&mut rng);
         let mut state = wrap_protocol(|party| async move {
             cggmp21::aux_info_gen(eid, self_index, n, primes)

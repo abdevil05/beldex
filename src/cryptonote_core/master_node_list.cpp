@@ -2473,6 +2473,17 @@ namespace master_nodes
     if (!cryptonote::get_field_from_tx_extra(tx.extra, op))
       return false;
 
+    // Only the current or immediately previous bridge committee may attest a
+    // rotation. Historical committee keys are not perpetual oracles.
+    const uint64_t epoch_blocks = cryptonote::bridge_epoch_blocks(nettype);
+    const uint64_t current_epoch = block_height / epoch_blocks;
+    if (op.epoch > current_epoch || current_epoch - op.epoch > 1)
+    {
+      LOG_PRINT_L1("Bridge rotation-ack TX: observer epoch " << op.epoch
+                   << " is not current/recent at epoch " << current_epoch);
+      return false;
+    }
+
     if (!resolve_committee)
     {
       LOG_PRINT_L1("Bridge rotation-ack TX: no bridge committee resolver available");
@@ -2500,8 +2511,20 @@ namespace master_nodes
       return false;
     }
 
-    // Advance this state's observed key epoch for the chain (monotonic). A stale/duplicate
-    // ack (epoch not newer than what we already recorded) verifies fine but is a no-op.
+    // Enforce sequential rotation history. The first observed hand-off advances a
+    // newly registered contract from its initial key epoch 1 to 2; after that every
+    // accepted event must be exactly one step beyond the recorded value.
+    const uint64_t prior_key_epoch = chain_epoch_get(observed_key_epoch, op.chain_id);
+    const bool valid_initial = prior_key_epoch == 0 && (op.key_epoch == 1 || op.key_epoch == 2);
+    const uint64_t expected_key_epoch = prior_key_epoch == 0 ? 1 : prior_key_epoch + 1;
+    if (!valid_initial && op.key_epoch != expected_key_epoch)
+    {
+      LOG_PRINT_L1("Bridge rotation-ack TX: chain " << op.chain_id << " expected key epoch "
+                   << expected_key_epoch << " but ack carries " << op.key_epoch);
+      return false;
+    }
+
+    // Advance this state's observed key epoch for the chain.
     if (!chain_epoch_advance(observed_key_epoch, op.chain_id, op.key_epoch))
     {
       LOG_PRINT_L1("Bridge rotation-ack TX: chain " << op.chain_id << " already at key epoch >= "
@@ -4531,4 +4554,3 @@ namespace master_nodes
     return result;
   }
 }
-

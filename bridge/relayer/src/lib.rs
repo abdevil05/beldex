@@ -34,6 +34,8 @@ pub mod rlp;
 pub mod submit;
 
 #[cfg(feature = "submit-http")]
+pub mod durable;
+#[cfg(feature = "submit-http")]
 pub mod http_submit;
 
 pub use digest::{mint_digest, mint_preimage};

@@ -1,5 +1,42 @@
 # beldex-bridge-relayer (Phase I)
 
+## Recovery fixes: persistent relay state
+
+The `relay` CLI now requires `RELAYER_STATE_DIR`, a persistent directory with mode
+`0700`. All processes using the same gas wallet **must share that directory**; do not
+use the wallet concurrently from other software. State is namespaced by chain and gas
+address, and kernel locks serialize access. Use a local filesystem with working `flock`,
+atomic rename and fsync; do not assume a shared network filesystem provides these guarantees.
+
+```bash
+export RELAYER_STATE_DIR="$PWD/relayer-state"
+# The CLI creates this directory privately if it does not exist.
+```
+
+Signed envelopes are committed before broadcasting. Repeated `relay` calls recover the
+saved nonce and raw transaction. After 60 seconds without a canonical receipt, a retry
+can replace the transaction with the **same nonce** and increased fees, subject to the
+configured ceiling. The worker tracks all replacement hashes, because an earlier envelope
+can still win the race. There is one in-flight transaction per chain/wallet.
+
+Receipt inclusion is not settlement: the worker waits for the `finalized` frontier and
+checks canonical block hashes. Persisted finalized anchors detect regressions after restart.
+An RPC without `finalized` support fails closed; this implementation does not supply rollup
+L1 proofs or make Anvil irreversible. A transaction hash returned by `relay` can still be
+pending. The CLI progresses state once per invocation; run it through the durable signer
+`relay-watch` worker or another retrying outbox consumer for unattended recovery.
+
+Do not delete state to clear a stuck nonce, restore old state with a live gas wallet, or
+switch RPC networks underneath it. A consumed nonce without a known canonical receipt is
+an investigation condition, not permission to send the payment at another nonce.
+The library's `TxSubmitter::submit` remains an explicit one-shot interface; the CLI uses
+`HttpSubmitter::submit_durable`.
+
+Regression checks: `cargo test --all-features durable::tests`. These tests use an injected
+chain backend and actual filesystem commits/locks; they are not live cross-chain acceptance.
+
+These are recovery fixes, **not a production-readiness claim**.
+
 A **permissionless, keyless courier** for the Beldex Sovereign Bridge. It carries an
 already-committee-signed wBDX payload to its destination EVM chain and pays gas to broadcast
 it. It holds **no bridge key** and forges nothing — the authorizing signature is complete

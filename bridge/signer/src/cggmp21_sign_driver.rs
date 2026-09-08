@@ -54,6 +54,37 @@ fn sign_tag(digest32: &[u8; 32]) -> [u8; 32] {
     *digest32
 }
 
+/// Unique cggmp21 transcript identity for one signing attempt.  The signed digest
+/// alone is insufficient because retries of the same duty legitimately sign the
+/// same digest.  Bind every value that selects the protocol instance and key.
+fn signing_execution_id(
+    committee: &CommitteeView,
+    genesis: &[u8; 32],
+    digest32: &[u8; 32],
+    attempt: u32,
+    parties: &[u16],
+    group_key: &[u8; 33],
+) -> [u8; 32] {
+    let mut h = Keccak256::new();
+    h.update(b"BELDEX_BRIDGE_CGGMP21_SIGN_EXECUTION_V2");
+    h.update(genesis);
+    h.update(committee.epoch.to_le_bytes());
+    h.update(committee.height.to_le_bytes());
+    h.update((committee.threshold as u64).to_le_bytes());
+    h.update((committee.members.len() as u64).to_le_bytes());
+    for member in &committee.members {
+        h.update(member);
+    }
+    h.update(digest32);
+    h.update(attempt.to_le_bytes());
+    h.update((parties.len() as u32).to_le_bytes());
+    for party in parties {
+        h.update(party.to_le_bytes());
+    }
+    h.update(group_key);
+    h.finalize().into()
+}
+
 fn wire(epoch: u64, tag: [u8; 32], attempt: u32, from: u16, kind: u8, msg_bytes: &[u8]) -> WireMsg {
     let mut payload = Vec::with_capacity(1 + msg_bytes.len());
     payload.push(kind);
@@ -122,6 +153,10 @@ pub fn run_cggmp21_sign_over_transport<T: SessionTransport>(
         b.copy_from_slice(x.as_ref());
         b
     };
+    let genesis = crate::dkg_tag::network_genesis().map_err(DriverError::Protocol)?;
+    let execution_id =
+        signing_execution_id(committee, &genesis, &digest32, attempt, &parties, &x33);
+    crate::dkg_tag::reserve_execution(&execution_id, self_index).map_err(DriverError::Protocol)?;
 
     // --- connection barrier (signer peers only) -------------------------------
     let hello = wire(epoch, tag, attempt, self_index, CGGMP_HELLO, &[]);
@@ -194,7 +229,7 @@ pub fn run_cggmp21_sign_over_transport<T: SessionTransport>(
     let preimage_owned = preimage.to_vec();
     let proto = std::thread::spawn(move || -> Result<[u8; 64], String> {
         let mut rng = rand::rngs::OsRng;
-        let eid = ExecutionId::new(b"beldex-pevm-live-sign");
+        let eid = ExecutionId::new(&execution_id);
         let data = DataToSign::<Secp256k1>::digest::<Keccak256>(&preimage_owned);
         let mut state = wrap_protocol(|party| async move {
             cggmp21::signing(eid, self_pos, &parties_for_proto, &key_share)
@@ -403,6 +438,39 @@ mod tests {
             daemon_self_index: None,
             threshold: t as usize,
         }
+    }
+
+    #[test]
+    fn execution_id_binds_retry_signer_set_epoch_and_key() {
+        let digest = [0x11; 32];
+        let parties = [0u16, 1, 3, 4];
+        let key = [0x22; 33];
+        let genesis = [0x44; 32];
+        let mut committee = committee(6, 4);
+        committee.epoch = 7;
+        let base = signing_execution_id(&committee, &genesis, &digest, 0, &parties, &key);
+        assert_ne!(
+            base,
+            signing_execution_id(&committee, &genesis, &digest, 1, &parties, &key)
+        );
+        assert_ne!(
+            base,
+            signing_execution_id(&committee, &genesis, &digest, 0, &[0, 1, 2, 4], &key)
+        );
+        let mut other_epoch = committee.clone();
+        other_epoch.epoch = 8;
+        assert_ne!(
+            base,
+            signing_execution_id(&other_epoch, &genesis, &digest, 0, &parties, &key)
+        );
+        assert_ne!(
+            base,
+            signing_execution_id(&committee, &genesis, &digest, 0, &parties, &[0x33; 33])
+        );
+        assert_ne!(
+            base,
+            signing_execution_id(&committee, &[0x55; 32], &digest, 0, &parties, &key)
+        );
     }
 
     fn eth_addr_from_x33(x33: &[u8; 33]) -> [u8; 20] {

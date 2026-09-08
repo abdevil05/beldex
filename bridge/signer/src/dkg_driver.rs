@@ -107,8 +107,11 @@ fn id_of(index: u16) -> Result<Id, DriverError> {
 }
 
 /// A domain-separated 32-byte tag binding the fresh ceremony id, epoch and generation.
-fn dkg_payload_hash(epoch: u64, key_generation: u32) -> [u8; 32] {
-    crate::dkg_tag::ceremony_tag(b"pgw", epoch, key_generation)
+fn dkg_payload_hash(
+    committee: &CommitteeView,
+    key_generation: u32,
+) -> Result<[u8; 32], DriverError> {
+    crate::dkg_tag::ceremony_tag(b"pgw", committee, key_generation).map_err(DriverError::Protocol)
 }
 
 impl FrostDkgDriver {
@@ -145,7 +148,7 @@ impl FrostDkgDriver {
             t,
             epoch: committee.epoch,
             key_generation,
-            payload_hash: dkg_payload_hash(committee.epoch, key_generation),
+            payload_hash: dkg_payload_hash(committee, key_generation)?,
             id_to_index,
             session,
             r1_secret: Some(r1_secret),

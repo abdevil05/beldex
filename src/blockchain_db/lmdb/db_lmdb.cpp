@@ -6567,14 +6567,13 @@ namespace
 }
 
 void BlockchainLMDB::add_gateway_release_ref(
-    const crypto::public_key& gateway_addr, const crypto::hash& ref)
+    const crypto::public_key& gateway_addr, const crypto::hash& ref, uint64_t height)
 {
   check_open();
   TXN_BLOCK_PREFIX(0);
   auto key_bytes = gateway_release_ref_key(gateway_addr, ref);
-  unsigned char present = 1;
   MDB_val key{key_bytes.size(), key_bytes.data()};
-  MDB_val value{sizeof(present), &present};
+  MDB_val value{sizeof(height), &height};
   const int result = mdb_put(*txn_ptr, m_gateway_release_refs, &key, &value, MDB_NOOVERWRITE);
   if (result != MDB_SUCCESS && result != MDB_KEYEXIST)
     throw0(DB_ERROR(lmdb_error("Failed to add permanent gateway release ref: ", result)));
@@ -6608,6 +6607,28 @@ bool BlockchainLMDB::has_gateway_release_ref(
   if (result != MDB_SUCCESS)
     throw0(DB_ERROR(lmdb_error("Failed to query permanent gateway release ref: ", result)));
   return true;
+}
+
+uint64_t BlockchainLMDB::get_gateway_release_ref_height(
+    const crypto::public_key& gateway_addr, const crypto::hash& ref) const
+{
+  check_open();
+  TXN_PREFIX_RDONLY();
+  auto key_bytes = gateway_release_ref_key(gateway_addr, ref);
+  MDB_val key{key_bytes.size(), key_bytes.data()};
+  MDB_val value{};
+  const int result = mdb_get(m_txn, m_gateway_release_refs, &key, &value);
+  if (result == MDB_NOTFOUND)
+    return 0;
+  if (result != MDB_SUCCESS)
+    throw0(DB_ERROR(lmdb_error("Failed to query permanent gateway release ref height: ", result)));
+  // The first implementation stored a one-byte presence marker. Treat those
+  // legacy rows as height-unknown, never as finalized.
+  if (value.mv_size != sizeof(uint64_t))
+    return 0;
+  uint64_t height = 0;
+  std::memcpy(&height, value.mv_data, sizeof(height));
+  return height;
 }
 
 

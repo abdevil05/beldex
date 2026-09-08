@@ -48,6 +48,8 @@ pub enum DutyKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DutyKey {
     pub kind: DutyKind,
+    /// EVM destination (mint) or source (release); transaction hashes are not global IDs.
+    pub chain: u64,
     pub id: [u8; 32],
     /// Release: the burn's `log_index`. Mint: the deposit's gateway `output_index`.
     pub sub: u32,
@@ -63,17 +65,18 @@ pub enum Duty {
 }
 
 impl Duty {
-    /// The dedup key: `(beldex_txid, output_index)` for a mint, `(evm_txid, log_index)`
-    /// for a release — the transaction plus which event inside it.
+    /// Chain-scoped transaction/event identity, separated by mint/release kind.
     pub fn key(&self) -> DutyKey {
         match self {
             Duty::Mint(e) => DutyKey {
                 kind: DutyKind::Mint,
+                chain: e.dst_chain.0,
                 id: e.beldex_txid,
                 sub: e.output_index,
             },
             Duty::Release(e) => DutyKey {
                 kind: DutyKind::Release,
+                chain: e.chain.0,
                 id: e.evm_txid,
                 sub: e.log_index,
             },
@@ -370,6 +373,21 @@ mod tests {
             "same 32-byte id, different kind → distinct duty"
         );
         assert_eq!(o.counts(), (2, 0, 0));
+    }
+
+    #[test]
+    fn identical_burn_on_different_chains_remains_independent() {
+        let mut o = Orchestrator::new();
+        let first = release(7);
+        let mut second = first.clone();
+        if let Duty::Release(ref mut ev) = second {
+            ev.chain = ChainId(2);
+        }
+        assert_ne!(first.key(), second.key());
+        assert!(o.observe(first.clone()));
+        assert!(o.observe(second.clone()));
+        o.mark_done(&first.key());
+        assert_eq!(o.status(&second.key()), Some(DutyStatus::Pending));
     }
 
     #[test]

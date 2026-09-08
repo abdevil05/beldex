@@ -818,12 +818,20 @@ namespace cryptonote::rpc {
         auto& ack = set("bridge_rotation_ack", json{
             {"version", x.version},
             {"chain_id", x.chain_id},
+            {"log_index", x.log_index},
+            {"inclusion_height", x.inclusion_height},
             {"key_epoch", x.key_epoch},
             {"epoch", x.epoch},
             {"observers", std::move(observers)},
         });
+        json_binary_proxy{ack["contract"], format} =
+            std::string_view{reinterpret_cast<const char*>(x.contract.data()), x.contract.size()};
         json_binary_proxy{ack["new_signer"], format} =
             std::string_view{reinterpret_cast<const char*>(x.new_signer.data()), x.new_signer.size()};
+        json_binary_proxy{ack["evm_txid"], format} =
+            std::string_view{reinterpret_cast<const char*>(x.evm_txid.data()), x.evm_txid.size()};
+        json_binary_proxy{ack["block_hash"], format} =
+            std::string_view{reinterpret_cast<const char*>(x.block_hash.data()), x.block_hash.size()};
       }
       void operator()(const tx_extra_gateway_release_ref& x) {
         set("gateway_release_ref", json{
@@ -3703,6 +3711,10 @@ namespace cryptonote::rpc {
 
   void core_rpc_server::invoke(GET_GATEWAY_INFO& cmd, rpc_context context)
   {
+    // Keep the owner, checkpoint and reversible suffix in one consistent chain
+    // view. Read confirmed transactions directly from the DB below; consulting
+    // the mempool while holding this lock would invert the pool/chain lock order.
+    std::unique_lock chain_lock{m_core.get_blockchain_storage()};
     // Accepts a gwB… address or a 64-char hex id, matching gateway_get_history and
     // bridge_get_reserves — the same gateway should be addressable the same way on
     // every endpoint.
@@ -3721,6 +3733,40 @@ namespace cryptonote::rpc {
       const auto& okey = acct.latest_descriptor().owner_key;
       cmd.response["owner_key_type"] = okey.index();
       cmd.response["owner_key"] = std::visit([](const auto& k) { return tools::type_to_hex(k); }, okey);
+      // Reconstruct the descriptor at the immutable checkpoint by removing
+      // descriptor changes from the reversible suffix. Never label a current
+      // tip owner as finalized merely because get_gateway_info can see it.
+      const uint64_t immutable = m_core.get_blockchain_storage().get_immutable_height();
+      const uint64_t chain_height = db.height();
+      bool owner_finalized = false;
+      if (immutable > 0 && chain_height > immutable && chain_height - immutable <= 2000)
+      {
+        size_t descriptors = acct.descriptor_history.size();
+        bool complete = true;
+        for (uint64_t h = chain_height - 1; h > immutable && complete; --h)
+        {
+          const auto blk = db.get_block_from_height(h);
+          for (const auto& txid : blk.tx_hashes)
+          {
+            cryptonote::transaction tx;
+            if (!db.get_tx(txid, tx)) { complete = false; break; }
+            cryptonote::tx_extra_gateway_descriptor_operation descriptor{};
+            cryptonote::tx_extra_gateway_repoint repoint{};
+            if ((cryptonote::get_field_from_tx_extra(tx.extra, descriptor) && descriptor.address_id == gw_id)
+                || (cryptonote::get_field_from_tx_extra(tx.extra, repoint) && repoint.gateway_id == gw_id))
+            {
+              if (descriptors == 0) { complete = false; break; }
+              --descriptors;
+            }
+          }
+        }
+        if (complete && descriptors > 0)
+          owner_finalized = acct.descriptor_history[descriptors - 1].owner_key.index() == okey.index()
+              && std::visit([](const auto& k) { return tools::type_to_hex(k); },
+              acct.descriptor_history[descriptors - 1].owner_key) == cmd.response["owner_key"];
+      }
+      cmd.response["owner_key_finalized"] = owner_finalized;
+      cmd.response["immutable_height"] = immutable;
       cmd.response["meta_info"]  = acct.latest_descriptor().meta_info;
       // Account/descriptor state every gateway consumer needs, not just bridge
       // dashboards: a frozen gateway rejects ALL withdrawals and descriptor ops
@@ -4161,6 +4207,7 @@ namespace cryptonote::rpc {
     const bool exists = cryptonote::load_gateway_account(db, gw_id, acct);
 
     auto discharged = json::array();
+    auto heights = json::array();
     for (size_t i = 0; i < req.chain_ids.size(); ++i)
     {
       crypto::hash txid{};
@@ -4171,9 +4218,11 @@ namespace cryptonote::rpc {
           cryptonote::gateway_release_ref_hash(req.chain_ids[i], txid, log_index);
       discharged.push_back(
           (exists && acct.release_ref_recorded(ref)) || db.has_gateway_release_ref(gw_id, ref));
+      heights.push_back(db.get_gateway_release_ref_height(gw_id, ref));
     }
 
     cmd.response["discharged"]           = std::move(discharged);
+    cmd.response["inclusion_heights"]    = std::move(heights);
     // Zero now means complete chain-lifetime coverage: the permanent LMDB index
     // is not window-pruned. Kept for wire compatibility with older signers.
     cmd.response["retained_from_window"] = 0;

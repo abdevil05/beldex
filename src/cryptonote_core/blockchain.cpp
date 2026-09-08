@@ -3432,7 +3432,11 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
       std::vector<crypto::ed25519_public_key> signer_keys;
       size_t threshold = 0;
       std::string ack_reason;
-      if (!m_master_node_list.get_bridge_committee(epoch_height, members, signer_keys, threshold))
+      const uint64_t current_height = m_db->height();
+      const uint64_t current_epoch = current_height / bridge_epoch_blocks(m_nettype);
+      if (ack.epoch > current_epoch || current_epoch - ack.epoch > 1)
+        ack_reason = "rotation observer epoch is not current/recent";
+      else if (!m_master_node_list.get_bridge_committee(epoch_height, members, signer_keys, threshold))
         ack_reason = "no bridge committee for epoch " + std::to_string(ack.epoch);
       else if (!cryptonote::verify_bridge_rotation_evidence(ack, signer_keys, threshold, m_nettype, ack_reason))
         { /* reason set by the verifier */ }

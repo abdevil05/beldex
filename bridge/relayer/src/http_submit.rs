@@ -77,16 +77,17 @@ impl HttpSubmitter {
         })
     }
 
-    fn endpoint(&self, chain_id: u64) -> Result<&ChainEndpoint, SubmitError> {
+    pub(crate) fn endpoint(&self, chain_id: u64) -> Result<&ChainEndpoint, SubmitError> {
         self.chains
             .iter()
             .find(|c| c.chain_id == chain_id)
             .ok_or(SubmitError::UnknownChain(chain_id))
     }
 
-    fn rpc(&self, url: &str, method: &str, params: Value) -> Result<Value, SubmitError> {
+    pub(crate) fn rpc(&self, url: &str, method: &str, params: Value) -> Result<Value, SubmitError> {
         let req = json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params });
         let resp = ureq::post(url)
+            .timeout(std::time::Duration::from_secs(15))
             .send_json(req)
             .map_err(|e| SubmitError::Transport(format!("{method}: {e}")))?;
         let v: Value = resp
@@ -102,7 +103,7 @@ impl HttpSubmitter {
             .ok_or_else(|| SubmitError::Transport(format!("{method}: missing result")))
     }
 
-    fn hex_quantity(v: &Value, what: &str) -> Result<u128, SubmitError> {
+    pub(crate) fn hex_quantity(v: &Value, what: &str) -> Result<u128, SubmitError> {
         let s = v
             .as_str()
             .ok_or_else(|| SubmitError::Transport(format!("{what}: not a hex string")))?;
@@ -117,20 +118,37 @@ fn hexs(b: &[u8]) -> String {
 
 impl TxSubmitter for HttpSubmitter {
     fn submit(&self, call: &PreparedCall) -> Result<String, SubmitError> {
+        let (raw, _) = self.prepare(call, None)?;
+        self.broadcast(call.chain_id, &raw)
+    }
+}
+
+impl HttpSubmitter {
+    /// Build without broadcasting: durable callers must fsync the raw envelope first.
+    pub(crate) fn prepare(
+        &self,
+        call: &PreparedCall,
+        replacement: Option<(u64, u128, u128)>,
+    ) -> Result<(Vec<u8>, Eip1559Tx), SubmitError> {
         let ep = self.endpoint(call.chain_id)?;
         let from = format!("0x{}", hexs(&self.address));
         let to = format!("0x{}", hexs(&call.to));
         let data = format!("0x{}", hexs(&call.data));
 
         // Nonce: `pending` so back-to-back submissions from this process don't collide.
-        let nonce = Self::hex_quantity(
-            &self.rpc(
-                &ep.rpc_url,
-                "eth_getTransactionCount",
-                json!([from, "pending"]),
-            )?,
-            "nonce",
-        )? as u64;
+        let nonce = if let Some((nonce, _, _)) = replacement {
+            nonce
+        } else {
+            u64::try_from(Self::hex_quantity(
+                &self.rpc(
+                    &ep.rpc_url,
+                    "eth_getTransactionCount",
+                    json!([from, "pending"]),
+                )?,
+                "nonce",
+            )?)
+            .map_err(|_| SubmitError::Transport("nonce exceeds uint64".into()))?
+        };
 
         // Fees: base fee from the latest block + the configured tip, capped.
         let block = self.rpc(
@@ -143,7 +161,7 @@ impl TxSubmitter for HttpSubmitter {
             .map(|v| Self::hex_quantity(v, "baseFeePerGas"))
             .transpose()?
             .unwrap_or(0);
-        let tip = if ep.priority_fee_wei > 0 {
+        let mut tip = if ep.priority_fee_wei > 0 {
             ep.priority_fee_wei
         } else {
             Self::hex_quantity(
@@ -152,7 +170,12 @@ impl TxSubmitter for HttpSubmitter {
             )?
         };
         // 2× base fee is the standard headroom for the next block's base-fee rise.
-        let max_fee = base_fee.saturating_mul(2).saturating_add(tip);
+        let mut max_fee = base_fee.saturating_mul(2).saturating_add(tip);
+        if let Some((_, old_fee, old_tip)) = replacement {
+            // Bump both EIP-1559 limits by at least 12.5%, retaining the same nonce.
+            tip = tip.max(replacement_fee(old_tip)?);
+            max_fee = max_fee.max(replacement_fee(old_fee)?).max(tip);
+        }
         if max_fee > ep.max_fee_cap_wei {
             return Err(SubmitError::Rejected(format!(
                 "max_fee {max_fee} wei exceeds the configured cap {} wei — not broadcasting",
@@ -169,7 +192,11 @@ impl TxSubmitter for HttpSubmitter {
             )?,
             "estimateGas",
         )?;
-        let gas_limit = (est.saturating_mul(ep.gas_limit_pct as u128) / 100) as u64;
+        let gas_limit = est
+            .checked_mul(ep.gas_limit_pct as u128)
+            .and_then(|v| u64::try_from(v / 100).ok())
+            .filter(|v| u128::from(*v) >= est)
+            .ok_or_else(|| SubmitError::Rejected("invalid gas limit/headroom".into()))?;
 
         // Sign the envelope and broadcast.
         let tx = Eip1559Tx::from_call(call, nonce, tip, max_fee, gas_limit);
@@ -185,16 +212,29 @@ impl TxSubmitter for HttpSubmitter {
         r.copy_from_slice(&b[..32]);
         s.copy_from_slice(&b[32..]);
         let raw = tx.encode_signed(recid.to_byte() & 1, &r, &s);
+        Ok((raw, tx))
+    }
 
+    pub(crate) fn broadcast(&self, chain_id: u64, raw: &[u8]) -> Result<String, SubmitError> {
+        let ep = self.endpoint(chain_id)?;
+        let expected = format!("0x{}", hexs(&Keccak256::digest(raw)));
         let sent = self.rpc(
             &ep.rpc_url,
             "eth_sendRawTransaction",
             json!([format!("0x{}", hexs(&raw))]),
         )?;
-        sent.as_str()
-            .map(String::from)
-            .ok_or_else(|| SubmitError::Transport("sendRawTransaction: no tx hash".into()))
+        if sent.as_str().map(|s| s.eq_ignore_ascii_case(&expected)) != Some(true) {
+            return Err(SubmitError::Transport(
+                "sendRawTransaction: unexpected transaction hash".into(),
+            ));
+        }
+        Ok(expected)
     }
+}
+
+pub(crate) fn replacement_fee(old: u128) -> Result<u128, SubmitError> {
+    old.checked_add((old / 8 + u128::from(old % 8 != 0)).max(1))
+        .ok_or_else(|| SubmitError::Rejected("replacement fee overflow".into()))
 }
 
 #[cfg(test)]

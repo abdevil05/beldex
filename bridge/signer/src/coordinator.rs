@@ -33,10 +33,10 @@ use std::collections::BTreeMap;
 // session_key — the deterministic coordination handle (§3)
 // ============================================================================
 
-/// Domain prefix for [`session_key`] (versioned; a v2 derivation must change the string).
-pub const DOMAIN_SESSION_KEY: &[u8] = b"BELDEX_BRIDGE_SESSION_KEY_V1";
+/// Domain prefix for [`session_key`]; v2 adds the EVM chain namespace.
+pub const DOMAIN_SESSION_KEY: &[u8] = b"BELDEX_BRIDGE_SESSION_KEY_V2";
 
-/// The 32-byte coordination key for a duty: `SHA-256(DOMAIN ‖ leg ‖ epoch_le ‖ kind ‖ id)`.
+/// Coordination key: `SHA-256(DOMAIN ‖ leg ‖ epoch_le ‖ kind ‖ chain_le ‖ id ‖ sub_le)`.
 ///
 /// Every honest node derives the identical key from the same finalized on-chain event, so the
 /// key (and the leader picked from it) needs no coordination messages. `epoch` binds the
@@ -46,7 +46,7 @@ pub const DOMAIN_SESSION_KEY: &[u8] = b"BELDEX_BRIDGE_SESSION_KEY_V1";
 /// This hash only *names* sessions (leader selection + routing). It is not part of any
 /// consensus digest — those remain keccak/`gateway_input_message` on their own paths.
 pub fn session_key(leg: Leg, epoch: u64, key: &DutyKey) -> [u8; 32] {
-    let mut buf = Vec::with_capacity(DOMAIN_SESSION_KEY.len() + 1 + 8 + 1 + 32 + 4);
+    let mut buf = Vec::with_capacity(DOMAIN_SESSION_KEY.len() + 1 + 8 + 1 + 8 + 32 + 4);
     buf.extend_from_slice(DOMAIN_SESSION_KEY);
     buf.push(match leg {
         Leg::Pevm => 0,
@@ -57,6 +57,7 @@ pub fn session_key(leg: Leg, epoch: u64, key: &DutyKey) -> [u8; 32] {
         DutyKind::Mint => 0,
         DutyKind::Release => 1,
     });
+    buf.extend_from_slice(&key.chain.to_le_bytes());
     buf.extend_from_slice(&key.id);
     // `sub` (burn log_index / deposit output_index) is part of the identity: a single
     // transaction can carry several duties, and without this they would share one session
@@ -910,6 +911,7 @@ mod tests {
     fn session_key_is_deterministic_and_input_sensitive() {
         let key = DutyKey {
             kind: DutyKind::Mint,
+            chain: 1,
             id: [7u8; 32],
             sub: 0,
         };
@@ -927,6 +929,7 @@ mod tests {
                 2,
                 &DutyKey {
                     kind: DutyKind::Mint,
+                    chain: 1,
                     id: [7u8; 32],
                     sub: 1
                 }
@@ -937,11 +940,17 @@ mod tests {
         assert_ne!(a, session_key(Leg::Pevm, 3, &key), "epoch-bound");
         assert_ne!(
             a,
+            session_key(Leg::Pevm, 2, &DutyKey { chain: 2, ..key }),
+            "chain-bound"
+        );
+        assert_ne!(
+            a,
             session_key(
                 Leg::Pevm,
                 2,
                 &DutyKey {
                     kind: DutyKind::Release,
+                    chain: 1,
                     id: [7u8; 32],
                     sub: 0
                 }
@@ -955,6 +964,7 @@ mod tests {
                 2,
                 &DutyKey {
                     kind: DutyKind::Mint,
+                    chain: 1,
                     id: [8u8; 32],
                     sub: 0
                 }

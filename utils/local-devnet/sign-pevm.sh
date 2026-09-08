@@ -106,6 +106,22 @@ esac
 
 cd testdata
 
+# Every signing transcript is bound to the native network.
+if [ -z "${BRIDGE_SIGNER_GENESIS_HASH:-}" ]; then
+  BRIDGE_SIGNER_GENESIS_HASH=$(curl --fail --silent --show-error --max-time 10 \
+    http://127.0.0.1:19191/json_rpc -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":"0","method":"get_block_header_by_height","params":{"height":0}}' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["block_header"]["hash"])')
+fi
+[[ "$BRIDGE_SIGNER_GENESIS_HASH" =~ ^[0-9a-fA-F]{64}$ ]] || {
+  echo "!! native genesis must be 32-byte hex" >&2
+  exit 1
+}
+export BRIDGE_SIGNER_GENESIS_HASH
+# Shared by every participant in this invocation; durable reservations reject a
+# collision or an accidentally repeated explicit attempt.
+export BRIDGE_SIGNER_SIGN_ATTEMPT="${BRIDGE_SIGNER_SIGN_ATTEMPT:-$(openssl rand -hex 4 | python3 -c 'import sys; print(int(sys.stdin.read().strip(),16))')}"
+
 # --- locate the signer binary -------------------------------------------------------------
 # Resolved to an ABSOLUTE path, and resolved AFTER `cd testdata` — a relative path would
 # be interpreted from the wrong directory once we are one level deeper. sign-mint.sh uses

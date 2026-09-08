@@ -72,6 +72,16 @@ if [ "$MESH_USE_CURVE" = "false" ] || [ "$MESH_USE_CURVE" = "0" ]; then
 fi
 ANY32=$(printf '11%.0s' {1..32})   # placeholder gateway_id / self pubkey (the DKG uses neither)
 CEREMONY_ID="${BRIDGE_SIGNER_DKG_CEREMONY_ID:-$(openssl rand -hex 32)}"
+if [ -z "${BRIDGE_SIGNER_GENESIS_HASH:-}" ]; then
+  BRIDGE_SIGNER_GENESIS_HASH=$(curl -s http://127.0.0.1:19191/json_rpc \
+    -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":"0","method":"get_block_header_by_height","params":{"height":0}}' \
+    | sed -n 's/.*"hash": *"\([0-9a-f]*\)".*/\1/p' | head -1)
+fi
+[ "${#BRIDGE_SIGNER_GENESIS_HASH}" -eq 64 ] || {
+  echo "!! could not obtain the 32-byte native genesis hash; refusing an unbound DKG" >&2
+  exit 1
+}
 
 echo "  signer     : $SIGNER"
 echo "  target     : <node>/devnet/shares  (both legs)"
@@ -100,6 +110,7 @@ for d in beldex-127.0.0.1-*/; do
   BRIDGE_SIGNER_ALLOW_FILE_SHARES=1 \
   BRIDGE_SIGNER_DKG_TIMEOUT_SECS="$TIMEOUT" \
   BRIDGE_SIGNER_DKG_CEREMONY_ID="$CEREMONY_ID" \
+  BRIDGE_SIGNER_GENESIS_HASH="$BRIDGE_SIGNER_GENESIS_HASH" \
   BRIDGE_SIGNER_SHARE_DIR="$PWD/${d}devnet/shares" \
     "$SIGNER" dkg > "dkg-${d%/}.log" 2>&1 &
   PIDS="$PIDS $!"

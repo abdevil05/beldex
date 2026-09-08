@@ -772,7 +772,26 @@ void omq_rpc::on_bridge_rotation_ack(oxenmq::Message& m)
     ack.version   = req.value("version", 0);
     ack.chain_id  = req.at("chain_id").get<uint64_t>();
     ack.key_epoch = req.at("key_epoch").get<uint64_t>();
+    ack.log_index = req.at("log_index").get<uint32_t>();
+    ack.inclusion_height = req.at("inclusion_height").get<uint64_t>();
     ack.epoch     = req.at("epoch").get<uint64_t>();
+
+    if (ack.version != 1)
+    {
+      m.send_reply(OMQ_BAD_REQUEST, "bridge.rotation_ack: unsupported version");
+      return;
+    }
+
+    const auto read_fixed_hex = [&](const char* name, size_t bytes, std::vector<uint8_t>& out) {
+      const std::string value = req.at(name).get<std::string>();
+      if (value.size() != bytes * 2 || !oxenc::is_hex(value))
+        throw std::invalid_argument{std::string{name} + " must be " + std::to_string(bytes) + "-byte hex"};
+      const std::string decoded = oxenc::from_hex(value);
+      out.assign(decoded.begin(), decoded.end());
+    };
+    read_fixed_hex("contract", 20, ack.contract);
+    read_fixed_hex("evm_txid", 32, ack.evm_txid);
+    read_fixed_hex("block_hash", 32, ack.block_hash);
 
     const std::string ns_hex = req.at("new_signer").get<std::string>();
     if (ns_hex.size() != 40 || !oxenc::is_hex(ns_hex))

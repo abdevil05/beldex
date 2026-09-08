@@ -790,9 +790,13 @@ fn sign_pevm(
         .map_err(|e| format!("read pevm keyshare: {e} (run `dkg` first with SHARE_DIR set)"))?;
 
     println!("running Pevm cggmp21 signing over the mesh…");
+    let attempt: u32 = std::env::var("BRIDGE_SIGNER_SIGN_ATTEMPT")
+        .unwrap_or_else(|_| "0".into())
+        .parse()
+        .map_err(|_| "BRIDGE_SIGNER_SIGN_ATTEMPT must be a uint32")?;
     let (rs, x33) = run_live_pevm_sign(
-        committee, self_index, signers, &key_share, &preimage, /*attempt=*/ 0, identity,
-        peers, use_curve, timeout,
+        committee, self_index, signers, &key_share, &preimage, attempt, identity, peers, use_curve,
+        timeout,
     )
     .map_err(|e| format!("Pevm sign failed: {e:?}"))?;
 
@@ -929,6 +933,36 @@ fn reject_reversible_dev_rpc_for_live_release(
     Ok(())
 }
 
+/// A numeric confirmation count is a heuristic, not an irreversible consensus
+/// boundary.  Native releases cannot be rolled back when an EVM branch changes, so
+/// live mode requires a finalized RPC tag unless an operator explicitly marks
+/// the run as an unsafe development canary.
+#[cfg(feature = "evm-watcher-http")]
+fn require_consensus_aware_evm_finality(
+    configs: &[beldex_bridge_signer::evm_watcher::EvmChainConfig],
+) -> Result<(), String> {
+    let allow_depth = std::env::var("BRIDGE_SIGNER_ALLOW_DEPTH_FINALITY")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let weak: Vec<u64> = configs
+        .iter()
+        .filter(|c| c.finality != beldex_bridge_signer::evm_watcher::EvmFinality::Finalized)
+        .map(|c| c.chain_id)
+        .collect();
+    if weak.is_empty() {
+        return Ok(());
+    }
+    if allow_depth {
+        eprintln!(
+            "WARNING: non-finalized settlement explicitly allowed for chains {weak:?}; a reorg can make native releases insolvent"
+        );
+        return Ok(());
+    }
+    Err(format!(
+        "chains {weak:?} do not use finalized finality; live native releases require `finality: \"finalized\"`. A safe head is not irreversible. Set BRIDGE_SIGNER_ALLOW_DEPTH_FINALITY=1 only for an explicitly unsafe local canary"
+    ))
+}
+
 #[cfg(all(feature = "autonomy", feature = "evm-watcher-http"))]
 fn validate_native_reserve_solvency(
     beldexd_rpc: &str,
@@ -983,6 +1017,7 @@ fn validate_native_reserve_solvency(
 struct DurableWatchState {
     beldex_next: Option<u64>,
     evm_next: std::collections::BTreeMap<u64, u64>,
+    evm_anchors: std::collections::BTreeMap<u64, (u64, [u8; 32])>,
 }
 
 #[cfg(feature = "autonomy")]
@@ -1001,15 +1036,40 @@ fn load_watch_state(path: &str) -> Result<DurableWatchState, String> {
         let (key, value) = line
             .split_once('=')
             .ok_or_else(|| format!("watcher state {path}:{} missing `=`", line_no + 1))?;
-        let value: u64 = value
-            .parse()
-            .map_err(|_| format!("watcher state {path}:{} invalid height", line_no + 1))?;
         if key == "beldex_next" {
+            let value: u64 = value
+                .parse()
+                .map_err(|_| format!("watcher state {path}:{} invalid height", line_no + 1))?;
             state.beldex_next = Some(value);
+        } else if let Some(chain) = key.strip_prefix("evm_anchor_") {
+            let chain: u64 = chain
+                .parse()
+                .map_err(|_| format!("watcher state {path}:{} invalid chain id", line_no + 1))?;
+            let (height, hash) = value.split_once(',').ok_or_else(|| {
+                format!(
+                    "watcher state {path}:{} invalid finalized anchor",
+                    line_no + 1
+                )
+            })?;
+            let height: u64 = height.parse().map_err(|_| {
+                format!("watcher state {path}:{} invalid anchor height", line_no + 1)
+            })?;
+            let hash = config::parse_hex32(hash).ok_or_else(|| {
+                format!("watcher state {path}:{} invalid anchor hash", line_no + 1)
+            })?;
+            if state.evm_anchors.insert(chain, (height, hash)).is_some() {
+                return Err(format!(
+                    "watcher state {path}:{} duplicates chain {chain} anchor",
+                    line_no + 1
+                ));
+            }
         } else if let Some(chain) = key.strip_prefix("evm_") {
             let chain: u64 = chain
                 .parse()
                 .map_err(|_| format!("watcher state {path}:{} invalid chain id", line_no + 1))?;
+            let value: u64 = value
+                .parse()
+                .map_err(|_| format!("watcher state {path}:{} invalid height", line_no + 1))?;
             if state.evm_next.insert(chain, value).is_some() {
                 return Err(format!(
                     "watcher state {path}:{} duplicates chain {chain}",
@@ -1031,6 +1091,7 @@ fn persist_watch_state(
     path: &str,
     beldex_next: u64,
     evm_next: impl IntoIterator<Item = (u64, u64)>,
+    evm_anchors: impl IntoIterator<Item = (u64, (u64, [u8; 32]))>,
 ) -> Result<(), String> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
@@ -1051,6 +1112,10 @@ fn persist_watch_state(
     writeln!(file, "beldex_next={beldex_next}").map_err(|e| format!("write watcher state: {e}"))?;
     for (chain, height) in evm_next {
         writeln!(file, "evm_{chain}={height}").map_err(|e| format!("write watcher state: {e}"))?;
+    }
+    for (chain, (height, hash)) in evm_anchors {
+        writeln!(file, "evm_anchor_{chain}={height},{}", hex(&hash))
+            .map_err(|e| format!("write watcher state: {e}"))?;
     }
     file.sync_all()
         .map_err(|e| format!("fsync watcher state: {e}"))?;
@@ -1084,6 +1149,7 @@ fn run_watch_evm(_cfg: &Config) -> Result<(), String> {
         .unwrap_or(false);
     if live_requested {
         reject_reversible_dev_rpc_for_live_release(&configs)?;
+        require_consensus_aware_evm_finality(&configs)?;
     }
     // Build the E.3 registry (validates uniqueness) even though the loop below only
     // needs the watchers — it is the config's single source of truth.
@@ -1185,6 +1251,7 @@ fn run_serve(cfg: &Config) -> Result<(), String> {
         .unwrap_or(false);
     if live_requested {
         reject_reversible_dev_rpc_for_live_release(&configs)?;
+        require_consensus_aware_evm_finality(&configs)?;
     }
     let watch_state_path = std::env::var("BRIDGE_SIGNER_WATCH_STATE_FILE").ok();
     let watch_state = match watch_state_path.as_deref() {
@@ -1200,7 +1267,16 @@ fn run_serve(cfg: &Config) -> Result<(), String> {
         }
     }
     let registry = build_registry(&configs)?;
-    let evm: Vec<_> = configs.iter().map(|c| c.build_watcher()).collect();
+    let evm: Vec<_> = configs
+        .iter()
+        .map(|c| {
+            let watcher = c.build_watcher();
+            match watch_state.evm_anchors.get(&c.chain_id) {
+                Some((height, hash)) => watcher.with_finalized_anchor(*height, *hash),
+                None => watcher,
+            }
+        })
+        .collect();
 
     // Beldex gateway deposits (→ mints).
     let beldexd_rpc =
@@ -1343,12 +1419,13 @@ fn run_serve(_cfg: &Config) -> Result<(), String> {
 /// `BRIDGE_SIGNER_RELAY_CMD` (default `beldex-bridge-relayer relay -`), whose own environment
 /// holds the gas key.
 ///
-/// Failures are logged and skipped, never retried in a tight loop: a payload that fails to
-/// broadcast is still valid forever, another subscriber may carry it, and the wBDX contract
-/// rejects a duplicate anyway.
-#[cfg(feature = "omq-client")]
+/// Received payloads are persisted before submission and retired only after destination
+/// reconciliation. A successful broadcast is not settlement.
+#[cfg(feature = "serve-live")]
 fn run_relay_watch_standalone() -> Result<(), String> {
+    use beldex_bridge_signer::evm_watcher::{build_registry, parse_evm_chains, HttpJsonRpc};
     use beldex_bridge_signer::omq_client::OmqMintSubscriber;
+    use beldex_bridge_signer::reconcile::EvmMintReconciler;
     use std::time::Duration;
 
     // Comma-separated list: subscribe to EVERY endpoint given. Signers publish to their own
@@ -1357,12 +1434,41 @@ fn run_relay_watch_standalone() -> Result<(), String> {
     // duplicates across daemons are deduped below by txid.
     let endpoints = std::env::var("BRIDGE_SIGNER_OXENMQ_ENDPOINT").map_err(|_| {
         "set BRIDGE_SIGNER_OXENMQ_ENDPOINT (one or more comma-separated beldexd OMQ sockets \
-         to subscribe to, e.g. ipc://<node>/devnet/beldexd.sock) — this is the only required \
-         setting"
+         to subscribe to, e.g. ipc://<node>/devnet/beldexd.sock)"
             .to_string()
     })?;
     let cmd = std::env::var("BRIDGE_SIGNER_RELAY_CMD")
         .unwrap_or_else(|_| "beldex-bridge-relayer relay -".to_string());
+    let outbox = std::env::var("BRIDGE_SIGNER_RELAY_OUTBOX_DIR")
+        .map_err(|_| "set BRIDGE_SIGNER_RELAY_OUTBOX_DIR to a persistent relay-only directory")?;
+    if outbox.trim().is_empty() {
+        return Err("BRIDGE_SIGNER_RELAY_OUTBOX_DIR must not be empty".into());
+    }
+    let configs = parse_evm_chains(
+        &std::env::var("BRIDGE_SIGNER_EVM_CHAINS")
+            .map_err(|_| "set BRIDGE_SIGNER_EVM_CHAINS for settlement reconciliation")?,
+    )?;
+    if configs.is_empty() {
+        return Err("relay-watch requires at least one configured destination chain".into());
+    }
+    let _registry = build_registry(&configs)?;
+    require_consensus_aware_evm_finality(&configs)?;
+    std::fs::create_dir_all(&outbox).map_err(|e| format!("create relay outbox: {e}"))?;
+    let mut reconciler = EvmMintReconciler {
+        chains: configs
+            .iter()
+            .map(|c| {
+                (
+                    c.chain_id,
+                    (
+                        HttpJsonRpc::new(c.rpc_url.clone()),
+                        c.contract,
+                        c.finality.settlement_tag().to_string(),
+                    ),
+                )
+            })
+            .collect(),
+    };
     let mut subs: Vec<OmqMintSubscriber> = endpoints
         .split(',')
         .map(str::trim)
@@ -1377,42 +1483,28 @@ fn run_relay_watch_standalone() -> Result<(), String> {
     }
     println!("  each mint payload → `{cmd}`");
     println!("  (this process holds NO bridge key; the gas key lives in the relay command)");
-    let mut count = 0u64;
-    // Process-local dedup by (beldex_txid, output_index): the daemon replays its retained backlog to a new
-    // subscriber (so an outage is caught up), and reconnections can re-deliver — skip what
-    // this process already handled instead of re-running gas estimation on it. The
-    // contract's replay guard remains the real idempotency authority.
-    let mut handled: std::collections::HashSet<String> = std::collections::HashSet::new();
     let per_sub_timeout = Duration::from_millis(5000 / subs.len().max(1) as u64);
+    let mut next_retry = std::time::Instant::now();
     loop {
+        // Replay the disk queue even when the bus is silent or restarted. Neither a
+        // relay exit status nor a returned transaction hash deletes a pending record.
+        if std::time::Instant::now() >= next_retry {
+            drain_mint_outbox(&outbox, Some(&cmd), None, &mut reconciler)?;
+            next_retry = std::time::Instant::now() + Duration::from_secs(30);
+        }
         for sub in subs.iter_mut() {
             match sub.poll(per_sub_timeout) {
                 Ok(Some(payload)) => {
-                    let txid = payload
-                        .split(r#""beldex_txid":""#)
-                        .nth(1)
-                        .and_then(|s| s.split('"').next())
-                        .unwrap_or("")
-                        .to_string();
-                    let output_index = payload
-                        .split(r#""output_index":"#)
-                        .nth(1)
-                        .and_then(|s| s.split(|c: char| !c.is_ascii_digit()).next())
-                        .unwrap_or("");
-                    let deposit_id = format!("{txid}:{output_index}");
-                    if !txid.is_empty()
-                        && !output_index.is_empty()
-                        && !handled.insert(deposit_id.clone())
-                    {
-                        println!("(skip: deposit {deposit_id} already handled this session)");
-                        continue;
-                    }
-                    count += 1;
-                    println!("[{count}] mint payload received: {payload}");
-                    match pipe_to_relay(&cmd, &payload) {
-                        Ok(out) => println!("     relayed: {}", out.trim()),
-                        Err(e) => eprintln!("     RELAY FAILED ({e}) — payload above stays valid"),
-                    }
+                    let id = match relay_payload_identity(&payload, &configs) {
+                        Ok(id) => id,
+                        Err(e) => {
+                            eprintln!("relay-watch: rejected payload: {e}");
+                            continue;
+                        }
+                    };
+                    // A different signature/key epoch must not be blocked by an older
+                    // failed payload with the same deposit identity.
+                    persist_outbox_record(&outbox, &id, &payload)?;
                 }
                 Ok(None) => {}
                 Err(e) => {
@@ -1423,9 +1515,53 @@ fn run_relay_watch_standalone() -> Result<(), String> {
     }
 }
 
-#[cfg(not(feature = "omq-client"))]
+#[cfg(not(feature = "serve-live"))]
 fn run_relay_watch_standalone() -> Result<(), String> {
-    Err("the `relay-watch` subcommand requires a build with `--features omq-client`".into())
+    Err("durable `relay-watch` requires `--features serve-live` (no signer key is required)".into())
+}
+
+#[cfg(feature = "serve-live")]
+fn relay_payload_identity(
+    payload: &str,
+    configs: &[beldex_bridge_signer::evm_watcher::EvmChainConfig],
+) -> Result<String, String> {
+    use sha3::{Digest, Keccak256};
+    let value: serde_json::Value =
+        serde_json::from_str(payload).map_err(|e| format!("invalid JSON: {e}"))?;
+    if value.get("kind").and_then(|v| v.as_str()) != Some("mint") {
+        return Err("mint bus accepts only mint payloads".into());
+    }
+    let chain = value
+        .get("chain_id")
+        .and_then(|v| v.as_u64())
+        .ok_or("invalid chain_id")?;
+    let contract = value
+        .get("contract")
+        .and_then(|v| v.as_str())
+        .and_then(|v| hex_to_bytes(v.strip_prefix("0x").unwrap_or(v)))
+        .ok_or("invalid contract")?;
+    if !configs
+        .iter()
+        .any(|c| c.chain_id == chain && c.contract.as_slice() == contract)
+    {
+        return Err("payload chain/contract is not a configured destination".into());
+    }
+    let txid = value
+        .get("beldex_txid")
+        .and_then(|v| v.as_str())
+        .and_then(config::parse_hex32)
+        .ok_or("invalid beldex_txid")?;
+    let index = value
+        .get("output_index")
+        .and_then(|v| v.as_u64())
+        .and_then(|v| u32::try_from(v).ok())
+        .ok_or("invalid output_index")?;
+    let canonical = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
+    Ok(format!(
+        "{chain}-{}-{index}-{}",
+        hex(&txid),
+        hex(&Keccak256::digest(canonical))
+    ))
 }
 
 /// Run `cmd` (via the shell, so it can carry arguments/pipes) and write `payload` to its
@@ -1435,10 +1571,25 @@ fn run_relay_watch_standalone() -> Result<(), String> {
 /// `serve --live` hand-off and the standalone `relay-watch`.)
 #[cfg(feature = "omq-client")]
 fn pipe_to_relay(cmd: &str, payload: &str) -> Result<String, String> {
+    pipe_to_relay_bounded(cmd, payload, std::time::Duration::from_secs(60))
+}
+
+#[cfg(feature = "omq-client")]
+fn pipe_to_relay_bounded(
+    cmd: &str,
+    payload: &str,
+    limit: std::time::Duration,
+) -> Result<String, String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    let mut child = Command::new("sh")
+    // GNU timeout supervises the command's process group, including ordinary
+    // subprocesses. Missing supervision is an error, never an unbounded fallback.
+    let mut child = Command::new("timeout")
+        .arg("--signal=TERM")
+        .arg("--kill-after=5s")
+        .arg(format!("{}s", limit.as_secs_f64()))
+        .arg("sh")
         .arg("-c")
         .arg(cmd)
         .stdin(Stdio::piped())
@@ -1480,7 +1631,7 @@ fn persist_mint_outbox(
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o750))
         .map_err(|e| format!("chmod mint outbox {dir}: {e}"))?;
     let txid = hex(&ev.beldex_txid);
-    let final_path = format!("{dir}/{txid}-{}.json", ev.output_index);
+    let final_path = format!("{dir}/{txid}-{}.pending.json", ev.output_index);
     let temp_path = format!("{final_path}.tmp-{}", std::process::id());
     let mut file = std::fs::OpenOptions::new()
         .write(true)
@@ -1503,11 +1654,461 @@ fn persist_mint_outbox(
     Ok(final_path)
 }
 
+#[cfg(feature = "serve-live")]
+fn persist_release_outbox(
+    dir: &str,
+    ev: &beldex_bridge_signer::watch::ReleaseEvent,
+    tx_blob: &str,
+    signature: &[u8; 64],
+) -> Result<String, String> {
+    let payload = serde_json::json!({
+        "kind": "release",
+        "chain_id": ev.chain.0,
+        "evm_txid": hex(&ev.evm_txid),
+        "log_index": ev.log_index,
+        "tx_blob": tx_blob,
+        "signature": hex(signature),
+    })
+    .to_string();
+    persist_outbox_record(
+        dir,
+        &format!("{}-{}-{}", ev.chain.0, hex(&ev.evm_txid), ev.log_index),
+        &payload,
+    )
+}
+
+/// Store the full observed duty before persisting a scan cursor. Signed outboxes
+/// alone cannot recover a crash between observation and threshold signing.
+#[cfg(feature = "serve-live")]
+fn persist_observed_duty(
+    dir: &str,
+    duty: &beldex_bridge_signer::orchestrator::Duty,
+) -> Result<String, String> {
+    use beldex_bridge_signer::orchestrator::Duty;
+    let (id, value) = match duty {
+        Duty::Mint(e) => (
+            format!("mint-{}-{}", hex(&e.beldex_txid), e.output_index),
+            serde_json::json!({
+                "kind":"mint", "txid":hex(&e.beldex_txid), "index":e.output_index,
+                "chain":e.dst_chain.0, "epoch":e.key_epoch, "to":hex(&e.to), "amount":e.amount.to_string()
+            }),
+        ),
+        Duty::Release(e) => (
+            format!("release-{}-{}-{}", e.chain.0, hex(&e.evm_txid), e.log_index),
+            serde_json::json!({
+                "kind":"release", "txid":hex(&e.evm_txid), "index":e.log_index,
+                "chain":e.chain.0, "recipient":hex(&e.beldex_recipient), "amount":e.amount.to_string()
+            }),
+        ),
+    };
+    persist_outbox_record(dir, &id, &value.to_string())
+}
+
+#[cfg(feature = "serve-live")]
+fn read_observed_duty(
+    path: &std::path::Path,
+) -> Result<beldex_bridge_signer::orchestrator::Duty, String> {
+    use beldex_bridge_signer::chain_registry::ChainId;
+    use beldex_bridge_signer::orchestrator::Duty;
+    use beldex_bridge_signer::watch::{MintEvent, ReleaseEvent};
+    let bytes = std::fs::read(path).map_err(|e| format!("read observed duty: {e}"))?;
+    let v: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|e| format!("decode observed duty: {e}"))?;
+    let text = |k: &str| v[k].as_str().ok_or_else(|| format!("invalid duty {k}"));
+    let number = |k: &str| v[k].as_u64().ok_or_else(|| format!("invalid duty {k}"));
+    let txid = config::parse_hex32(text("txid")?).ok_or("invalid duty txid")?;
+    let index = u32::try_from(number("index")?).map_err(|_| "invalid duty index")?;
+    let chain = ChainId(number("chain")?);
+    let amount = text("amount")?
+        .parse::<u128>()
+        .map_err(|_| "invalid duty amount")?;
+    match text("kind")? {
+        "mint" => Ok(Duty::Mint(MintEvent {
+            beldex_txid: txid,
+            output_index: index,
+            dst_chain: chain,
+            key_epoch: number("epoch")?,
+            amount,
+            to: hex_to_bytes(text("to")?)
+                .and_then(|b| b.try_into().ok())
+                .ok_or("invalid duty recipient")?,
+        })),
+        "release" => Ok(Duty::Release(ReleaseEvent {
+            evm_txid: txid,
+            log_index: index,
+            chain,
+            amount,
+            beldex_recipient: hex_to_bytes(text("recipient")?).ok_or("invalid duty recipient")?,
+        })),
+        _ => Err("unknown observed duty kind".into()),
+    }
+}
+
+#[cfg(feature = "serve-live")]
+fn persist_outbox_record(dir: &str, id: &str, payload: &str) -> Result<String, String> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    std::fs::create_dir_all(dir).map_err(|e| format!("create outbox {dir}: {e}"))?;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o750))
+        .map_err(|e| format!("chmod outbox {dir}: {e}"))?;
+    let final_path = format!("{dir}/{id}.pending.json");
+    if std::path::Path::new(&final_path).exists() {
+        return Ok(final_path);
+    }
+    let temp_path = format!("{final_path}.tmp-{}", std::process::id());
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o640)
+        .open(&temp_path)
+        .map_err(|e| format!("open outbox temp {temp_path}: {e}"))?;
+    writeln!(file, "{payload}").map_err(|e| format!("write outbox: {e}"))?;
+    file.sync_all().map_err(|e| format!("fsync outbox: {e}"))?;
+    std::fs::rename(&temp_path, &final_path)
+        .map_err(|e| format!("commit outbox {final_path}: {e}"))?;
+    std::fs::File::open(dir)
+        .and_then(|d| d.sync_all())
+        .map_err(|e| format!("fsync outbox directory: {e}"))?;
+    Ok(final_path)
+}
+
+#[cfg(feature = "serve-live")]
+fn pending_outbox_files(dir: &str) -> Result<Vec<std::path::PathBuf>, String> {
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir).map_err(|e| format!("read outbox {dir}: {e}"))? {
+        let path = entry.map_err(|e| format!("read outbox entry: {e}"))?.path();
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.ends_with(".pending.json"))
+        {
+            files.push(path);
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+#[cfg(feature = "serve-live")]
+fn mark_outbox_finalized(path: &std::path::Path) -> Result<(), String> {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("outbox path is not utf-8")?;
+    let final_name = name
+        .strip_suffix(".pending.json")
+        .map(|n| format!("{n}.finalized.json"))
+        .ok_or("not a pending outbox record")?;
+    let final_path = path.with_file_name(final_name);
+    std::fs::rename(path, &final_path).map_err(|e| format!("finalize outbox record: {e}"))?;
+    let parent = path.parent().ok_or("outbox record has no parent")?;
+    std::fs::File::open(parent)
+        .and_then(|d| d.sync_all())
+        .map_err(|e| format!("fsync finalized outbox directory: {e}"))
+}
+
+#[cfg(feature = "serve-live")]
+fn drain_mint_outbox<R: beldex_bridge_signer::reconcile::DutyReconciler>(
+    dir: &str,
+    relay_cmd: Option<&str>,
+    bus: Option<(&str, u16, [u8; 64], [u8; 32])>,
+    reconciler: &mut R,
+) -> Result<(), String> {
+    use beldex_bridge_signer::chain_registry::ChainId;
+    use beldex_bridge_signer::orchestrator::Duty;
+    use beldex_bridge_signer::watch::MintEvent;
+
+    for path in pending_outbox_files(dir)? {
+        let payload = std::fs::read_to_string(&path)
+            .map_err(|e| format!("read mint outbox {}: {e}", path.display()))?;
+        let value: serde_json::Value = serde_json::from_str(&payload)
+            .map_err(|e| format!("parse mint outbox {}: {e}", path.display()))?;
+        let txid = value
+            .get("beldex_txid")
+            .and_then(|v| v.as_str())
+            .and_then(config::parse_hex32)
+            .ok_or_else(|| format!("mint outbox {} has invalid beldex_txid", path.display()))?;
+        let duty =
+            Duty::Mint(MintEvent {
+                beldex_txid: txid,
+                output_index: value
+                    .get("output_index")
+                    .and_then(|v| v.as_u64())
+                    .and_then(|v| u32::try_from(v).ok())
+                    .ok_or_else(|| {
+                        format!("mint outbox {} has invalid output_index", path.display())
+                    })?,
+                dst_chain: ChainId(value.get("chain_id").and_then(|v| v.as_u64()).ok_or_else(
+                    || format!("mint outbox {} has invalid chain_id", path.display()),
+                )?),
+                key_epoch: 0,
+                to: [0u8; 20],
+                amount: 0,
+            });
+        match reconciler.is_settled(&duty) {
+            Some(true) => {
+                mark_outbox_finalized(&path)?;
+                println!("  mint finalized on destination: {}", path.display());
+            }
+            Some(false) => {
+                if let Some((endpoint, index, signing_key, genesis)) = bus {
+                    use beldex_bridge_signer::omq_client::{
+                        mint_publish_message, OmqCommitteeClient,
+                    };
+                    let msg = mint_publish_message(&genesis, payload.trim());
+                    match beldex_bridge_signer::ffi::ed25519_sign_detached(&signing_key, &msg)
+                        .and_then(|sig| {
+                            OmqCommitteeClient::new(endpoint.to_string())
+                                .publish_mint_payload(payload.trim(), index, &sig)
+                                .map_err(|_| "mint bus publication failed")
+                        }) {
+                        Ok(status) => println!(
+                            "  mint outbox bus publish/retry {}: {status}",
+                            path.display()
+                        ),
+                        Err(e) => eprintln!(
+                            "  mint outbox bus publish failed {} ({e}); retained for retry",
+                            path.display()
+                        ),
+                    }
+                }
+                if let Some(cmd) = relay_cmd {
+                    match pipe_to_relay(cmd, payload.trim()) {
+                        Ok(out) => println!(
+                            "  mint outbox broadcast/rebroadcast {}: {}",
+                            path.display(),
+                            out.trim()
+                        ),
+                        Err(e) => eprintln!(
+                            "  mint outbox broadcast failed {} ({e}); retained for retry",
+                            path.display()
+                        ),
+                    }
+                }
+            }
+            None => eprintln!(
+                "  mint settlement undetermined for {}; retained for retry",
+                path.display()
+            ),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "serve-live")]
+fn drain_release_outbox(
+    dir: &str,
+    rpc: &mut beldex_bridge_signer::live_backend::HttpGatewayRpc,
+    reconciler: &mut beldex_bridge_signer::reconcile::GatewayReleaseReconciler,
+) -> Result<(), String> {
+    use beldex_bridge_signer::chain_registry::ChainId;
+    use beldex_bridge_signer::live_backend::GatewayRpc;
+    use beldex_bridge_signer::orchestrator::Duty;
+    use beldex_bridge_signer::reconcile::DutyReconciler;
+    use beldex_bridge_signer::watch::ReleaseEvent;
+
+    for path in pending_outbox_files(dir)? {
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| format!("read release outbox {}: {e}", path.display()))?;
+        let value: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| format!("parse release outbox {}: {e}", path.display()))?;
+        let txid = value
+            .get("evm_txid")
+            .and_then(|v| v.as_str())
+            .and_then(config::parse_hex32)
+            .ok_or_else(|| format!("release outbox {} has invalid evm_txid", path.display()))?;
+        let duty =
+            Duty::Release(ReleaseEvent {
+                evm_txid: txid,
+                log_index: value
+                    .get("log_index")
+                    .and_then(|v| v.as_u64())
+                    .and_then(|v| u32::try_from(v).ok())
+                    .ok_or_else(|| {
+                        format!("release outbox {} has invalid log_index", path.display())
+                    })?,
+                chain: ChainId(value.get("chain_id").and_then(|v| v.as_u64()).ok_or_else(
+                    || format!("release outbox {} has invalid chain_id", path.display()),
+                )?),
+                amount: 0,
+                beldex_recipient: Vec::new(),
+            });
+        match reconciler.is_settled(&duty) {
+            Some(true) => {
+                mark_outbox_finalized(&path)?;
+                println!("  release finalized on destination: {}", path.display());
+            }
+            Some(false) => {
+                let blob = value
+                    .get("tx_blob")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| format!("release outbox {} has no tx_blob", path.display()))?;
+                let sig = value
+                    .get("signature")
+                    .and_then(|v| v.as_str())
+                    .and_then(config::parse_hex64)
+                    .ok_or_else(|| {
+                        format!("release outbox {} has invalid signature", path.display())
+                    })?;
+                match rpc.submit_transfer(blob, &sig) {
+                    Ok(id) => println!(
+                        "  release outbox broadcast/rebroadcast {}: {id}",
+                        path.display()
+                    ),
+                    Err(e) => eprintln!(
+                        "  release outbox broadcast failed {} ({e}); retained for retry",
+                        path.display()
+                    ),
+                }
+            }
+            None => eprintln!(
+                "  release settlement undetermined for {}; retained for retry",
+                path.display()
+            ),
+        }
+    }
+    Ok(())
+}
+
 #[cfg(all(test, feature = "serve-live"))]
 mod main_tests {
     use super::*;
     use beldex_bridge_signer::chain_registry::ChainId;
     use beldex_bridge_signer::watch::MintEvent;
+
+    #[test]
+    fn relay_hook_timeout_is_retryable_instead_of_hanging_the_worker() {
+        let started = std::time::Instant::now();
+        assert!(
+            pipe_to_relay_bounded("sleep 10", "{}", std::time::Duration::from_millis(100)).is_err()
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(3));
+    }
+
+    #[test]
+    fn relay_queue_survives_failure_and_only_settlement_retires_it() {
+        struct Answer(Option<bool>);
+        impl beldex_bridge_signer::reconcile::DutyReconciler for Answer {
+            fn is_settled(&mut self, _: &beldex_bridge_signer::orchestrator::Duty) -> Option<bool> {
+                self.0
+            }
+        }
+        let dir =
+            std::env::temp_dir().join(format!("bridge-relay-recovery-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let payload = serde_json::json!({"kind":"mint","chain_id":1,"beldex_txid":hex(&[0x11;32]),"output_index":0}).to_string();
+        persist_outbox_record(dir.to_str().unwrap(), "deposit", &payload).unwrap();
+        drain_mint_outbox(
+            dir.to_str().unwrap(),
+            Some("exit 23"),
+            None,
+            &mut Answer(Some(false)),
+        )
+        .unwrap();
+        assert_eq!(
+            pending_outbox_files(dir.to_str().unwrap()).unwrap().len(),
+            1
+        );
+        drain_mint_outbox(
+            dir.to_str().unwrap(),
+            Some("exit 0"),
+            None,
+            &mut Answer(None),
+        )
+        .unwrap();
+        assert_eq!(
+            pending_outbox_files(dir.to_str().unwrap()).unwrap().len(),
+            1
+        );
+        drain_mint_outbox(
+            dir.to_str().unwrap(),
+            Some("exit 0"),
+            None,
+            &mut Answer(Some(false)),
+        )
+        .unwrap();
+        assert_eq!(
+            pending_outbox_files(dir.to_str().unwrap()).unwrap().len(),
+            1,
+            "successful relay is not settlement"
+        );
+        drain_mint_outbox(dir.to_str().unwrap(), None, None, &mut Answer(Some(true))).unwrap();
+        assert!(pending_outbox_files(dir.to_str().unwrap())
+            .unwrap()
+            .is_empty());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn relay_identity_parses_json_and_binds_destination_and_payload() {
+        let configs = beldex_bridge_signer::evm_watcher::parse_evm_chains(
+            &serde_json::json!([
+                {"chain_id":1,"contract":hex(&[0x22;20]),"rpc":"http://unused","key_epoch":1,
+             "confirmations":1,"per_epoch_cap":"100","per_tx_max":"10","finality":"finalized"}
+            ])
+            .to_string(),
+        )
+        .unwrap();
+        let mut payload = serde_json::json!({"kind":"mint","chain_id":1,"contract":hex(&[0x22;20]),
+            "beldex_txid":hex(&[0x11;32]),"output_index":0,"sig":"11"});
+        let first = relay_payload_identity(&payload.to_string(), &configs).unwrap();
+        assert_eq!(
+            first,
+            relay_payload_identity(&serde_json::to_string_pretty(&payload).unwrap(), &configs)
+                .unwrap()
+        );
+        payload["sig"] = serde_json::json!("22");
+        assert_ne!(
+            first,
+            relay_payload_identity(&payload.to_string(), &configs).unwrap()
+        );
+        payload["chain_id"] = serde_json::json!(2);
+        assert!(relay_payload_identity(&payload.to_string(), &configs).is_err());
+        payload["chain_id"] = serde_json::json!(1);
+        payload["output_index"] = serde_json::json!(u64::MAX);
+        assert!(relay_payload_identity(&payload.to_string(), &configs).is_err());
+        payload["output_index"] = serde_json::json!(0);
+        payload["contract"] = serde_json::json!(hex(&[0x33; 20]));
+        assert!(relay_payload_identity(&payload.to_string(), &configs).is_err());
+    }
+
+    #[test]
+    fn observed_release_recovers_before_signing_and_separates_chains() {
+        use beldex_bridge_signer::orchestrator::Duty;
+        use beldex_bridge_signer::watch::ReleaseEvent;
+        let dir = std::env::temp_dir().join(format!("bridge-duty-journal-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let event = ReleaseEvent {
+            evm_txid: [0x65; 32],
+            log_index: 3,
+            chain: ChainId(1),
+            amount: 12345,
+            beldex_recipient: b"recipient".to_vec(),
+        };
+        let duty = Duty::Release(event.clone());
+        let path = persist_observed_duty(dir.to_str().unwrap(), &duty).unwrap();
+        assert_eq!(
+            read_observed_duty(std::path::Path::new(&path)).unwrap(),
+            duty
+        );
+        let other = Duty::Release(ReleaseEvent {
+            chain: ChainId(2),
+            ..event
+        });
+        let other_path = persist_observed_duty(dir.to_str().unwrap(), &other).unwrap();
+        assert_ne!(path, other_path);
+        assert_eq!(
+            pending_outbox_files(dir.to_str().unwrap()).unwrap().len(),
+            2
+        );
+        mark_outbox_finalized(std::path::Path::new(&path)).unwrap();
+        assert_eq!(
+            pending_outbox_files(dir.to_str().unwrap()).unwrap().len(),
+            1
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
@@ -1541,6 +2142,34 @@ mod main_tests {
     }
 
     #[test]
+    fn outbox_record_moves_from_pending_to_finalized_atomically() {
+        let dir = std::env::temp_dir().join(format!(
+            "beldex-bridge-release-outbox-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ev = beldex_bridge_signer::watch::ReleaseEvent {
+            evm_txid: [0x33; 32],
+            log_index: 4,
+            chain: ChainId(31337),
+            amount: 10,
+            beldex_recipient: b"bx".to_vec(),
+        };
+        let path = persist_release_outbox(dir.to_str().unwrap(), &ev, "deadbeef", &[0x44; 64])
+            .expect("persist release");
+        assert!(path.ends_with(".pending.json"));
+        let parsed: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(parsed["log_index"], 4);
+        mark_outbox_finalized(std::path::Path::new(&path)).unwrap();
+        assert!(!std::path::Path::new(&path).exists());
+        assert!(dir
+            .join(format!("31337-{}-4.finalized.json", hex(&[0x33; 32])))
+            .exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn watcher_state_round_trips_with_restrictive_permissions() {
         let dir = std::env::temp_dir().join(format!(
             "beldex-bridge-watch-state-test-{}",
@@ -1548,11 +2177,18 @@ mod main_tests {
         ));
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("watch.state");
-        persist_watch_state(path.to_str().unwrap(), 123, [(1, 456), (31_337, 789)]).unwrap();
+        persist_watch_state(
+            path.to_str().unwrap(),
+            123,
+            [(1, 456), (31_337, 789)],
+            [(1, (455, [0xAB; 32]))],
+        )
+        .unwrap();
         let loaded = load_watch_state(path.to_str().unwrap()).unwrap();
         assert_eq!(loaded.beldex_next, Some(123));
         assert_eq!(loaded.evm_next.get(&1), Some(&456));
         assert_eq!(loaded.evm_next.get(&31_337), Some(&789));
+        assert_eq!(loaded.evm_anchors.get(&1), Some(&(455, [0xAB; 32])));
         assert_eq!(
             std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600
@@ -1580,6 +2216,7 @@ struct LiveSigners {
     port_base: u16,
     pevm_offset: u16,
     use_curve: bool,
+    single_host: bool,
     timeout: std::time::Duration,
 }
 
@@ -1593,22 +2230,31 @@ impl LiveSigners {
         Vec<beldex_bridge_signer::dkg_driver::live::PeerTransportAddr>,
     ) {
         use beldex_bridge_signer::dkg_driver::live::{MeshIdentity, PeerTransportAddr};
+        let listen_port = if self.single_host {
+            base + self.self_index
+        } else {
+            base
+        };
         let identity = MeshIdentity {
-            listen_endpoint: mesh_listen_endpoint(base + self.self_index),
+            listen_endpoint: mesh_listen_endpoint(listen_port),
             curve_secret: self.curve_secret,
             curve_public: self.curve_public,
             ed25519_secret: self.ed25519_secret,
         };
-        let peers = self
-            .committee
-            .peer_transport_indexed(self.self_index as usize, base)
-            .into_iter()
-            .map(|(index, endpoint, curve_pubkey)| PeerTransportAddr {
-                index,
-                endpoint,
-                curve_pubkey,
-            })
-            .collect();
+        let peers = if self.single_host {
+            self.committee
+                .peer_transport_indexed(self.self_index as usize, base)
+        } else {
+            self.committee
+                .peer_transport(self.self_index as usize, base)
+        }
+        .into_iter()
+        .map(|(index, endpoint, curve_pubkey)| PeerTransportAddr {
+            index,
+            endpoint,
+            curve_pubkey,
+        })
+        .collect();
         (identity, peers)
     }
 
@@ -1730,6 +2376,32 @@ fn build_live_signers(cfg: &Config) -> Result<LiveSigners, String> {
     if !committee.has_signer_keys() {
         return Err("bridge.committee returned no signer_keys — update beldexd".into());
     }
+    let single_host = std::env::var("BRIDGE_SIGNER_ALLOW_SINGLE_HOST_COMMITTEE")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if single_host {
+        eprintln!(
+            "WARNING: single-host committee explicitly allowed; process, host, and file compromise can capture the full threshold"
+        );
+    } else {
+        if !committee.has_network_info() {
+            return Err("production live signing requires per-member IP/x25519 network information; set BRIDGE_SIGNER_ALLOW_SINGLE_HOST_COMMITTEE=1 only for an unsafe local canary".into());
+        }
+        let unique_hosts: std::collections::BTreeSet<&str> =
+            committee.member_ips.iter().map(String::as_str).collect();
+        if unique_hosts.len() < committee.threshold
+            || committee
+                .member_ips
+                .iter()
+                .any(|ip| ip == "127.0.0.1" || ip == "::1" || ip == "localhost")
+        {
+            return Err(format!(
+                "committee has only {} independent non-loopback host identities (threshold {}); refusing correlated live custody",
+                unique_hosts.len(),
+                committee.threshold
+            ));
+        }
+    }
     let dir = std::env::var("BRIDGE_SIGNER_SHARE_DIR")
         .map_err(|_| "set BRIDGE_SIGNER_SHARE_DIR (where `dkg` wrote the shares)".to_string())?;
     let port_base: u16 = std::env::var("BRIDGE_SIGNER_MESH_PORT_BASE")
@@ -1828,6 +2500,7 @@ fn build_live_signers(cfg: &Config) -> Result<LiveSigners, String> {
         port_base,
         pevm_offset,
         use_curve,
+        single_host,
         timeout,
     })
 }
@@ -1861,8 +2534,7 @@ where
     use beldex_bridge_signer::omq_mesh::{MeshAuth, OmqMeshConfig, OmqPeerTransport, PeerAddr};
     use beldex_bridge_signer::orchestrator::{Duty, EventSource, ExecOutcome};
     use beldex_bridge_signer::reconcile::{
-        observe_reconciled, DualReconciler, EvmMintReconciler, GatewayReleaseReconciler,
-        ObserveOutcome,
+        DualReconciler, DutyReconciler, EvmMintReconciler, GatewayReleaseReconciler,
     };
     use beldex_bridge_signer::release_policy::{DualPolicy, ReleasePolicy, ReleaseProposal};
     use beldex_bridge_signer::transport::Leg;
@@ -1892,23 +2564,30 @@ where
         .and_then(|s| s.parse().ok())
         .unwrap_or(200);
     let base = ls.port_base + coord_offset;
-    let peers: Vec<PeerAddr> = committee
-        .peer_transport_indexed(self_index as usize, base)
-        .into_iter()
-        .map(|(index, endpoint, curve_pubkey)| PeerAddr {
-            index,
-            endpoint,
-            curve_pubkey,
-            signer_ed25519: committee
-                .signer_keys
-                .get(index as usize)
-                .copied()
-                .unwrap_or([0u8; 32]),
-        })
-        .collect();
+    let peers: Vec<PeerAddr> = if ls.single_host {
+        committee.peer_transport_indexed(self_index as usize, base)
+    } else {
+        committee.peer_transport(self_index as usize, base)
+    }
+    .into_iter()
+    .map(|(index, endpoint, curve_pubkey)| PeerAddr {
+        index,
+        endpoint,
+        curve_pubkey,
+        signer_ed25519: committee
+            .signer_keys
+            .get(index as usize)
+            .copied()
+            .unwrap_or([0u8; 32]),
+    })
+    .collect();
     let mesh_cfg = OmqMeshConfig {
         self_index,
-        listen_endpoint: mesh_listen_endpoint(base + self_index),
+        listen_endpoint: mesh_listen_endpoint(if ls.single_host {
+            base + self_index
+        } else {
+            base
+        }),
         use_curve: ls.use_curve,
         self_curve_secret: ls.curve_secret,
         self_curve_public: ls.curve_public,
@@ -1997,8 +2676,23 @@ where
     // canonical ACK set (only members that independently verified the payload — C.5),
     // namespaced by the session attempt so a retry never ingests stale frames.
     let sign_ls = ls.clone();
+    let signing_committee_endpoint = cfg.oxenmq_endpoint.clone();
     let sign =
         move |leg: Leg, message: &[u8], signers: &[u16], attempt: u32| -> Result<Vec<u8>, String> {
+            let current = beldex_bridge_signer::omq_client::OmqCommitteeClient::new(
+                signing_committee_endpoint.clone(),
+            )
+            .fetch_committee(None)
+            .map_err(|e| format!("pre-sign committee check: {e}"))?;
+            if current.epoch != sign_ls.committee.epoch
+                || current.members != sign_ls.committee.members
+                || current.signer_keys != sign_ls.committee.signer_keys
+                || current.threshold != sign_ls.committee.threshold
+            {
+                return Err(
+                    "committee changed before signing; restart after the dual-key handoff".into(),
+                );
+            }
             println!("  signing {leg:?} round: participants {signers:?} attempt {attempt}");
             match leg {
                 Leg::Pevm => sign_ls
@@ -2057,7 +2751,7 @@ where
     let bus_client = if publish_bus {
         println!("  mint hand-off: publishing to bridge.mint_payload at {bus_endpoint}");
         Some(beldex_bridge_signer::omq_client::OmqCommitteeClient::new(
-            bus_endpoint,
+            bus_endpoint.clone(),
         ))
     } else {
         None
@@ -2069,6 +2763,12 @@ where
         .filter(|s| !s.trim().is_empty());
     let mint_outbox_dir = std::env::var("BRIDGE_SIGNER_MINT_OUTBOX_DIR")
         .map_err(|_| "set BRIDGE_SIGNER_MINT_OUTBOX_DIR; live mint completion is fail-closed without a durable outbox".to_string())?;
+    let release_outbox_dir = std::env::var("BRIDGE_SIGNER_RELEASE_OUTBOX_DIR")
+        .map_err(|_| "set BRIDGE_SIGNER_RELEASE_OUTBOX_DIR; live release completion is fail-closed without a durable outbox".to_string())?;
+    std::fs::create_dir_all(&mint_outbox_dir)
+        .map_err(|e| format!("create mint outbox {mint_outbox_dir}: {e}"))?;
+    std::fs::create_dir_all(&release_outbox_dir)
+        .map_err(|e| format!("create release outbox {release_outbox_dir}: {e}"))?;
     let relay_stagger_ms: u64 = std::env::var("BRIDGE_SIGNER_RELAY_STAGGER_MS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -2083,6 +2783,14 @@ where
         }
     }
 
+    let retry_mint_outbox_dir = mint_outbox_dir.clone();
+    let retry_release_outbox_dir = release_outbox_dir.clone();
+    let retry_relay_cmd = relay_cmd.clone();
+    let retry_bus_endpoint = bus_endpoint.clone();
+    let retry_publish_bus = publish_bus;
+    let retry_bus_key = bus_sign_key;
+    let retry_bus_genesis = bus_genesis;
+    let retry_rpc = rpc.clone();
     let done_rpc = rpc.clone();
     let done_contracts = contracts;
     let complete = move |d: &Duty, proposal: &[u8], sig: &[u8]| -> ExecOutcome {
@@ -2135,7 +2843,7 @@ where
                 }
                 ExecOutcome::Submitted
             }
-            Duty::Release(_) => {
+            Duty::Release(ev) => {
                 let Some(p) = ReleaseProposal::decode(proposal) else {
                     return ExecOutcome::Abandon; // cannot happen for an accepted proposal
                 };
@@ -2149,6 +2857,10 @@ where
                     .iter()
                     .map(|b| format!("{b:02x}"))
                     .collect();
+                if let Err(e) = persist_release_outbox(&release_outbox_dir, ev, &blob_hex, &s64) {
+                    eprintln!("release outbox persistence failed ({e}); duty will retry");
+                    return ExecOutcome::Retry;
+                }
                 match done_rpc.borrow_mut().submit_transfer(&blob_hex, &s64) {
                     Ok(txid) => {
                         println!("RELEASE submitted: {txid}");
@@ -2168,7 +2880,9 @@ where
                             ExecOutcome::Submitted
                         } else {
                             eprintln!("release submit failed (will retry): {e}");
-                            ExecOutcome::Retry
+                            // The signed transaction is durable. Submission is retried
+                            // independently without reopening the threshold session.
+                            ExecOutcome::Submitted
                         }
                     }
                 }
@@ -2211,37 +2925,119 @@ where
                 .map(|c| {
                     (
                         c.chain_id,
-                        (HttpJsonRpc::new(c.rpc_url.clone()), c.contract),
+                        (
+                            HttpJsonRpc::new(c.rpc_url.clone()),
+                            c.contract,
+                            c.finality.settlement_tag().to_string(),
+                        ),
                     )
                 })
                 .collect(),
         },
-        release: GatewayReleaseReconciler::new(beldexd_rpc.to_string(), release_gateway.clone()),
+        release: GatewayReleaseReconciler::new(beldexd_rpc.to_string(), release_gateway.clone())
+            .with_fallback_confirmations(
+                std::env::var("BRIDGE_SIGNER_BELDEX_CONFIRMATIONS")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+            ),
     };
     if !reconcile_on {
-        println!("  reconciliation DISABLED (BRIDGE_SIGNER_RECONCILE=0)");
+        return Err("live mode requires settlement reconciliation".into());
     }
+    let duty_journal = format!(
+        "{}.duties",
+        std::env::var("BRIDGE_SIGNER_WATCH_STATE_FILE")
+            .map_err(|_| "live mode requires BRIDGE_SIGNER_WATCH_STATE_FILE")?
+    );
+    std::fs::create_dir_all(&duty_journal).map_err(|e| format!("create duty journal: {e}"))?;
 
     let mut ticks = 0u64;
+    let committee_refresh_ticks: u64 = std::env::var("BRIDGE_SIGNER_COMMITTEE_REFRESH_TICKS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(12);
+    let committee_client =
+        beldex_bridge_signer::omq_client::OmqCommitteeClient::new(cfg.oxenmq_endpoint.clone());
     loop {
-        // Ingest the watchers (re-emission is safe — the orchestrator dedups, and a duty is
-        // reconciled against chain state at most once per process).
-        let mut ingest = |orch: &mut beldex_bridge_signer::orchestrator::Orchestrator, d: Duty| {
-            if reconcile_on {
-                if observe_reconciled(orch, &mut reconciler, d) == ObserveOutcome::AlreadySettled {
-                    println!("reconciled: duty already settled on-chain — not re-worked");
-                }
-            } else {
-                orch.observe(d);
+        // A long-lived signer must never continue under a committee snapshot that
+        // consensus has replaced. Hot-swapping shares and sockets mid-session is
+        // unsafe; fail closed and let the supervisor restart against the already
+        // promoted dual-key share set.
+        if ticks > 0 && ticks % committee_refresh_ticks == 0 {
+            let latest = committee_client
+                .fetch_committee(None)
+                .map_err(|e| format!("committee refresh failed: {e}"))?;
+            if latest.epoch != coord.committee.epoch
+                || latest.members != coord.committee.members
+                || latest.signer_keys != coord.committee.signer_keys
+            {
+                return Err(format!(
+                    "bridge committee changed (loaded epoch {}, current epoch {}); stopping before signing with stale authority. Promote the matching dual DKG shares and restart this signer",
+                    coord.committee.epoch, latest.epoch
+                ));
             }
-        };
+        }
+
+        // A finality failure must also stop old queued duties and outbox retries.
+        // Merely suppressing new watcher events would leave those payments live.
+        for watcher in &mut src.evm {
+            watcher.validate_finality().map_err(|e| {
+                format!("EVM finality validation failed; stopping payment processing: {e:?}")
+            })?;
+        }
+
+        // Signed artifacts remain pending until the destination replay guard proves
+        // inclusion. Broadcast failures and mempool eviction therefore trigger
+        // rebroadcast of the identical artifact, never a second signing ceremony.
+        drain_mint_outbox(
+            &retry_mint_outbox_dir,
+            retry_relay_cmd.as_deref(),
+            retry_publish_bus.then_some((
+                retry_bus_endpoint.as_str(),
+                self_index,
+                retry_bus_key,
+                retry_bus_genesis,
+            )),
+            &mut reconciler.mint,
+        )?;
+        drain_release_outbox(
+            &retry_release_outbox_dir,
+            &mut retry_rpc.borrow_mut(),
+            &mut reconciler.release,
+        )?;
+
+        // Commit observations before any cursor can advance. Retry unknown RPC
+        // results from disk: finalized EVM observations are not re-emitted by
+        // the watcher after their inclusion block has been consumed.
         for m in src.poll_mints() {
-            ingest(orch, Duty::Mint(m));
+            persist_observed_duty(&duty_journal, &Duty::Mint(m))?;
         }
         for r in src.poll_releases() {
-            ingest(orch, Duty::Release(r));
+            persist_observed_duty(&duty_journal, &Duty::Release(r))?;
         }
-        let rep = coord.step(orch, &mut net);
+        for path in pending_outbox_files(&duty_journal)? {
+            let mut duty = read_observed_duty(&path)?;
+            // A recovered mint must be authorized by the currently configured
+            // key epoch following an explicit handoff, not a retired key.
+            if let Duty::Mint(ref mut event) = duty {
+                if let Some(chain) = configs.iter().find(|c| c.chain_id == event.dst_chain.0) {
+                    event.key_epoch = chain.key_epoch;
+                }
+            }
+            match reconciler.is_settled(&duty) {
+                Some(true) => {
+                    let key = duty.key();
+                    orch.observe(duty);
+                    orch.mark_done(&key);
+                    mark_outbox_finalized(&path)?;
+                }
+                Some(false) => {
+                    orch.observe(duty);
+                }
+                None => { /* retained for retry, including across restart */ }
+            }
+        }
         if let Ok(path) = std::env::var("BRIDGE_SIGNER_WATCH_STATE_FILE") {
             persist_watch_state(
                 &path,
@@ -2249,8 +3045,12 @@ where
                 src.evm
                     .iter()
                     .map(|w| (w.chain().0, w.durable_resume_block())),
+                src.evm
+                    .iter()
+                    .filter_map(|w| w.durable_finality_anchor().map(|a| (w.chain().0, a))),
             )?;
         }
+        let rep = coord.step(orch, &mut net);
         if rep != Default::default() {
             let (pending, in_flight, done) = orch.counts();
             println!(

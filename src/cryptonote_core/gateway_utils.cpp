@@ -237,6 +237,11 @@ namespace
   {
     for (int i = 0; i < 8; ++i) buf.push_back(static_cast<char>((v >> (8 * i)) & 0xff));
   }
+
+  void append_u32_le(std::string& buf, uint32_t v)
+  {
+    for (int i = 0; i < 4; ++i) buf.push_back(static_cast<char>((v >> (8 * i)) & 0xff));
+  }
 }
 
 crypto::hash gateway_input_message(network_type nettype, const transaction& tx)
@@ -411,12 +416,21 @@ std::string bridge_rotation_ack_message(network_type nettype, const tx_extra_bri
 {
   const crypto::hash& genesis = gateway_chain_binding(nettype);
   std::string buf;
-  buf.reserve(hashkey::BRIDGE_ROTATION_ACK.size() + sizeof(genesis) + 8 + 8 + ack.new_signer.size());
+  buf.reserve(hashkey::BRIDGE_ROTATION_ACK.size() + 1 + sizeof(genesis) + 8 + 8
+              + ack.contract.size() + 8 + ack.new_signer.size() + ack.evm_txid.size()
+              + 4 + 8 + ack.block_hash.size());
   buf.append(hashkey::BRIDGE_ROTATION_ACK);
+  buf.push_back(static_cast<char>(ack.version));
   buf.append(reinterpret_cast<const char*>(&genesis), sizeof(genesis));
+  append_u64_le(buf, ack.epoch);
   append_u64_le(buf, ack.chain_id);
+  buf.append(reinterpret_cast<const char*>(ack.contract.data()), ack.contract.size());
   append_u64_le(buf, ack.key_epoch);
   buf.append(reinterpret_cast<const char*>(ack.new_signer.data()), ack.new_signer.size());
+  buf.append(reinterpret_cast<const char*>(ack.evm_txid.data()), ack.evm_txid.size());
+  append_u32_le(buf, ack.log_index);
+  append_u64_le(buf, ack.inclusion_height);
+  buf.append(reinterpret_cast<const char*>(ack.block_hash.data()), ack.block_hash.size());
   return buf;
 }
 
@@ -424,11 +438,31 @@ bool verify_bridge_rotation_evidence(const tx_extra_bridge_rotation_ack& ack,
                                      const std::vector<crypto::ed25519_public_key>& signer_keys,
                                      size_t threshold, network_type nettype, std::string& reason)
 {
+  if (ack.version != 1)
+  {
+    reason = "rotation ack: unsupported version";
+    return false;
+  }
+  if (ack.chain_id == 0 || ack.key_epoch == 0 || ack.inclusion_height == 0)
+  {
+    reason = "rotation ack: zero chain/key epoch/inclusion height";
+    return false;
+  }
+  if (ack.contract.size() != 20)
+  {
+    reason = "rotation ack: contract must be exactly 20 bytes";
+    return false;
+  }
   // The incoming Pevm address must be a well-formed 20-byte EVM address; the signed
   // bytes append it raw, so a wrong length would silently change the message.
   if (ack.new_signer.size() != 20)
   {
     reason = "rotation ack: new_signer must be exactly 20 bytes";
+    return false;
+  }
+  if (ack.evm_txid.size() != 32 || ack.block_hash.size() != 32)
+  {
+    reason = "rotation ack: evm_txid and block_hash must be exactly 32 bytes";
     return false;
   }
   if (threshold == 0)
@@ -1899,7 +1933,7 @@ bool append_gateways_from_transactions(BlockchainDB& db, const std::vector<trans
       {
         const crypto::hash ref = gateway_release_ref_hash(rf.chain_id, rf.evm_txid, rf.log_index);
         for (const auto& gw : gateways_touched_by_withdrawals(tx))
-          db.add_gateway_release_ref(gw, ref);
+          db.add_gateway_release_ref(gw, ref, block_height);
       }
     }
   }

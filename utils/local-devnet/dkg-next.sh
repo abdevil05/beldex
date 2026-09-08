@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dkg-next.sh — run a FRESH Pevm (secp256k1/CGGMP21) DKG across the live devnet
+# dkg-next.sh — run a FRESH dual Pgw+Pevm DKG across the live devnet
 # committee, into a SEPARATE share tree, to produce the successor key for an H.6
 # rotation.
 #
@@ -12,7 +12,7 @@
 # the trust assumption H.6 exists to remove.
 #
 #   devnet/shares       the committee currently in the contract   (DO NOT TOUCH)
-#   devnet/shares-next  the incoming committee                    (written here)
+#   devnet/shares-next  the incoming committee's two fresh keys   (written here)
 #
 # The env block below is copied from sign-pevm.sh, which is copied from sign-mint.sh
 # — the invocation that actually works. Only the SIGN_* vars are dropped and the
@@ -91,7 +91,7 @@ fi
 # --- refuse to clobber an existing successor tree ----------------------------------------------
 # `|| true`: a no-match glob makes `ls` exit non-zero; under pipefail+set -e that kills
 # the script silently in this assignment. `wc -l` still prints 0, so the count is right.
-EXISTING="$(ls beldex-127.0.0.1-*/devnet/"$SUBDIR"/pevm-*.keyshare 2>/dev/null | wc -l | tr -d ' ' || true)"
+EXISTING="$(find beldex-127.0.0.1-*/devnet/"$SUBDIR" -type f \( -name 'pevm-*.keyshare' -o -name 'pgw-*.keypackage' \) 2>/dev/null | wc -l | tr -d ' ' || true)"
 if [ "$EXISTING" -ne 0 ] && [ "${ALLOW_CLOBBER:-0}" != "1" ]; then
   echo "!! $SUBDIR already holds $EXISTING keyshare(s)."
   echo "   If a rotation is mid-flight, these are the shares it is rotating TO — replacing"
@@ -124,6 +124,16 @@ rm -f dkg-next-*.log
 
 ANY32=$(printf '11%.0s' {1..32})
 CEREMONY_ID="${BRIDGE_SIGNER_DKG_CEREMONY_ID:-$(openssl rand -hex 32)}"
+if [ -z "${BRIDGE_SIGNER_GENESIS_HASH:-}" ]; then
+  BRIDGE_SIGNER_GENESIS_HASH=$(curl -s http://127.0.0.1:19191/json_rpc \
+    -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":"0","method":"get_block_header_by_height","params":{"height":0}}' \
+    | sed -n 's/.*"hash": *"\([0-9a-f]*\)".*/\1/p' | head -1)
+fi
+[ "${#BRIDGE_SIGNER_GENESIS_HASH}" -eq 64 ] || {
+  echo "!! could not obtain the 32-byte native genesis hash; refusing an unbound DKG" >&2
+  exit 1
+}
 
 PIDS=""
 for d in beldex-127.0.0.1-*/; do
@@ -142,8 +152,9 @@ for d in beldex-127.0.0.1-*/; do
   BRIDGE_SIGNER_MN_KEY_FILE="$key" BRIDGE_SIGNER_MESH_PORT_BASE=6000 \
   BRIDGE_SIGNER_MESH_BIND_HOST=127.0.0.1 BRIDGE_SIGNER_MESH_USE_CURVE="$MESH_USE_CURVE" BRIDGE_SIGNER_ALLOW_FILE_SHARES=1 \
   BRIDGE_SIGNER_SHARE_DIR="$share" \
-  BRIDGE_SIGNER_DKG_LEG=pevm BRIDGE_SIGNER_DKG_KEYGEN="$KEYGEN" \
+  BRIDGE_SIGNER_DKG_LEG=both BRIDGE_SIGNER_DKG_KEYGEN="$KEYGEN" \
   BRIDGE_SIGNER_DKG_CEREMONY_ID="$CEREMONY_ID" \
+  BRIDGE_SIGNER_GENESIS_HASH="$BRIDGE_SIGNER_GENESIS_HASH" \
   BRIDGE_SIGNER_DKG_TIMEOUT_SECS="${BRIDGE_SIGNER_DKG_TIMEOUT_SECS:-900}" \
     "$SIGNER" dkg > "dkg-next-${d%/}.log" 2>&1 &
   PIDS="$PIDS $!"
@@ -160,7 +171,7 @@ for p in $PIDS; do wait "$p" || true; done
 
 # --- results --------------------------------------------------------------------------------------
 echo "── per-node results ──────────────────────────────────────────────────"
-grep -h 'Pevm share material written\|Pevm complete share ready' dkg-next-*.log 2>/dev/null \
+grep -h 'Pgw DKG complete\|Pevm share material written\|Pevm complete share ready' dkg-next-*.log 2>/dev/null \
   | sed 's/^/  /' | sort | uniq -c || true
 
 # --- clean up after nodes that are not on the committee -------------------------------------------
@@ -180,7 +191,10 @@ for d in beldex-127.0.0.1-*/; do
   n="${d%/}"
   t="${d}devnet/$SUBDIR"
   [ -d "$t" ] || continue
-  ls "$t"/pevm-*.keyshare >/dev/null 2>&1 && continue
+  if ls "$t"/pevm-*.keyshare >/dev/null 2>&1 \
+     && ls "$t"/pgw-*.keypackage >/dev/null 2>&1; then
+    continue
+  fi
   rmdir "$t" 2>/dev/null || true
   if grep -q 'not on the current bridge committee' "dkg-next-$n.log" 2>/dev/null; then
     NONMEMBER="$NONMEMBER $n"
@@ -203,10 +217,12 @@ if [ -n "$OTHERFAIL" ]; then
 fi
 
 NEW="$(ls beldex-127.0.0.1-*/devnet/"$SUBDIR"/pevm-*.keyshare 2>/dev/null | wc -l | tr -d ' ' || true)"
+NEW_PGW="$(ls beldex-127.0.0.1-*/devnet/"$SUBDIR"/pgw-*.keypackage 2>/dev/null | wc -l | tr -d ' ' || true)"
 echo ""
-echo "  keyshares written : $NEW"
-if [ "$NEW" -eq 0 ]; then
-  echo "!! the DKG produced no shares — check testdata/dkg-next-*.log" >&2
+echo "  Pevm shares written : $NEW"
+echo "  Pgw shares written  : $NEW_PGW"
+if [ "$NEW" -eq 0 ] || [ "$NEW_PGW" -ne "$NEW" ]; then
+  echo "!! the dual DKG did not produce matching Pgw and Pevm share sets — check testdata/dkg-next-*.log" >&2
   exit 1
 fi
 
@@ -239,6 +255,23 @@ fi
 GKS="$(od -An -v -tx1 < "$FIRST" | tr -d ' \n')"
 echo "  group key         : 0x$GKS"
 echo "                      (all $NGROUP participants agree)"
+
+PGW_FIRST=""
+PGW_N=0
+PGW_MISMATCH=0
+for f in beldex-127.0.0.1-*/devnet/"$SUBDIR"/pgw-*.groupvk; do
+  [ -f "$f" ] || continue
+  PGW_N=$(( PGW_N + 1 ))
+  if [ -z "$PGW_FIRST" ]; then PGW_FIRST="$f"; continue; fi
+  cmp -s "$PGW_FIRST" "$f" || PGW_MISMATCH=1
+done
+if [ "$PGW_N" -ne "$NEW" ] || [ "$PGW_MISMATCH" -ne 0 ]; then
+  echo "!! participants do not hold one complete, common successor Pgw key." >&2
+  exit 1
+fi
+PGW_GK="$(od -An -v -tx1 < "$PGW_FIRST" | tr -d ' \n')"
+echo "  Pgw owner key     : 0x$PGW_GK"
+echo "                      (must be installed on the native gateway before promotion)"
 echo ""
 echo "Next — get the new signer's ETH ADDRESS, and prove the new committee can actually"
 echo "sign, in one step. A throwaway signature over 32 arbitrary bytes:"

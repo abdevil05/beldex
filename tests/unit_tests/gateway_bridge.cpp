@@ -49,7 +49,7 @@ namespace
   {
   public:
     std::map<crypto::public_key, std::string> store;
-    std::set<std::pair<crypto::public_key, crypto::hash>> permanent_release_refs;
+    std::map<std::pair<crypto::public_key, crypto::hash>, uint64_t> permanent_release_refs;
 
     void set_gateway_account(const crypto::public_key& id, const std::string& data) override { store[id] = data; }
     bool get_gateway_account(const crypto::public_key& id, std::string& data) const override
@@ -67,9 +67,9 @@ namespace
       for (auto& [k, v] : store) ids.push_back(k);
       return ids;
     }
-    void add_gateway_release_ref(const crypto::public_key& id, const crypto::hash& ref) override
+    void add_gateway_release_ref(const crypto::public_key& id, const crypto::hash& ref, uint64_t height) override
     {
-      permanent_release_refs.emplace(id, ref);
+      permanent_release_refs.emplace(std::make_pair(id, ref), height);
     }
     void remove_gateway_release_ref(const crypto::public_key& id, const crypto::hash& ref) override
     {
@@ -78,6 +78,11 @@ namespace
     bool has_gateway_release_ref(const crypto::public_key& id, const crypto::hash& ref) const override
     {
       return permanent_release_refs.count({id, ref}) != 0;
+    }
+    uint64_t get_gateway_release_ref_height(const crypto::public_key& id, const crypto::hash& ref) const override
+    {
+      const auto it = permanent_release_refs.find({id, ref});
+      return it == permanent_release_refs.end() ? 0 : it->second;
     }
   };
 
@@ -217,6 +222,15 @@ TEST(GatewayBridgeSlash, non_ascending_and_unattributed_rejected)
 // advance L1's per-chain observed key epoch, which releases an outgoing seat's bond).
 // --------------------------------------------------------------------------
 static std::vector<uint8_t> addr20(uint8_t fill) { return std::vector<uint8_t>(20, fill); }
+static void set_rotation_anchor(tx_extra_bridge_rotation_ack& ack)
+{
+  ack.version = 1;
+  ack.contract = addr20(0x22);
+  ack.evm_txid = std::vector<uint8_t>(32, 0x44);
+  ack.log_index = 3;
+  ack.inclusion_height = 12345;
+  ack.block_hash = std::vector<uint8_t>(32, 0x55);
+}
 
 TEST(GatewayBridgeRotation, verify_evidence_threshold_and_binding)
 {
@@ -227,7 +241,7 @@ TEST(GatewayBridgeRotation, verify_evidence_threshold_and_binding)
   for (uint16_t i = 0; i < n; ++i) crypto_sign_ed25519_keypair(pubs[i].data, secs[i].data);
 
   tx_extra_bridge_rotation_ack ack{};
-  ack.version   = 0;
+  set_rotation_anchor(ack);
   ack.chain_id  = 42;
   ack.key_epoch = 8;
   ack.new_signer = addr20(0xCD);
@@ -275,6 +289,7 @@ TEST(GatewayBridgeRotation, non_ascending_and_bad_length_rejected)
   for (uint16_t i = 0; i < n; ++i) crypto_sign_ed25519_keypair(pubs[i].data, secs[i].data);
 
   tx_extra_bridge_rotation_ack ack{};
+  set_rotation_anchor(ack);
   ack.chain_id = 1; ack.key_epoch = 2; ack.new_signer = addr20(0x11); ack.epoch = 3;
   const std::string msg = bridge_rotation_ack_message(NET_R, ack);
   auto sig_of = [&](uint16_t idx) {
@@ -308,6 +323,7 @@ TEST(GatewayBridgeRotation, tx_extra_round_trip_and_dispatch)
   for (uint16_t i = 0; i < n; ++i) crypto_sign_ed25519_keypair(pubs[i].data, secs[i].data);
 
   tx_extra_bridge_rotation_ack ack{};
+  set_rotation_anchor(ack);
   ack.chain_id = 42; ack.key_epoch = 8; ack.new_signer = addr20(0xCD); ack.epoch = 7;
   const std::string msg = bridge_rotation_ack_message(NET_R, ack);
   for (uint16_t idx : {0, 1, 3, 4})
@@ -330,6 +346,11 @@ TEST(GatewayBridgeRotation, tx_extra_round_trip_and_dispatch)
   EXPECT_EQ(back.key_epoch, ack.key_epoch);
   EXPECT_EQ(back.epoch, ack.epoch);
   EXPECT_EQ(back.new_signer, ack.new_signer);
+  EXPECT_EQ(back.contract, ack.contract);
+  EXPECT_EQ(back.evm_txid, ack.evm_txid);
+  EXPECT_EQ(back.log_index, ack.log_index);
+  EXPECT_EQ(back.inclusion_height, ack.inclusion_height);
+  EXPECT_EQ(back.block_hash, ack.block_hash);
   ASSERT_EQ(back.observers.size(), ack.observers.size());
   for (size_t i = 0; i < back.observers.size(); ++i)
   {
@@ -562,14 +583,24 @@ namespace
     return 0;
   }
 
+  uint64_t bridge_epoch_at(uint64_t height)
+  {
+    return height / cryptonote::bridge_epoch_blocks(NET_FC);
+  }
+
   // Build + committee-sign a rotation ack for (chain_id, key_epoch), observed by `epoch`.
   tx_extra_bridge_rotation_ack sign_rotation_ack(const committee_keys& c, uint64_t chain_id,
                                                  uint64_t key_epoch, const std::vector<uint16_t>& observers,
                                                  uint64_t epoch)
   {
     tx_extra_bridge_rotation_ack ack{};
-    ack.version = 0; ack.chain_id = chain_id; ack.key_epoch = key_epoch; ack.epoch = epoch;
+    ack.version = 1; ack.chain_id = chain_id; ack.key_epoch = key_epoch; ack.epoch = epoch;
+    ack.contract = std::vector<uint8_t>(20, 0x22);
     ack.new_signer = std::vector<uint8_t>(20, 0xCD);
+    ack.evm_txid = std::vector<uint8_t>(32, 0x44);
+    ack.log_index = 3;
+    ack.inclusion_height = 12345;
+    ack.block_hash = std::vector<uint8_t>(32, 0x55);
     const std::string msg = bridge_rotation_ack_message(NET_FC, ack);
     for (uint16_t idx : observers)
     {
@@ -767,20 +798,24 @@ TEST(GatewayBridgeRotation, ack_advances_observed_key_epoch_monotonically)
   for (size_t i = 0; i < N; ++i) seat_member(cur, c.mn[i], c.ed_pub[i], 100 + i);
 
   // First ack for chain 1 → epoch 2 advances.
-  EXPECT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 2, {0, 1, 2, 3}, 3), 5000));
+  EXPECT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 2, {0, 1, 2, 3}, bridge_epoch_at(5000)), 5000));
   EXPECT_EQ(observed_epoch(cur, 1), 2u);
 
   // A duplicate (same epoch) and a stale (lower epoch) both verify but are no-ops.
-  EXPECT_FALSE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 2, {0, 1, 2, 3}, 3), 5001));
-  EXPECT_FALSE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 1, {0, 1, 2, 3}, 3), 5001));
+  EXPECT_FALSE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 2, {0, 1, 2, 3}, bridge_epoch_at(5001)), 5001));
+  EXPECT_FALSE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 1, {0, 1, 2, 3}, bridge_epoch_at(5001)), 5001));
   EXPECT_EQ(observed_epoch(cur, 1), 2u);
 
   // A newer epoch advances again.
-  EXPECT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 3, {0, 1, 2, 3}, 3), 5002));
+  EXPECT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 3, {0, 1, 2, 3}, bridge_epoch_at(5002)), 5002));
   EXPECT_EQ(observed_epoch(cur, 1), 3u);
 
-  // Below-threshold evidence (3 < 4) is rejected outright.
-  EXPECT_FALSE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 4, {0, 1, 2}, 3), 5003));
+  // Skipping an epoch is rejected even with a quorum.
+  EXPECT_FALSE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 5, {0, 1, 2, 3}, bridge_epoch_at(5003)), 5003));
+  // Below-threshold evidence (3 < 4) is also rejected outright.
+  EXPECT_FALSE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 4, {0, 1, 2}, bridge_epoch_at(5003)), 5003));
+  // A cryptographically valid historical committee is not a perpetual oracle.
+  EXPECT_FALSE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 4, {0, 1, 2, 3}, 3), 5003));
   EXPECT_EQ(observed_epoch(cur, 1), 3u);
 }
 
@@ -793,8 +828,8 @@ TEST(GatewayBridgeRotation, gate_withholds_bond_until_all_chains_rotate)
   for (size_t i = 0; i < N; ++i) seat_member(cur, c.mn[i], c.ed_pub[i], 100 + i);
 
   // Two chains known, both at key epoch 1.
-  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 1, {0, 1, 2, 3}, 3), 5000));
-  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 2, 1, {0, 1, 2, 3}, 3), 5000));
+  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 1, {0, 1, 2, 3}, bridge_epoch_at(5000)), 5000));
+  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 2, 1, {0, 1, 2, 3}, bridge_epoch_at(5000)), 5000));
 
   // Seat 5 unbonds with baseline {chain1: 1, chain2: 1}; timer unlock at height 5000.
   set_unbonding(cur, c.mn[5], 4000, 5000, {chain_ep(1, 1), chain_ep(2, 1)});
@@ -805,12 +840,12 @@ TEST(GatewayBridgeRotation, gate_withholds_bond_until_all_chains_rotate)
   EXPECT_TRUE(seat_registered()) << "bond must be withheld until both chains rotate";
 
   // Chain 1 rotates to 2 (chain 2 still 1) → still withheld (chain 2 not past baseline).
-  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 2, {0, 1, 2, 3}, 3), 6000));
+  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 2, {0, 1, 2, 3}, bridge_epoch_at(6000)), 6000));
   cur.finalize_bridge_unbonds(6000);
   EXPECT_TRUE(seat_registered()) << "one chain rotated is not enough";
 
   // Chain 2 rotates to 2 → every chain past its baseline → released.
-  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 2, 2, {0, 1, 2, 3}, 3), 6000));
+  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 2, 2, {0, 1, 2, 3}, bridge_epoch_at(6000)), 6000));
   cur.finalize_bridge_unbonds(6000);
   EXPECT_FALSE(cur.master_nodes_infos.at(c.mn[5])->bridge_seat.registered) << "bond released once all chains rotated";
 }
@@ -824,18 +859,18 @@ TEST(GatewayBridgeRotation, gate_grandfathers_chain_added_after_unbond)
   for (size_t i = 0; i < N; ++i) seat_member(cur, c.mn[i], c.ed_pub[i], 100 + i);
 
   // Only chain 1 known at unbond time; seat baseline = {chain1: 1}.
-  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 1, {0, 1, 2, 3}, 3), 5000));
+  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 1, {0, 1, 2, 3}, bridge_epoch_at(5000)), 5000));
   set_unbonding(cur, c.mn[5], 4000, 5000, {chain_ep(1, 1)});
 
   // A brand-new chain 2 appears AFTER the seat unbonded (never in its snapshot).
-  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 2, 1, {0, 1, 2, 3}, 3), 6000));
+  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 2, 1, {0, 1, 2, 3}, bridge_epoch_at(6000)), 6000));
 
   // Not gated on chain 2 (grandfathered). Still gated on chain 1 (not yet past 1).
   cur.finalize_bridge_unbonds(6000);
   EXPECT_TRUE(cur.master_nodes_infos.at(c.mn[5])->bridge_seat.registered);
 
   // Chain 1 rotates past baseline → released, even though chain 2 never rotated past 1.
-  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 2, {0, 1, 2, 3}, 3), 6000));
+  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 2, {0, 1, 2, 3}, bridge_epoch_at(6000)), 6000));
   cur.finalize_bridge_unbonds(6000);
   EXPECT_FALSE(cur.master_nodes_infos.at(c.mn[5])->bridge_seat.registered)
       << "a chain added after unbond must not gate the seat";
@@ -1094,7 +1129,10 @@ TEST(GatewayBridgeReleaseRef, first_release_records_and_replay_is_rejected)
     ASSERT_TRUE(append_gateways_from_transactions(db, {tx}, h0, /*bridge_active=*/true, &reason)) << reason;
     gateway_account_data a; ASSERT_TRUE(load_gateway_account(db, gw, a));
     EXPECT_EQ(a.version, 2);
-    EXPECT_TRUE(a.release_ref_recorded(gateway_release_ref_hash(1, burn_txid(0x11), 0)));
+    const crypto::hash ref = gateway_release_ref_hash(1, burn_txid(0x11), 0);
+    EXPECT_TRUE(a.release_ref_recorded(ref));
+    EXPECT_EQ(db.get_gateway_release_ref_height(gw, ref), h0)
+        << "reconciliation must retain the inclusion height until checkpoint finality";
   }
 
   // A DIFFERENT tx (different amount → different txid) replaying the same burn
@@ -1143,11 +1181,15 @@ TEST(GatewayBridgeReleaseRef, rewind_is_byte_exact_and_reallows_the_burn)
   auto tx = make_withdrawal_with_ref(gw, 1000, 1, burn_txid(0x44));
   ASSERT_TRUE(append_gateways_from_transactions(db, {tx}, h, true, &reason)) << reason;
   EXPECT_NE(blob_of(gw, db), before);
+  const crypto::hash ref = gateway_release_ref_hash(1, burn_txid(0x44), 0);
+  EXPECT_EQ(db.get_gateway_release_ref_height(gw, ref), h);
 
   // Reorg the block out: the blob is byte-identical (S9) — so the same burn is
   // releasable again (nothing was permanently consumed by an orphaned block).
   ASSERT_TRUE(rewind_gateways_from_transactions(db, {tx}, h, true, &reason)) << reason;
   EXPECT_EQ(blob_of(gw, db), before) << "rewind must restore a byte-identical blob";
+  EXPECT_EQ(db.get_gateway_release_ref_height(gw, ref), 0u)
+      << "an orphaned release must not be reported as finalized";
   ASSERT_TRUE(append_gateways_from_transactions(db, {tx}, h, true, &reason)) << reason;
 }
 

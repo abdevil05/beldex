@@ -60,6 +60,7 @@ fn main() {
                  (feed it to the signer as BRIDGE_SIGNER_SIGN_DIGEST).\n\n\
                  relay environment:\n  \
                  RELAYER_GAS_KEY   32-byte hex secp256k1 gas key (NOT a bridge key)\n  \
+                 RELAYER_STATE_DIR persistent private directory shared by all processes using this gas wallet\n  \
                  RELAYER_CHAINS    JSON: [{{\"chain_id\":31337,\"rpc_url\":\"http://127.0.0.1:8545\"}}]\n\
                  \t\t    optional per chain: max_fee_cap_wei, priority_fee_wei, gas_limit_pct",
                 env!("CARGO_PKG_VERSION")
@@ -177,7 +178,7 @@ fn run_prepare(_src: &str) -> Result<String, String> {
 /// estimation dry-run and reported without spending anything.
 #[cfg(feature = "submit-http")]
 fn run_relay(src: &str) -> Result<String, String> {
-    use beldex_bridge_relayer::{ChainEndpoint, HttpSubmitter, RelayPayload, TxSubmitter};
+    use beldex_bridge_relayer::{ChainEndpoint, HttpSubmitter, RelayPayload};
 
     let json = read_source(src)?;
     let payload = RelayPayload::from_json(&json).map_err(|e| format!("invalid payload: {e:?}"))?;
@@ -216,7 +217,12 @@ fn run_relay(src: &str) -> Result<String, String> {
 
     let submitter = HttpSubmitter::new(&key, chains).map_err(|e| format!("gas key: {e}"))?;
     let call = payload.to_prepared();
-    let tx_hash = submitter.submit(&call).map_err(|e| format!("{e:?}"))?;
+    let state_dir = std::env::var("RELAYER_STATE_DIR")
+        .ok().filter(|s| !s.trim().is_empty())
+        .ok_or("set RELAYER_STATE_DIR to a persistent private directory shared by all processes using this gas wallet")?;
+    let tx_hash = submitter
+        .submit_durable(&call, std::path::Path::new(&state_dir))
+        .map_err(|e| format!("{e:?}"))?;
     Ok(format!(
         "relayed: chain_id {} → {}\n  gas wallet: 0x{}\n  tx: {}\n",
         call.chain_id,

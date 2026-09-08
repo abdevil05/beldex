@@ -24,6 +24,18 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# This launcher intentionally collapses every operator onto one host, uses a
+# reversible EVM and (normally) a non-checkpointing native devnet. Keep those
+# acknowledgements behind one loud, local-only switch so none can leak into a
+# deployment by accident.
+if [ "${ALLOW_UNSAFE_LOCAL_AUTONOMY:-0}" != "1" ]; then
+  echo "!! autonomous value movement on this single-host devnet is disabled by default." >&2
+  echo "   For local security/function tests only, re-run with:" >&2
+  echo "     ALLOW_UNSAFE_LOCAL_AUTONOMY=1" >&2
+  echo "   Never copy that variable to a shared or public deployment." >&2
+  exit 1
+fi
+
 # GATEWAY_ID must be the 32-byte HEX id, not the gwB… address: the signer parses it
 # with parse_hex32 (bridge/signer/src/config.rs:127) and a base58 address dies at
 # startup with "config key gateway_id is not 32-byte hex". simplewallet prints the
@@ -76,7 +88,7 @@ if [ "$MESH_USE_CURVE" = "false" ] || [ "$MESH_USE_CURVE" = "0" ]; then
     exit 1
   }
 fi
-ALLOW_REVERSIBLE_EVM="${ALLOW_REVERSIBLE_EVM:-0}"
+ALLOW_REVERSIBLE_EVM=1
 if [ "${SHARE_SUBDIR:-shares}" = "shares-pool" ] && [ "${ALLOW_POOLED_SHARES:-0}" != "1" ]; then
   echo "!! pooled shares collapse the threshold boundary and are disabled by default." >&2
   echo "   Fix committee/share indexing; set ALLOW_POOLED_SHARES=1 only for an explicit insecure test." >&2
@@ -242,6 +254,7 @@ for d in beldex-127.0.0.1-*/; do
   BRIDGE_SIGNER_GENESIS_HASH="$BRIDGE_SIGNER_GENESIS_HASH" \
   BRIDGE_SIGNER_MINT_BUS_ENDPOINT="ipc://$PWD/beldex-127.0.0.1-19191/devnet/beldexd.sock" \
   BRIDGE_SIGNER_RELAY_CMD="$node_relay" \
+  RELAYER_STATE_DIR="${RELAYER_STATE_DIR:-$PWD/relayer-state}" \
   BRIDGE_SIGNER_RELAY_STAGGER_MS="$RELAY_STAGGER_MS" \
   BRIDGE_SIGNER_SERVE_LIVE=1 \
   BRIDGE_SIGNER_BELDEXD_RPC_URL="$node_beldex_rpc" \
@@ -251,11 +264,14 @@ for d in beldex-127.0.0.1-*/; do
   BRIDGE_SIGNER_MN_KEY_FILE="$key" BRIDGE_SIGNER_SHARE_DIR="$share" \
   BRIDGE_SIGNER_ALLOW_FILE_SHARES=1 \
   BRIDGE_SIGNER_MINT_OUTBOX_DIR="$PWD/${d}devnet/mint-outbox" \
+  BRIDGE_SIGNER_RELEASE_OUTBOX_DIR="$PWD/${d}devnet/release-outbox" \
   BRIDGE_SIGNER_WATCH_STATE_FILE="$PWD/${d}devnet/watch.state" \
   BRIDGE_SIGNER_GLOBAL_BOND_BACKING="$GLOBAL_BOND_BACKING" \
   BRIDGE_SIGNER_MESH_PORT_BASE=6000 BRIDGE_SIGNER_MESH_PEVM_OFFSET=100 \
   BRIDGE_SIGNER_MESH_COORD_OFFSET=200 BRIDGE_SIGNER_MESH_BIND_HOST=127.0.0.1 BRIDGE_SIGNER_MESH_USE_CURVE="$MESH_USE_CURVE" \
   BRIDGE_SIGNER_ALLOW_REVERSIBLE_EVM="$ALLOW_REVERSIBLE_EVM" \
+  BRIDGE_SIGNER_ALLOW_DEPTH_FINALITY=1 \
+  BRIDGE_SIGNER_ALLOW_SINGLE_HOST_COMMITTEE=1 \
   BRIDGE_SIGNER_SIGN_TIMEOUT_SECS="${BRIDGE_SIGNER_SIGN_TIMEOUT_SECS:-600}" \
   BRIDGE_SIGNER_STAGE_TIMEOUT_TICKS="${STAGE_TIMEOUT_TICKS:-4}" \
   BRIDGE_SIGNER_SIGN_SIGNERS="$SIGN_SIGNERS" \

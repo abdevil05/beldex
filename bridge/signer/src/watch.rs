@@ -210,7 +210,7 @@ pub struct Tracker<E> {
     required_confs: u64,
 }
 
-impl<E: Clone> Tracker<E> {
+impl<E: Clone + PartialEq> Tracker<E> {
     pub fn new(required_confs: u64) -> Tracker<E> {
         Tracker {
             pending: Vec::new(),
@@ -220,7 +220,14 @@ impl<E: Clone> Tracker<E> {
 
     /// Record a freshly-seen observation (idempotence is the caller's concern).
     pub fn observe(&mut self, obs: Observation<E>) {
-        self.pending.push(obs);
+        // Overlapping EVM rescans intentionally return the same log repeatedly.
+        // Keep one pending record per event, and replace its canonical anchor when
+        // a reorg moves the same transaction/log to a replacement block.
+        if let Some(existing) = self.pending.iter_mut().find(|p| p.event == obs.event) {
+            *existing = obs;
+        } else {
+            self.pending.push(obs);
+        }
     }
 
     pub fn pending_len(&self) -> usize {
@@ -231,6 +238,10 @@ impl<E: Clone> Tracker<E> {
     /// heights to fetch current block hashes before [`poll`](Self::poll).
     pub fn pending(&self) -> &[Observation<E>] {
         &self.pending
+    }
+
+    pub fn required_confirmations(&self) -> u64 {
+        self.required_confs
     }
 
     /// Advance to `tip_height`. `is_canonical(inclusion_height, &block_hash)` must

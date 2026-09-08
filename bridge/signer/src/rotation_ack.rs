@@ -16,12 +16,11 @@
 //! chain stood at when the seat requested unbond — so signing in your successor becomes a
 //! precondition for reclaiming your 100k bond.
 //!
-//! The signed bytes are the **objective, epoch-independent fact** (`chain_id`, `key_epoch`,
-//! `new_signer`) — unlike a slash report, which is inherently session/epoch-specific. The
-//! L1 committee `epoch` that observed it rides alongside as an unsigned resolver hint (it
-//! only selects which committee's keys the verifier checks; a wrong epoch simply yields the
-//! wrong keys and fails). Advancing L1's observed key epoch is monotonic and idempotent, so
-//! a replayed ack is harmless.
+//! The signed bytes bind the observer epoch, exact proxy address, full EVM log identity,
+//! and finalized inclusion-block anchor in addition to the new signer/key epoch. Native
+//! consensus accepts evidence only from the current or immediately previous committee and
+//! advances contract key epochs one step at a time, preventing a compromised historical
+//! committee from acting as a perpetual EVM oracle.
 //!
 //! Built under `tss-integration` (libsodium ed25519), mirroring [`crate::slash`].
 
@@ -30,7 +29,8 @@ use crate::ffi::{ed25519_sign_detached, ed25519_verify_consensus};
 
 /// Domain tag for the rotation-ack signature (S6). MUST match the C++
 /// `hashkey::BRIDGE_ROTATION_ACK`.
-pub const ROTATION_ACK_DOMAIN: &[u8] = b"bridge_rotation_ack_v1";
+pub const ROTATION_ACK_DOMAIN: &[u8] = b"bridge_rotation_ack_v2";
+pub const ROTATION_ACK_VERSION: u8 = 1;
 
 /// The objective on-chain fact an ack attests: chain `chain_id`'s wBDX `currentSigner`
 /// moved to `new_signer` at contract key generation `key_epoch`.
@@ -38,10 +38,17 @@ pub const ROTATION_ACK_DOMAIN: &[u8] = b"bridge_rotation_ack_v1";
 pub struct RotationAck {
     /// EVM chain id (the E.3 registry key).
     pub chain_id: u64,
+    /// Exact wBDX proxy that emitted the rotation.
+    pub contract: [u8; 20],
     /// The contract's new monotonic key epoch after the rotation.
     pub key_epoch: u64,
     /// The incoming `Pevm` address the contract now trusts as mint authority.
     pub new_signer: [u8; 20],
+    /// Full canonical log identity and finalized block anchor.
+    pub evm_txid: [u8; 32],
+    pub log_index: u32,
+    pub inclusion_height: u64,
+    pub block_hash: [u8; 32],
 }
 
 impl RotationAck {
@@ -49,14 +56,24 @@ impl RotationAck {
     /// verifies. Domain-separated (S6); the genesis binding prevents replay across
     /// networks/forks (S14). Epoch-independent — the fact is objective.
     ///
-    /// Layout: `DOMAIN ‖ genesis(32) ‖ chain_id(u64 LE) ‖ key_epoch(u64 LE) ‖ new_signer(20)`.
-    pub fn canonical(&self, genesis: &[u8; 32]) -> Vec<u8> {
-        let mut v = Vec::with_capacity(ROTATION_ACK_DOMAIN.len() + 32 + 8 + 8 + 20);
+    /// Layout: domain/version/genesis/observer epoch followed by the exact contract,
+    /// rotation values, log identity, inclusion height, and finalized block hash.
+    pub fn canonical(&self, genesis: &[u8; 32], observer_epoch: u64) -> Vec<u8> {
+        let mut v = Vec::with_capacity(
+            ROTATION_ACK_DOMAIN.len() + 1 + 32 + 8 + 8 + 20 + 8 + 20 + 32 + 4 + 8 + 32,
+        );
         v.extend_from_slice(ROTATION_ACK_DOMAIN);
+        v.push(ROTATION_ACK_VERSION);
         v.extend_from_slice(genesis);
+        v.extend_from_slice(&observer_epoch.to_le_bytes());
         v.extend_from_slice(&self.chain_id.to_le_bytes());
+        v.extend_from_slice(&self.contract);
         v.extend_from_slice(&self.key_epoch.to_le_bytes());
         v.extend_from_slice(&self.new_signer);
+        v.extend_from_slice(&self.evm_txid);
+        v.extend_from_slice(&self.log_index.to_le_bytes());
+        v.extend_from_slice(&self.inclusion_height.to_le_bytes());
+        v.extend_from_slice(&self.block_hash);
         v
     }
 }
@@ -67,8 +84,7 @@ impl RotationAck {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignedRotationAck {
     pub ack: RotationAck,
-    /// The L1 committee epoch that observed + signed this (the verifier's resolver hint;
-    /// **not** part of the signed canonical bytes).
+    /// The L1 committee epoch that observed + signed this. It is part of the signed bytes.
     pub epoch: u64,
     /// `(committee_index, detached ed25519 signature)` per observer.
     pub observers: Vec<(u16, [u8; 64])>,
@@ -96,7 +112,7 @@ impl SignedRotationAck {
         if self.observers.iter().any(|(i, _)| *i == committee_index) {
             return Ok(()); // already signed
         }
-        let sig = ed25519_sign_detached(ed25519_sk64, &self.ack.canonical(genesis))?;
+        let sig = ed25519_sign_detached(ed25519_sk64, &self.ack.canonical(genesis, self.epoch))?;
         self.observers.push((committee_index, sig));
         Ok(())
     }
@@ -105,7 +121,10 @@ impl SignedRotationAck {
     /// each signature valid over the canonical fact under that member's consensus-published
     /// `signer_ed25519`. (`beldexd` re-runs this before advancing its observed key epoch.)
     pub fn verify(&self, committee: &CommitteeView, genesis: &[u8; 32]) -> bool {
-        let msg = self.ack.canonical(genesis);
+        if self.epoch != committee.epoch {
+            return false;
+        }
+        let msg = self.ack.canonical(genesis, self.epoch);
         let mut seen = std::collections::BTreeSet::new();
         let mut valid = 0usize;
         for (index, sig) in &self.observers {
@@ -133,6 +152,7 @@ impl SignedRotationAck {
 
         let hex64 = |b: &[u8; 64]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
         let hex20 = |b: &[u8; 20]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+        let hex32 = |b: &[u8; 32]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
 
         let entries: Vec<String> = observers
             .iter()
@@ -141,12 +161,18 @@ impl SignedRotationAck {
 
         format!(
             concat!(
-                r#"{{"version":0,"chain_id":{},"key_epoch":{},"new_signer":"{}","#,
-                r#""epoch":{},"observers":[{}]}}"#
+                r#"{{"version":{},"chain_id":{},"contract":"{}","key_epoch":{},"new_signer":"{}","#,
+                r#""evm_txid":"{}","log_index":{},"inclusion_height":{},"block_hash":"{}","epoch":{},"observers":[{}]}}"#
             ),
+            ROTATION_ACK_VERSION,
             self.ack.chain_id,
+            hex20(&self.ack.contract),
             self.ack.key_epoch,
             hex20(&self.ack.new_signer),
+            hex32(&self.ack.evm_txid),
+            self.ack.log_index,
+            self.ack.inclusion_height,
+            hex32(&self.ack.block_hash),
             self.epoch,
             entries.join(","),
         )
@@ -182,8 +208,13 @@ mod tests {
     fn sample_ack() -> RotationAck {
         RotationAck {
             chain_id: 42,
+            contract: [0x22; 20],
             key_epoch: 8,
             new_signer: [0xCD; 20],
+            evm_txid: [0x44; 32],
+            log_index: 3,
+            inclusion_height: 12_345,
+            block_hash: [0x55; 32],
         }
     }
 
@@ -219,7 +250,8 @@ mod tests {
             signed.sign_as(i, &sks[i as usize], &genesis).unwrap();
         }
         // Member 4 "observes" but signs with member 5's key → invalid under member 4's pub.
-        let sig = ed25519_sign_detached(&sks[5], &signed.ack.canonical(&genesis)).unwrap();
+        let sig =
+            ed25519_sign_detached(&sks[5], &signed.ack.canonical(&genesis, signed.epoch)).unwrap();
         signed.observers.push((4, sig));
         assert!(
             !signed.verify(&committee, &genesis),
@@ -230,26 +262,45 @@ mod tests {
     #[test]
     fn distinct_facts_produce_distinct_signed_bytes() {
         let genesis = [1u8; 32];
-        let base = sample_ack().canonical(&genesis);
+        let base = sample_ack().canonical(&genesis, 7);
         // A different chain, key epoch, or signer must change the bytes (no cross-binding).
         let other_chain = RotationAck {
             chain_id: 43,
             ..sample_ack()
         }
-        .canonical(&genesis);
+        .canonical(&genesis, 7);
         let other_epoch = RotationAck {
             key_epoch: 9,
             ..sample_ack()
         }
-        .canonical(&genesis);
+        .canonical(&genesis, 7);
         let other_signer = RotationAck {
             new_signer: [0xEE; 20],
             ..sample_ack()
         }
-        .canonical(&genesis);
+        .canonical(&genesis, 7);
+        let other_contract = RotationAck {
+            contract: [0x99; 20],
+            ..sample_ack()
+        }
+        .canonical(&genesis, 7);
+        let other_log = RotationAck {
+            log_index: 4,
+            ..sample_ack()
+        }
+        .canonical(&genesis, 7);
+        let other_block = RotationAck {
+            block_hash: [0xAA; 32],
+            ..sample_ack()
+        }
+        .canonical(&genesis, 7);
         assert_ne!(base, other_chain);
         assert_ne!(base, other_epoch);
         assert_ne!(base, other_signer);
+        assert_ne!(base, other_contract);
+        assert_ne!(base, other_log);
+        assert_ne!(base, other_block);
+        assert_ne!(base, sample_ack().canonical(&genesis, 8));
         // Leads with the domain tag (S6).
         assert_eq!(&base[..ROTATION_ACK_DOMAIN.len()], ROTATION_ACK_DOMAIN);
     }
@@ -286,7 +337,9 @@ mod tests {
         );
 
         assert!(json.contains(r#""chain_id":42"#));
+        assert!(json.contains(r#""version":1"#));
         assert!(json.contains(r#""key_epoch":8"#));
+        assert!(json.contains(r#""contract":"2222222222222222222222222222222222222222""#));
         assert!(json.contains(r#""epoch":7"#));
         assert!(json.contains(&format!(r#""new_signer":"{}""#, "cd".repeat(20))));
         for sig_hex in json.split(r#""signature":""#).skip(1) {
