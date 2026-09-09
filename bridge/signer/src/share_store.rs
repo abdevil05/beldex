@@ -19,6 +19,120 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
+/// Atomically replace one private share file. This does not make a multi-file
+/// ceremony transactional and is not non-exportable custody.
+#[cfg(unix)]
+pub fn atomic_private_write(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    atomic_private_write_before_commit(path, bytes, || Ok(()))
+}
+
+#[cfg(unix)]
+fn atomic_private_write_before_commit(
+    path: &std::path::Path,
+    bytes: &[u8],
+    before_commit: impl FnOnce() -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    use std::{
+        fs,
+        io::Write,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(std::path::Path::new("."));
+    let meta = fs::symlink_metadata(parent)?;
+    if !meta.is_dir() || meta.permissions().mode() & 0o077 != 0 {
+        return Err(std::io::Error::other(
+            "share parent must be a private directory (0700), not a symlink",
+        ));
+    }
+    match fs::symlink_metadata(path) {
+        Ok(m) if !m.is_file() => {
+            return Err(std::io::Error::other(
+                "share destination must be a regular file",
+            ))
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    let name = path
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("missing share filename"))?
+        .to_string_lossy();
+    let mut created = None;
+    for _ in 0..128 {
+        let temp = parent.join(format!(
+            ".{name}.tmp-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temp)
+        {
+            Ok(file) => {
+                created = Some((temp, file));
+                break;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    let (temp, mut file) =
+        created.ok_or_else(|| std::io::Error::other("no unique share temporary path"))?;
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let _cleanup = Cleanup(temp.clone());
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    before_commit()?;
+    fs::rename(&temp, path)?;
+    fs::File::open(parent)?.sync_all()
+}
+
+#[cfg(all(test, unix))]
+mod atomic_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    #[test]
+    fn interrupted_share_replacement_preserves_old_file_and_permissions() {
+        let dir = std::env::temp_dir().join(format!("bridge-share-atomic-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let path = dir.join("share");
+        atomic_private_write(&path, b"old fixture").unwrap();
+        assert!(
+            atomic_private_write_before_commit(&path, b"new fixture", || Err(
+                std::io::Error::other("injected pre-rename failure")
+            ))
+            .is_err()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), b"old fixture");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        atomic_private_write(&path, b"new fixture").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"new fixture");
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(atomic_private_write(&link, b"overwrite").is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"new fixture");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
 /// Custody backend for versioned key material. Keys are logical names such as
 /// `"pevm.share"`, `"pgw.share"`, `"pevm.paillier"`.
 pub trait ShareStore {

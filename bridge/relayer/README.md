@@ -56,11 +56,17 @@ src/main.rs     `prepare`, `relay`, and `mint-digest` CLI commands
 
 ## Build & test
 
+Commit `Cargo.lock` with dependency changes; it is intentionally not ignored. The
+relayer CI job and local security harness use `--locked`, so dependency resolution
+cannot silently change during a build. CI pins Rust 1.97.1, matching the compiler used
+for this remediation. This does not replace dependency advisory/license review or SBOM
+generation; those supply-chain acceptance steps remain outstanding.
+
 Standalone crate (like `bridge/signer/`):
 
 ```bash
 cd bridge/relayer
-cargo test
+cargo test --locked --all-features
 ```
 
 ## Submit-your-own (the liveness guarantee)

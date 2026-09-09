@@ -1,2 +1,3 @@
 /target
-Cargo.lock
+# Review and commit the gas-paying binary's dependency lockfile.
+!Cargo.lock

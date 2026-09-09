@@ -225,7 +225,9 @@ impl DutyReconciler for GatewayReleaseReconciler {
                 "log_indices": [ev.log_index],
             }
         });
-        let resp = ureq::post(&self.rpc_url).send_json(req).ok()?;
+        let resp = crate::http_deadline::post(&self.rpc_url)
+            .send_json(req)
+            .ok()?;
         let v: serde_json::Value = resp.into_json().ok()?;
         let result = v.get("result")?;
         // A missing/malformed field is a transport-level unknown, not a negative (the `?`s
@@ -248,7 +250,9 @@ impl DutyReconciler for GatewayReleaseReconciler {
         let info_req = serde_json::json!({
             "jsonrpc": "2.0", "id": info_id, "method": "get_info", "params": {}
         });
-        let info_resp = ureq::post(&self.rpc_url).send_json(info_req).ok()?;
+        let info_resp = crate::http_deadline::post(&self.rpc_url)
+            .send_json(info_req)
+            .ok()?;
         let info: serde_json::Value = info_resp.into_json().ok()?;
         let info = info.get("result")?;
         let immutable = info

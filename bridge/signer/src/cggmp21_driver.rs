@@ -108,8 +108,13 @@ pub fn run_cggmp21_keygen_over_transport<T: SessionTransport>(
     let mut early: Vec<(u16, u8, Vec<u8>)> = Vec::new();
     let barrier_deadline = Instant::now() + timeout.min(Duration::from_secs(60));
     loop {
-        let _ = transport.broadcast(&hello);
-        while let Ok(Some(w)) = transport.poll() {
+        transport
+            .broadcast(&hello)
+            .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
+        while let Some(w) = transport
+            .poll()
+            .map_err(|e| DriverError::Transport(format!("{e:?}")))?
+        {
             if w.leg != Leg::Pevm || w.epoch != epoch || w.payload_hash != tag {
                 continue;
             }
@@ -138,8 +143,13 @@ pub fn run_cggmp21_keygen_over_transport<T: SessionTransport>(
     // Grace: keep answering HELLOs briefly so peers still finishing the barrier
     // see ours (and buffer any keygen frames that arrive meanwhile).
     for _ in 0..6 {
-        let _ = transport.broadcast(&hello);
-        while let Ok(Some(w)) = transport.poll() {
+        transport
+            .broadcast(&hello)
+            .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
+        while let Some(w) = transport
+            .poll()
+            .map_err(|e| DriverError::Transport(format!("{e:?}")))?
+        {
             if w.leg == Leg::Pevm && w.epoch == epoch && w.payload_hash == tag {
                 if let SessionMsg::Round(payload) = &w.body {
                     if let Some((kind, rest)) = payload.split_first() {
@@ -234,11 +244,14 @@ pub fn run_cggmp21_keygen_over_transport<T: SessionTransport>(
                 .map_err(|e| DriverError::Protocol(format!("serialize outgoing: {e}")))?;
             match out.recipient {
                 MessageDestination::AllParties => {
-                    let _ = transport.broadcast(&wire(epoch, tag, self_index, CGGMP_BCAST, &bytes));
+                    transport
+                        .broadcast(&wire(epoch, tag, self_index, CGGMP_BCAST, &bytes))
+                        .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
                 }
                 MessageDestination::OneParty(idx) => {
-                    let _ =
-                        transport.send_to(idx, &wire(epoch, tag, self_index, CGGMP_P2P, &bytes));
+                    transport
+                        .send_to(idx, &wire(epoch, tag, self_index, CGGMP_P2P, &bytes))
+                        .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
                 }
             }
         }
@@ -249,7 +262,7 @@ pub fn run_cggmp21_keygen_over_transport<T: SessionTransport>(
             let w = match transport.poll() {
                 Ok(Some(w)) => w,
                 Ok(None) => break,
-                Err(_) => break, // a single transport hiccup must not abort the DKG
+                Err(e) => return Err(DriverError::Transport(format!("{e:?}"))),
             };
             if w.leg != Leg::Pevm || w.epoch != epoch || w.payload_hash != tag {
                 continue;
@@ -299,10 +312,14 @@ pub fn run_cggmp21_keygen_over_transport<T: SessionTransport>(
             .map_err(|e| DriverError::Protocol(format!("serialize outgoing: {e}")))?;
         match out.recipient {
             MessageDestination::AllParties => {
-                let _ = transport.broadcast(&wire(epoch, tag, self_index, CGGMP_BCAST, &bytes));
+                transport
+                    .broadcast(&wire(epoch, tag, self_index, CGGMP_BCAST, &bytes))
+                    .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
             }
             MessageDestination::OneParty(idx) => {
-                let _ = transport.send_to(idx, &wire(epoch, tag, self_index, CGGMP_P2P, &bytes));
+                transport
+                    .send_to(idx, &wire(epoch, tag, self_index, CGGMP_P2P, &bytes))
+                    .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
             }
         }
     }
@@ -361,6 +378,40 @@ mod tests {
             member_x25519: Vec::new(),
             daemon_self_index: None,
             threshold: t as usize,
+        }
+    }
+
+    #[test]
+    fn barrier_send_and_poll_failures_are_returned_immediately() {
+        struct Broken {
+            send_error: bool,
+        }
+        impl SessionTransport for Broken {
+            fn broadcast(&mut self, _: &WireMsg) -> Result<(), MeshError> {
+                if self.send_error {
+                    Err(MeshError::Io("injected send failure".into()))
+                } else {
+                    Ok(())
+                }
+            }
+            fn send_to(&mut self, _: u16, w: &WireMsg) -> Result<(), MeshError> {
+                self.broadcast(w)
+            }
+            fn poll(&mut self) -> Result<Option<WireMsg>, MeshError> {
+                Err(MeshError::Io("injected poll failure".into()))
+            }
+        }
+        for send_error in [true, false] {
+            let started = Instant::now();
+            let result = run_cggmp21_keygen_over_transport(
+                &committee(2, 2),
+                0,
+                1,
+                &mut Broken { send_error },
+                Duration::from_secs(30),
+            );
+            assert!(matches!(result, Err(DriverError::Transport(_))));
+            assert!(started.elapsed() < Duration::from_secs(1));
         }
     }
 

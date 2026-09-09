@@ -111,7 +111,7 @@ impl HttpGatewayRpc {
     ) -> Result<serde_json::Value, String> {
         self.id = self.id.wrapping_add(1);
         let req = serde_json::json!({ "jsonrpc": "2.0", "id": self.id, "method": method, "params": params });
-        let resp = ureq::post(&self.url)
+        let resp = crate::http_deadline::post(&self.url)
             .send_json(req)
             .map_err(|e| e.to_string())?;
         let v: serde_json::Value = resp.into_json().map_err(|e| e.to_string())?;

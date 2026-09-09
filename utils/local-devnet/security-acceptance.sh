@@ -7,15 +7,17 @@ case "${1:-}" in
   *) echo "usage: bash $0 [--real-mpc]" >&2; exit 2 ;;
 esac
 cd "$repo_dir/bridge/relayer"
-cargo test --all-features
+cargo test --locked --all-features
 cd "$repo_dir/bridge/signer"
-cargo test --all-features --bin beldex-bridge-signer
-for suite in dkg_tag evm_watcher orchestrator coordinator reconcile rotation_ack; do
-  cargo test --all-features --lib "$suite::tests"
+cargo test --locked --all-features --bin beldex-bridge-signer
+for suite in implementation_pin http_deadline dkg_tag evm_watcher orchestrator coordinator reconcile rotation_ack; do
+  cargo test --locked --all-features --lib "$suite::tests"
 done
+cargo test --locked --all-features --lib share_store::atomic_tests
+cargo test --locked --all-features --lib cggmp21_driver::tests::barrier_send_and_poll_failures_are_returned_immediately
 if [ "${1:-}" = "--real-mpc" ]; then
-  cargo test --all-features --lib cggmp21_driver::tests::cggmp21_keygen_over_the_mesh_agrees -- --ignored
-  cargo test --all-features --lib cggmp21_sign_driver::tests::cggmp21_signing_over_the_mesh_recovers_wbdx_address -- --ignored
+  cargo test --locked --all-features --lib cggmp21_driver::tests::cggmp21_keygen_over_the_mesh_agrees -- --ignored
+  cargo test --locked --all-features --lib cggmp21_sign_driver::tests::cggmp21_signing_over_the_mesh_recovers_wbdx_address -- --ignored
 else
   echo "NOT RUN: real CGGMP21 protocol tests; add --real-mpc to include them."
 fi

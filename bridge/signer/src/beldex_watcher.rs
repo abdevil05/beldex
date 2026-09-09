@@ -490,7 +490,7 @@ impl BeldexRpc for HttpBeldexRpc {
         let id = self.id.get();
         self.id.set(id.wrapping_add(1));
         let req = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
-        let resp = ureq::post(&self.url)
+        let resp = crate::http_deadline::post(&self.url)
             .send_json(req)
             .map_err(|e| RpcError::Transport(e.to_string()))?;
         let v: Value = resp

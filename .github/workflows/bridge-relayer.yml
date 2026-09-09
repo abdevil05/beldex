@@ -1,0 +1,18 @@
+name: Bridge relayer locked build
+on:
+  push:
+    paths: ['bridge/relayer/**', '.github/workflows/bridge-relayer.yml']
+  pull_request:
+    paths: ['bridge/relayer/**', '.github/workflows/bridge-relayer.yml']
+permissions:
+  contents: read
+jobs:
+  relayer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install reviewed compiler version
+        run: rustup toolchain install 1.97.1 --profile minimal
+      - name: Test locked dependency graph
+        working-directory: bridge/relayer
+        run: cargo +1.97.1 test --locked --all-features

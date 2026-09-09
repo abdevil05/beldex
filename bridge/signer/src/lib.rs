@@ -67,6 +67,10 @@ pub mod config;
 pub mod conformance;
 pub mod dkg;
 pub mod health;
+#[cfg(any(feature = "evm-watcher-http", feature = "beldex-watcher-http"))]
+pub mod http_deadline;
+#[cfg(feature = "evm-watcher")]
+pub mod implementation_pin;
 pub mod session;
 pub mod share_store;
 pub mod transport;

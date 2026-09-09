@@ -165,8 +165,13 @@ pub fn run_cggmp21_sign_over_transport<T: SessionTransport>(
     let need_peers = parties.len() as u16 - 1;
     let barrier_deadline = Instant::now() + timeout.min(Duration::from_secs(60));
     loop {
-        let _ = transport.broadcast(&hello);
-        while let Ok(Some(w)) = transport.poll() {
+        transport
+            .broadcast(&hello)
+            .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
+        while let Some(w) = transport
+            .poll()
+            .map_err(|e| DriverError::Transport(format!("{e:?}")))?
+        {
             if w.leg != Leg::Pevm
                 || w.epoch != epoch
                 || w.payload_hash != tag
@@ -200,8 +205,13 @@ pub fn run_cggmp21_sign_over_transport<T: SessionTransport>(
         std::thread::sleep(Duration::from_millis(150));
     }
     for _ in 0..6 {
-        let _ = transport.broadcast(&hello);
-        while let Ok(Some(w)) = transport.poll() {
+        transport
+            .broadcast(&hello)
+            .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
+        while let Some(w) = transport
+            .poll()
+            .map_err(|e| DriverError::Transport(format!("{e:?}")))?
+        {
             if w.leg == Leg::Pevm
                 && w.epoch == epoch
                 && w.payload_hash == tag
@@ -274,21 +284,18 @@ pub fn run_cggmp21_sign_over_transport<T: SessionTransport>(
             .map_err(|e| DriverError::Protocol(format!("serialize outgoing: {e}")))?;
         match out.recipient {
             MessageDestination::AllParties => {
-                let _ = transport.broadcast(&wire(
-                    epoch,
-                    tag,
-                    attempt,
-                    self_index,
-                    CGGMP_BCAST,
-                    &bytes,
-                ));
+                transport
+                    .broadcast(&wire(epoch, tag, attempt, self_index, CGGMP_BCAST, &bytes))
+                    .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
             }
             MessageDestination::OneParty(pos) => {
                 if let Some(&peer_idx) = parties.get(pos as usize) {
-                    let _ = transport.send_to(
-                        peer_idx,
-                        &wire(epoch, tag, attempt, self_index, CGGMP_P2P, &bytes),
-                    );
+                    transport
+                        .send_to(
+                            peer_idx,
+                            &wire(epoch, tag, attempt, self_index, CGGMP_P2P, &bytes),
+                        )
+                        .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
                 }
             }
         }
@@ -324,7 +331,7 @@ pub fn run_cggmp21_sign_over_transport<T: SessionTransport>(
             let w = match transport.poll() {
                 Ok(Some(w)) => w,
                 Ok(None) => break,
-                Err(_) => break,
+                Err(e) => return Err(DriverError::Transport(format!("{e:?}"))),
             };
             if w.leg != Leg::Pevm
                 || w.epoch != epoch

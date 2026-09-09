@@ -111,8 +111,13 @@ pub fn run_cggmp21_aux_over_transport<T: SessionTransport>(
     let mut early: Vec<(u16, u8, Vec<u8>)> = Vec::new();
     let barrier_deadline = Instant::now() + timeout.min(Duration::from_secs(60));
     loop {
-        let _ = transport.broadcast(&hello);
-        while let Ok(Some(w)) = transport.poll() {
+        transport
+            .broadcast(&hello)
+            .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
+        while let Some(w) = transport
+            .poll()
+            .map_err(|e| DriverError::Transport(format!("{e:?}")))?
+        {
             if w.leg != Leg::Pevm || w.epoch != epoch || w.payload_hash != tag {
                 continue;
             }
@@ -139,8 +144,13 @@ pub fn run_cggmp21_aux_over_transport<T: SessionTransport>(
         std::thread::sleep(Duration::from_millis(150));
     }
     for _ in 0..6 {
-        let _ = transport.broadcast(&hello);
-        while let Ok(Some(w)) = transport.poll() {
+        transport
+            .broadcast(&hello)
+            .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
+        while let Some(w) = transport
+            .poll()
+            .map_err(|e| DriverError::Transport(format!("{e:?}")))?
+        {
             if w.leg == Leg::Pevm && w.epoch == epoch && w.payload_hash == tag {
                 if let SessionMsg::Round(payload) = &w.body {
                     if let Some((kind, rest)) = payload.split_first() {
@@ -226,10 +236,14 @@ pub fn run_cggmp21_aux_over_transport<T: SessionTransport>(
                 .map_err(|e| DriverError::Protocol(format!("serialize outgoing: {e}")))?;
             match out.recipient {
                 MessageDestination::AllParties => {
-                    let _ = transport.broadcast(&wire(epoch, tag, self_index, AUX_BCAST, &bytes));
+                    transport
+                        .broadcast(&wire(epoch, tag, self_index, AUX_BCAST, &bytes))
+                        .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
                 }
                 MessageDestination::OneParty(idx) => {
-                    let _ = transport.send_to(idx, &wire(epoch, tag, self_index, AUX_P2P, &bytes));
+                    transport
+                        .send_to(idx, &wire(epoch, tag, self_index, AUX_P2P, &bytes))
+                        .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
                 }
             }
         }
@@ -237,7 +251,7 @@ pub fn run_cggmp21_aux_over_transport<T: SessionTransport>(
             let w = match transport.poll() {
                 Ok(Some(w)) => w,
                 Ok(None) => break,
-                Err(_) => break,
+                Err(e) => return Err(DriverError::Transport(format!("{e:?}"))),
             };
             if w.leg != Leg::Pevm || w.epoch != epoch || w.payload_hash != tag {
                 continue;
@@ -284,10 +298,14 @@ pub fn run_cggmp21_aux_over_transport<T: SessionTransport>(
             .map_err(|e| DriverError::Protocol(format!("serialize outgoing: {e}")))?;
         match out.recipient {
             MessageDestination::AllParties => {
-                let _ = transport.broadcast(&wire(epoch, tag, self_index, AUX_BCAST, &bytes));
+                transport
+                    .broadcast(&wire(epoch, tag, self_index, AUX_BCAST, &bytes))
+                    .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
             }
             MessageDestination::OneParty(idx) => {
-                let _ = transport.send_to(idx, &wire(epoch, tag, self_index, AUX_P2P, &bytes));
+                transport
+                    .send_to(idx, &wire(epoch, tag, self_index, AUX_P2P, &bytes))
+                    .map_err(|e| DriverError::Transport(format!("{e:?}")))?;
             }
         }
     }

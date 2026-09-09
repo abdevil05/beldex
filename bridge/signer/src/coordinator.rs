@@ -205,8 +205,10 @@ struct LiveSession {
 }
 
 /// What one [`Coordinator::step`] did (for the serve heartbeat + tests).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StepReport {
+    /// Transport failure that stopped this tick before any further protocol work.
+    pub transport_error: Option<String>,
     pub opened: usize,
     pub proposed: usize,
     pub acked: usize,
@@ -291,8 +293,18 @@ where
     ) -> StepReport {
         let mut report = StepReport::default();
         self.open_ready(orch, &mut report);
-        self.pump_inbox(net, &mut report);
-        self.drive_all(orch, net, &mut report);
+        if let Err(error) = self
+            .pump_inbox(net, &mut report)
+            .and_then(|()| self.drive_all(orch, net, &mut report))
+        {
+            report.transport_error = Some(error);
+            // A failed send may have reached only part of the committee. Abandon
+            // this attempt rather than counting it as successful dissemination.
+            for live in self.live.values_mut() {
+                let _ = live.session.on_timeout();
+                Self::sync_attempt(live);
+            }
+        }
         report
     }
 
@@ -301,8 +313,12 @@ where
     /// Route every queued inbound message into its session. Messages for a session this node
     /// has not opened (duty not yet observed locally) are dropped — the leader re-`Propose`s
     /// every tick while in Consensus, so laggards converge as soon as their watcher catches up.
-    fn pump_inbox<T: SessionTransport>(&mut self, net: &mut T, report: &mut StepReport) {
-        while let Ok(Some(msg)) = net.poll() {
+    fn pump_inbox<T: SessionTransport>(
+        &mut self,
+        net: &mut T,
+        report: &mut StepReport,
+    ) -> Result<(), String> {
+        while let Some(msg) = net.poll().map_err(|e| format!("poll: {e:?}"))? {
             let Some(live) = self.live.get_mut(&msg.payload_hash) else {
                 continue; // unopened session — benign drop (see doc above)
             };
@@ -324,7 +340,7 @@ where
                     proposal,
                     net,
                     report,
-                );
+                )?;
                 continue;
             }
             // Capture distributed signature bytes so non-signers can complete too.
@@ -336,6 +352,7 @@ where
             // Everything else feeds the engine; stale/out-of-stage messages drop benignly.
             let _ = apply(&mut live.session, &msg);
         }
+        Ok(())
     }
 
     /// Handle a leader `Propose`: verify against local observation, then broadcast + self-apply
@@ -349,13 +366,13 @@ where
         proposal: &[u8],
         net: &mut T,
         report: &mut StepReport,
-    ) {
+    ) -> Result<(), String> {
         if live.session.stage() != Stage::Consensus || msg.attempt != live.session.attempt() {
-            return; // wrong stage / stale attempt
+            return Ok(()); // wrong stage / stale attempt
         }
         // Only the current deterministic leader's proposal is considered.
         if msg.from as usize != live.session.leader() {
-            return;
+            return Ok(());
         }
         // The leader re-proposes every tick. Re-emit our prior decision as well:
         // point-to-point broadcast is not a reliable transport and a single lost
@@ -366,28 +383,30 @@ where
             } else {
                 SessionMsg::Nack(NackReason::PayloadMismatch)
             };
-            let _ = net.broadcast(&Self::msg_for(&live.session, self_index, body));
-            return;
+            net.broadcast(&Self::msg_for(&live.session, self_index, body))
+                .map_err(|e| format!("broadcast: {e:?}"))?;
+            return Ok(());
         }
         match policy.verify(&live.duty, proposal) {
             ProposalVerdict::Accept => {
                 live.proposal = Some(proposal.to_vec());
                 live.acked = true;
                 let m = Self::msg_for(&live.session, self_index, SessionMsg::Ack);
-                let _ = net.broadcast(&m);
+                net.broadcast(&m).map_err(|e| format!("broadcast: {e:?}"))?;
                 let _ = apply(&mut live.session, &m); // count own ACK locally
                 report.acked += 1;
             }
             ProposalVerdict::Reject(reason) => {
                 live.nacked = true;
                 let m = Self::msg_for(&live.session, self_index, SessionMsg::Nack(reason));
-                let _ = net.broadcast(&m);
+                net.broadcast(&m).map_err(|e| format!("broadcast: {e:?}"))?;
                 let _ = apply(&mut live.session, &m);
                 report.nacked += 1;
             }
             // Silent: re-verified on the leader's next re-Propose (see the enum doc).
             ProposalVerdict::Abstain => {}
         }
+        Ok(())
     }
 
     // ---- 2) open sessions for ready duties ---------------------------------
@@ -451,7 +470,7 @@ where
         orch: &mut Orchestrator,
         net: &mut T,
         report: &mut StepReport,
-    ) {
+    ) -> Result<(), String> {
         let mut finished: Vec<[u8; 32]> = Vec::new();
         // At most one blocking signing round per step (see the Sign arm).
         let mut signed_this_step = false;
@@ -505,10 +524,10 @@ where
                                 self.self_index,
                                 SessionMsg::Propose(p),
                             );
-                            let _ = net.broadcast(&m);
+                            net.broadcast(&m).map_err(|e| format!("broadcast: {e:?}"))?;
                             report.proposed += 1;
                             let a = Self::msg_for(&live.session, self.self_index, SessionMsg::Ack);
-                            let _ = net.broadcast(&a);
+                            net.broadcast(&a).map_err(|e| format!("broadcast: {e:?}"))?;
                             if !live.acked {
                                 // The leader's own build passed its own policy by construction.
                                 live.acked = true;
@@ -560,7 +579,8 @@ where
                                                 self.self_index,
                                                 SessionMsg::Signature(sig.clone()),
                                             );
-                                            let _ = net.broadcast(&m);
+                                            net.broadcast(&m)
+                                                .map_err(|e| format!("broadcast: {e:?}"))?;
                                         }
                                         let _ = live.session.signature_ready(sig);
                                     }
@@ -580,12 +600,12 @@ where
                                 self.self_index,
                                 SessionMsg::Signature(sig),
                             );
-                            let _ = net.broadcast(&m);
+                            net.broadcast(&m).map_err(|e| format!("broadcast: {e:?}"))?;
                         }
                     }
                     let m =
                         Self::msg_for(&live.session, self.self_index, SessionMsg::DistributeAck);
-                    let _ = net.broadcast(&m);
+                    net.broadcast(&m).map_err(|e| format!("broadcast: {e:?}"))?;
                     if !live.dist_acked {
                         live.dist_acked = true;
                         let _ = apply(&mut live.session, &m);
@@ -668,6 +688,7 @@ where
         for sk in finished {
             self.live.remove(&sk);
         }
+        Ok(())
     }
 
     /// Reset per-attempt local state when the engine's attempt counter moved past ours
@@ -1035,6 +1056,37 @@ mod tests {
                 let node = &mut nodes[i];
                 node.coord.step(&mut node.orch, &mut node.net);
             }
+        }
+    }
+
+    #[test]
+    fn transport_failure_stops_tick_without_signing_or_completion() {
+        struct Broken {
+            poll_error: bool,
+        }
+        impl SessionTransport for Broken {
+            fn broadcast(&mut self, _: &WireMsg) -> Result<(), crate::wire::MeshError> {
+                Err(crate::wire::MeshError::Io("injected send failure".into()))
+            }
+            fn send_to(&mut self, _: u16, m: &WireMsg) -> Result<(), crate::wire::MeshError> {
+                self.broadcast(m)
+            }
+            fn poll(&mut self) -> Result<Option<WireMsg>, crate::wire::MeshError> {
+                if self.poll_error {
+                    Err(crate::wire::MeshError::Io("injected poll failure".into()))
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+        for poll_error in [true, false] {
+            let bus = Bus::new(1);
+            let mut node = make_node(1, 1, 0, &bus);
+            node.orch.observe(Duty::Mint(mint_ev(1000)));
+            let report = node.coord.step(&mut node.orch, &mut Broken { poll_error });
+            assert!(report.transport_error.is_some());
+            assert_eq!(report.signed, 0);
+            assert!(node.completions.borrow().is_empty());
         }
     }
 

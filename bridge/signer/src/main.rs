@@ -536,20 +536,8 @@ fn secure_share_dir(dir: &str) -> Result<(), String> {
 
 #[cfg(feature = "live-dkg")]
 fn secure_share_write(path: &str, bytes: &[u8]) -> Result<(), String> {
-    use std::io::Write;
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)
-        .map_err(|e| format!("open {path}: {e}"))?;
-    file.set_permissions(std::fs::Permissions::from_mode(0o600))
-        .map_err(|e| format!("chmod {path}: {e}"))?;
-    file.write_all(bytes)
-        .map_err(|e| format!("write {path}: {e}"))?;
-    file.sync_all().map_err(|e| format!("fsync {path}: {e}"))
+    beldex_bridge_signer::share_store::atomic_private_write(std::path::Path::new(path), bytes)
+        .map_err(|e| format!("atomic share write {path}: {e}"))
 }
 
 /// `sign` subcommand: load this node's persisted share material and run the signing
@@ -880,6 +868,7 @@ fn run_sign(_cfg: &Config) -> Result<(), String> {
 fn validate_evm_deployments(
     configs: &[beldex_bridge_signer::evm_watcher::EvmChainConfig],
 ) -> Result<(), String> {
+    validate_implementation_pins(configs)?;
     let global_backing: u128 = std::env::var("BRIDGE_SIGNER_GLOBAL_BOND_BACKING")
         .map_err(|_| {
             "set BRIDGE_SIGNER_GLOBAL_BOND_BACKING to the native backing allocated across all EVM deployments"
@@ -900,6 +889,26 @@ fn validate_evm_deployments(
     }
     for chain in configs {
         chain.validate_contract()?;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "evm-watcher-http")]
+fn validate_implementation_pins(
+    configs: &[beldex_bridge_signer::evm_watcher::EvmChainConfig],
+) -> Result<(), String> {
+    let raw=std::env::var("BRIDGE_SIGNER_IMPLEMENTATION_MANIFEST")
+        .map_err(|_|"set BRIDGE_SIGNER_IMPLEMENTATION_MANIFEST to reviewed proxy/implementation code-hash approvals")?;
+    let manifest: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("implementation manifest: {e}"))?;
+    for config in configs {
+        let rpc = beldex_bridge_signer::evm_watcher::HttpJsonRpc::new(config.rpc_url.clone());
+        beldex_bridge_signer::implementation_pin::verify(
+            &rpc,
+            config.chain_id,
+            config.contract,
+            &manifest,
+        )?;
     }
     Ok(())
 }
@@ -1489,6 +1498,7 @@ fn run_relay_watch_standalone() -> Result<(), String> {
         // Replay the disk queue even when the bus is silent or restarted. Neither a
         // relay exit status nor a returned transaction hash deletes a pending record.
         if std::time::Instant::now() >= next_retry {
+            validate_implementation_pins(&configs)?;
             drain_mint_outbox(&outbox, Some(&cmd), None, &mut reconciler)?;
             next_retry = std::time::Instant::now() + Duration::from_secs(30);
         }
@@ -2960,6 +2970,7 @@ where
     let committee_client =
         beldex_bridge_signer::omq_client::OmqCommitteeClient::new(cfg.oxenmq_endpoint.clone());
     loop {
+        validate_implementation_pins(&configs)?;
         // A long-lived signer must never continue under a committee snapshot that
         // consensus has replaced. Hot-swapping shares and sockets mid-session is
         // unsafe; fail closed and let the supervisor restart against the already
@@ -3050,7 +3061,11 @@ where
                     .filter_map(|w| w.durable_finality_anchor().map(|a| (w.chain().0, a))),
             )?;
         }
+        validate_implementation_pins(&configs)?;
         let rep = coord.step(orch, &mut net);
+        if let Some(error) = &rep.transport_error {
+            eprintln!("coordinator transport failure; current attempts stopped: {error}");
+        }
         if rep != Default::default() {
             let (pending, in_flight, done) = orch.counts();
             println!(

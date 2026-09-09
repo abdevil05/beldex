@@ -1,5 +1,28 @@
 # beldex-bridge-signer
 
+## Additional medium-priority fixes
+
+- CGGMP21 keygen/aux/signing now return send/poll errors. Coordinator transport errors
+  stop the tick, trigger the session retry/abort path and appear in `StepReport` and live logs.
+- Share writes use a private temporary file, fsync, atomic rename and directory fsync.
+  The immediate parent must be a real private directory (0700); symlink destinations
+  are refused. This protects one file, not an entire multi-file ceremony. It does not
+  supply hardware custody, comprehensive zeroization or backup/rollback safety.
+- Startup and live payment/relay processing require approved implementation code pins:
+  see [implementation pinning](../docs/IMPLEMENTATION_PINNING.md). Existing deployments
+  must provide the reviewed manifest before restarting affected services.
+
+## Blocking RPC deadline fix
+
+Native/EVM watchers, native settlement reconciliation and the live gateway backend now
+share bounded HTTP calls: 5 seconds to connect, 10-second read/write limits, and a
+15-second overall request budget including the response body. Expiration returns an
+error/unknown settlement; it never grants permission to finalize a duty. These are
+per-request bounds, not a deadline for a whole scan or ceremony. Circuit breakers and
+endpoint-health/quorum metrics remain additional work.
+
+Regression tests: `cargo test --locked --all-features --lib http_deadline::tests`.
+
 ## Standalone mint-relay recovery changes
 
 `relay-watch` now requires a build with `--features serve-live` for durable outbox and
