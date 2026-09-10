@@ -141,3 +141,7 @@ ureq                 = { version = "2", default-features = false, features = ["t
 rand         = "0.8"
 rand_core    = "0.6"
 hex          = "0.4"
+
+[patch.crates-io]
+# Require system ZeroMQ; the encrypted-socket regression checks CURVE support.
+zmq-sys = { path = "vendor/zmq-sys" }

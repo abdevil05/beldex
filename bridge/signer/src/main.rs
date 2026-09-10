@@ -79,8 +79,14 @@ fn print_status(cfg: &Config) {
     println!("  OxenMQ      : {}", cfg.oxenmq_endpoint);
     println!("  gateway     : {}", hex(&cfg.gateway_id));
     println!("  self MN     : {}", hex(&cfg.self_mn_pubkey));
-    println!("  epoch blocks: {}", cfg.bridge_epoch_blocks);
-    println!("  threshold   : {}", cfg.committee_threshold);
+    println!("  live committee/threshold source: beldexd bridge.committee (consensus)");
+    println!("  live epoch source: native consensus; no static override");
+    if cfg.bridge_epoch_blocks.is_some() || cfg.committee_threshold.is_some() {
+        println!(
+            "  deprecated static epoch/threshold inputs ignored: {:?}/{:?}",
+            cfg.bridge_epoch_blocks, cfg.committee_threshold
+        );
+    }
     println!("  share store : {:?}", cfg.share_store);
     if cfg!(feature = "live-dkg") {
         println!("subcommands:");

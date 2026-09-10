@@ -247,6 +247,43 @@ TYPED_TEST(BlockchainDBTest, OpenAndClose)
   ASSERT_NO_THROW(this->m_db->close());
 }
 
+TYPED_TEST(BlockchainDBTest, ReadOnlyLegacyGatewayIndexFailsClosed)
+{
+  const auto dir = random_tmp_file();
+  this->set_prefix(dir.string());
+  ASSERT_NO_THROW(this->m_db->open(dir, cryptonote::FAKECHAIN));
+  this->get_filenames();
+  ASSERT_NO_THROW(this->m_db->close());
+
+  // Remove only the table in this newly-created disposable fixture, modelling
+  // a legacy schema. No existing node database is opened by this test.
+  MDB_env* env = nullptr;
+  MDB_txn* txn = nullptr;
+  MDB_dbi refs;
+  ASSERT_EQ(mdb_env_create(&env), MDB_SUCCESS);
+  ASSERT_EQ(mdb_env_set_maxdbs(env, 64), MDB_SUCCESS);
+  ASSERT_EQ(mdb_env_open(env, dir.string().c_str(), 0, 0600), MDB_SUCCESS);
+  ASSERT_EQ(mdb_txn_begin(env, nullptr, 0, &txn), MDB_SUCCESS);
+  ASSERT_EQ(mdb_dbi_open(txn, "gateway_release_refs", 0, &refs), MDB_SUCCESS);
+  ASSERT_EQ(mdb_drop(txn, refs, 1), MDB_SUCCESS);
+  ASSERT_EQ(mdb_txn_commit(txn), MDB_SUCCESS);
+  mdb_env_close(env);
+
+  ASSERT_NO_THROW(this->m_db->open(dir, cryptonote::FAKECHAIN, DBF_RDONLY));
+  EXPECT_EQ(this->m_db->height(), 0);
+  EXPECT_THROW(this->m_db->has_gateway_release_ref(crypto::public_key{}, crypto::hash{}), DB_ERROR);
+  EXPECT_THROW(this->m_db->get_gateway_release_ref_height(crypto::public_key{}, crypto::hash{}), DB_ERROR);
+  ASSERT_NO_THROW(this->m_db->close());
+
+  // Existing writable initialization creates the empty table. This fixture has
+  // no historical releases; this is explicitly NOT a historical backfill test.
+  ASSERT_NO_THROW(this->m_db->open(dir, cryptonote::FAKECHAIN));
+  ASSERT_NO_THROW(this->m_db->close());
+  ASSERT_NO_THROW(this->m_db->open(dir, cryptonote::FAKECHAIN, DBF_RDONLY));
+  EXPECT_FALSE(this->m_db->has_gateway_release_ref(crypto::public_key{}, crypto::hash{}));
+  ASSERT_NO_THROW(this->m_db->close());
+}
+
 TYPED_TEST(BlockchainDBTest, AddBlock)
 {
 

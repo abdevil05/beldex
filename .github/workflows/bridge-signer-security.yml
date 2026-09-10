@@ -1,0 +1,20 @@
+name: Bridge signer security regressions
+on:
+  push:
+    paths: ['bridge/signer/**', 'utils/local-devnet/**', '.github/workflows/bridge-signer-security.yml']
+  pull_request:
+    paths: ['bridge/signer/**', 'utils/local-devnet/**', '.github/workflows/bridge-signer-security.yml']
+permissions:
+  contents: read
+jobs:
+  signer-security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config cmake libzmq3-dev libsodium-dev
+      - name: Install reviewed compiler
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup override set 1.97.1
+      - name: Run security subset including real sockets and MPC
+        run: bash utils/local-devnet/signer-security-tests.sh

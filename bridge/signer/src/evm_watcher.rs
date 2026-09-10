@@ -687,6 +687,24 @@ pub fn parse_evm_chains(json: &str) -> Result<Vec<EvmChainConfig>, String> {
     let mut out = Vec::with_capacity(arr.len());
     for (i, row) in arr.iter().enumerate() {
         let miss = |f: &str| format!("chain[{i}]: missing/invalid `{f}`");
+        let object = row.as_object().ok_or_else(|| miss("object"))?;
+        for key in object.keys() {
+            if ![
+                "chain_id",
+                "contract",
+                "key_epoch",
+                "confirmations",
+                "finality",
+                "rpc",
+                "per_tx_max",
+                "per_epoch_cap",
+                "start_block",
+            ]
+            .contains(&key.as_str())
+            {
+                return Err(format!("chain[{i}]: unknown field `{key}`"));
+            }
+        }
 
         let chain_id = row
             .get("chain_id")
@@ -711,11 +729,11 @@ pub fn parse_evm_chains(json: &str) -> Result<Vec<EvmChainConfig>, String> {
             .get("confirmations")
             .and_then(Value::as_u64)
             .ok_or_else(|| miss("confirmations"))?;
-        let finality = match row
-            .get("finality")
-            .and_then(Value::as_str)
-            .unwrap_or("confirmations")
-        {
+        let finality = match row.get("finality") {
+            None => "confirmations",
+            Some(value) => value.as_str().ok_or_else(|| miss("finality"))?,
+        };
+        let finality = match finality {
             "confirmations" => EvmFinality::Confirmations,
             "safe" => EvmFinality::Safe,
             "finalized" => EvmFinality::Finalized,
@@ -733,7 +751,10 @@ pub fn parse_evm_chains(json: &str) -> Result<Vec<EvmChainConfig>, String> {
         let per_tx_max = value_to_u128(row.get("per_tx_max")).ok_or_else(|| miss("per_tx_max"))?;
         let per_epoch_cap =
             value_to_u128(row.get("per_epoch_cap")).ok_or_else(|| miss("per_epoch_cap"))?;
-        let start_block = row.get("start_block").and_then(Value::as_u64).unwrap_or(0);
+        let start_block = match row.get("start_block") {
+            None => 0,
+            Some(value) => value.as_u64().ok_or_else(|| miss("start_block"))?,
+        };
         if chain_id == 0
             || confirmations == 0
             || rpc_url.trim().is_empty()
@@ -1219,6 +1240,28 @@ mod tests {
         ]"#;
         let cfgs = parse_evm_chains(dup).unwrap();
         assert!(build_registry(&cfgs).is_err());
+    }
+
+    #[test]
+    fn config_rejects_typos_and_invalid_optional_values() {
+        let base = serde_json::json!([{"chain_id":1,"contract":"22".repeat(20),
+            "key_epoch":1,"confirmations":12,"rpc":"http://localhost",
+            "per_tx_max":1,"per_epoch_cap":10}]);
+        assert!(parse_evm_chains(&base.to_string()).is_ok());
+        for (field, value) in [
+            ("finalty", serde_json::json!("finalized")),
+            ("finality", Value::Null),
+            ("finality", serde_json::json!(12)),
+            ("start_block", serde_json::json!(-1)),
+            ("start_block", serde_json::json!("100")),
+        ] {
+            let mut bad = base.clone();
+            bad[0][field] = value;
+            assert!(parse_evm_chains(&bad.to_string())
+                .unwrap_err()
+                .contains(field));
+        }
+        assert!(parse_evm_chains("[null]").is_err());
     }
 
     #[test]

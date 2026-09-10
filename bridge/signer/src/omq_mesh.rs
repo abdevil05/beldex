@@ -346,16 +346,13 @@ mod tests {
         exchange(&mut ta, &mut tb);
     }
 
-    // Curve-authenticated — the production path. Skips (does not fail) if the
-    // linked libzmq was built without CURVE support.
+    // Curve-authenticated path. A security acceptance run must fail, not skip,
+    // if the linked libzmq lacks CURVE support.
     //   cargo test -p beldex-bridge-signer --features omq-mesh -- --ignored two_node_curve
     #[test]
     #[ignore = "binds real ZMQ sockets on localhost; needs libzmq+libsodium"]
     fn two_node_curve_roundtrip() {
-        if zmq::CurveKeyPair::new().is_err() {
-            eprintln!("SKIP: linked libzmq has no CURVE support (rebuild libzmq with libsodium)");
-            return;
-        }
+        zmq::CurveKeyPair::new().expect("security acceptance requires libzmq CURVE support");
         let (mut ta, mut tb) = pair(55820, 55821, true);
         exchange(&mut ta, &mut tb);
     }

@@ -902,6 +902,18 @@ TEST(GatewayBridgeMessages, domain_separation)
 // --------------------------------------------------------------------------
 // A.1/A.2 governance evidence: supermajority verification against a mock quorum.
 // --------------------------------------------------------------------------
+TEST(GatewayBridgeRotation, unsupported_versions_rejected_before_evidence)
+{
+  for (uint8_t version : {uint8_t{0}, uint8_t{2}, uint8_t{255}})
+  {
+    tx_extra_bridge_rotation_ack ack{};
+    ack.version = version;
+    std::string reason;
+    EXPECT_FALSE(verify_bridge_rotation_evidence(ack, {}, 1, FAKECHAIN, reason));
+    EXPECT_EQ(reason, "rotation ack: unsupported version");
+  }
+}
+
 TEST(GatewayBridgeEvidence, supermajority_rules)
 {
   // Synthetic checkpoint quorum of N members.

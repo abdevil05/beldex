@@ -360,3 +360,20 @@ consensus verifier) accepts it against the gateway `owner_key`.
 
 [LFDT-Lockness/cggmp21]: https://github.com/LFDT-Lockness/cggmp21
 [ZcashFoundation/frost]: https://github.com/ZcashFoundation/frost
+# Low-priority security corrections
+
+EVM chain JSON rejects unknown keys and malformed optional `finality`/`start_block`
+values. Legacy static epoch/threshold inputs are optional and ignored for live
+consensus: effective membership and threshold come from `beldexd bridge.committee`.
+
+Socket-enabled builds now require system ZeroMQ development files and pkg-config.
+The small vendored `zmq-sys` build patch avoids a bundled build without CURVE.
+Run `bash utils/local-devnet/signer-security-tests.sh` from the repository root:
+the selected security suite includes real plain/CURVE sockets and real CGGMP21
+keygen/signing, and fails instead of skipping if CURVE is unavailable. The same
+subset runs in the new signer CI workflow; branch protection must be configured
+by the repository administrator. These tests do not establish live-chain finality.
+
+See [storage lifecycle](../../utils/local-devnet/STORAGE_LIFECYCLE.md) for inventory,
+capacity forecasts and offline, recoverable archival of finalized outbox records.
+Pending duties and permanent replay records must not be removed.

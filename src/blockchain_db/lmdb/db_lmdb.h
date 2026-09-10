@@ -501,7 +501,8 @@ private:
 
   MDB_dbi m_gateway_accounts; // HF22: gateway_addr -> serialized gateway_account_data
   MDB_dbi m_gateway_tx_history; // HF22: gateway_addr -> (height||tx_hash) entries (DUPSORT)
-  MDB_dbi m_gateway_release_refs; // HF23: (gateway_addr||release_ref) -> present
+  MDB_dbi m_gateway_release_refs{}; // HF23: (gateway_addr||release_ref) -> present
+  bool m_gateway_release_refs_available = false;
 
   MDB_dbi m_properties;
 

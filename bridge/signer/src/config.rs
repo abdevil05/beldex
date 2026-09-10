@@ -27,10 +27,10 @@ pub struct Config {
     pub gateway_id: [u8; 32],
     /// This operator's masternode pubkey (its committee identity).
     pub self_mn_pubkey: [u8; 32],
-    /// Bridge epoch length in blocks (must match consensus `BRIDGE_EPOCH_BLOCKS`).
-    pub bridge_epoch_blocks: u64,
-    /// Signing threshold `t + 1` (must match consensus `BRIDGE_COMMITTEE_THRESHOLD`).
-    pub committee_threshold: usize,
+    /// Deprecated compatibility input; never controls live consensus epochs.
+    pub bridge_epoch_blocks: Option<u64>,
+    /// Deprecated compatibility input; live threshold comes from bridge.committee.
+    pub committee_threshold: Option<usize>,
     /// Share-custody backend.
     pub share_store: ShareStoreBackend,
 }
@@ -125,17 +125,21 @@ impl Config {
         let self_mn_pubkey =
             parse_hex32(req("self_mn_pubkey")?).ok_or(ConfigError::BadHex("self_mn_pubkey"))?;
 
-        let bridge_epoch_blocks = req("bridge_epoch_blocks")?
-            .parse::<u64>()
+        let bridge_epoch_blocks = m
+            .get("bridge_epoch_blocks")
+            .map(|v| v.parse::<u64>())
+            .transpose()
             .map_err(|_| ConfigError::OutOfRange("bridge_epoch_blocks"))?;
-        if bridge_epoch_blocks == 0 {
+        if bridge_epoch_blocks == Some(0) {
             return Err(ConfigError::OutOfRange("bridge_epoch_blocks"));
         }
 
-        let committee_threshold = req("committee_threshold")?
-            .parse::<usize>()
+        let committee_threshold = m
+            .get("committee_threshold")
+            .map(|v| v.parse::<usize>())
+            .transpose()
             .map_err(|_| ConfigError::OutOfRange("committee_threshold"))?;
-        if committee_threshold == 0 {
+        if committee_threshold == Some(0) {
             return Err(ConfigError::OutOfRange("committee_threshold"));
         }
 
@@ -179,8 +183,8 @@ mod tests {
     #[test]
     fn parses_a_valid_config() {
         let cfg = Config::from_map(&base_map()).expect("valid config");
-        assert_eq!(cfg.bridge_epoch_blocks, 2880);
-        assert_eq!(cfg.committee_threshold, 14);
+        assert_eq!(cfg.bridge_epoch_blocks, Some(2880));
+        assert_eq!(cfg.committee_threshold, Some(14));
         assert_eq!(cfg.gateway_id, [0x11u8; 32]);
         assert_eq!(cfg.self_mn_pubkey, [0xabu8; 32]);
         assert_eq!(cfg.share_store, ShareStoreBackend::Memory); // default
@@ -226,6 +230,16 @@ mod tests {
             Config::from_map(&m),
             Err(ConfigError::OutOfRange("committee_threshold"))
         );
+    }
+
+    #[test]
+    fn consensus_values_are_not_required_static_configuration() {
+        let mut m = base_map();
+        m.remove("bridge_epoch_blocks");
+        m.remove("committee_threshold");
+        let cfg = Config::from_map(&m).unwrap();
+        assert_eq!(cfg.bridge_epoch_blocks, None);
+        assert_eq!(cfg.committee_threshold, None);
     }
 
     #[test]

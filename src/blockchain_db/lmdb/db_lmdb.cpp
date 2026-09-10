@@ -1542,8 +1542,22 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
   // the big-endian height prefix, i.e. chronologically.
   lmdb_db_open(txn, LMDB_GATEWAY_TX_HISTORY, MDB_CREATE | MDB_DUPSORT | MDB_DUPFIXED, m_gateway_tx_history, "Failed to open db handle for m_gateway_tx_history");
 
-  lmdb_db_open(txn, LMDB_GATEWAY_RELEASE_REFS, MDB_CREATE, m_gateway_release_refs,
-               "Failed to open db handle for m_gateway_release_refs");
+  // Read-only legacy inspection must neither create tables nor interpret an
+  // absent replay index as an empty one. Queries below fail explicitly if absent.
+  m_gateway_release_refs_available = false;
+  if (mdb_flags & MDB_RDONLY)
+  {
+    const int result = mdb_dbi_open(txn, LMDB_GATEWAY_RELEASE_REFS, 0, &m_gateway_release_refs);
+    if (result != MDB_SUCCESS && result != MDB_NOTFOUND)
+      throw0(DB_ERROR(lmdb_error("Failed to open gateway release refs read-only: ", result)));
+    m_gateway_release_refs_available = result == MDB_SUCCESS;
+  }
+  else
+  {
+    lmdb_db_open(txn, LMDB_GATEWAY_RELEASE_REFS, MDB_CREATE, m_gateway_release_refs,
+                 "Failed to open db handle for m_gateway_release_refs");
+    m_gateway_release_refs_available = true;
+  }
 
   lmdb_db_open(txn, LMDB_PROPERTIES, MDB_CREATE, m_properties, "Failed to open db handle for m_properties");
 
@@ -6597,6 +6611,8 @@ bool BlockchainLMDB::has_gateway_release_ref(
     const crypto::public_key& gateway_addr, const crypto::hash& ref) const
 {
   check_open();
+  if (!m_gateway_release_refs_available)
+    throw0(DB_ERROR("Gateway replay index unavailable in legacy read-only database; requires approved writable initialization/backfill"));
   TXN_PREFIX_RDONLY();
   auto key_bytes = gateway_release_ref_key(gateway_addr, ref);
   MDB_val key{key_bytes.size(), key_bytes.data()};
@@ -6613,6 +6629,8 @@ uint64_t BlockchainLMDB::get_gateway_release_ref_height(
     const crypto::public_key& gateway_addr, const crypto::hash& ref) const
 {
   check_open();
+  if (!m_gateway_release_refs_available)
+    throw0(DB_ERROR("Gateway replay index unavailable in legacy read-only database; requires approved writable initialization/backfill"));
   TXN_PREFIX_RDONLY();
   auto key_bytes = gateway_release_ref_key(gateway_addr, ref);
   MDB_val key{key_bytes.size(), key_bytes.data()};
