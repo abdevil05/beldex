@@ -200,6 +200,35 @@ impl HttpGatewayRpc {
             "address": expected_recipient,
         });
         let r = self.call("gateway_decode_withdrawal", params)?;
+        // This identity is decoded by our daemon from the blob. Never fall back to
+        // proposal metadata, including when talking to an older daemon.
+        if r.get("release_ref_count").and_then(|v| v.as_u64()) != Some(1) {
+            return Err(
+                "decode: require exactly one release reference (update daemon if count is missing)"
+                    .into(),
+            );
+        }
+        let reference = r.get("release_ref").ok_or("decode: missing release_ref")?;
+        if reference.get("version").and_then(|v| v.as_u64()) != Some(0) {
+            return Err("decode: missing or unsupported release reference version".into());
+        }
+        let release_ref = crate::release_policy::ReleaseRef {
+            chain_id: reference
+                .get("chain_id")
+                .and_then(|v| v.as_u64())
+                .ok_or("decode: invalid release reference chain_id")?,
+            evm_txid: hex32(
+                reference
+                    .get("evm_txid")
+                    .and_then(|v| v.as_str())
+                    .ok_or("decode: invalid release reference evm_txid")?,
+            )?,
+            log_index: reference
+                .get("log_index")
+                .and_then(|v| v.as_u64())
+                .and_then(|v| u32::try_from(v).ok())
+                .ok_or("decode: invalid release reference log_index")?,
+        };
         let get_str = |k: &str| r.get(k).and_then(|v| v.as_str()).map(String::from);
         let get_u64 = |k: &str| r.get(k).and_then(|v| v.as_u64());
 
@@ -224,6 +253,7 @@ impl HttpGatewayRpc {
         let fee = get_u64("fee").ok_or("decode: missing fee")?;
         let hash_to_sign = hex32(&get_str("hash_to_sign").ok_or("decode: missing hash_to_sign")?)?;
         Ok(crate::release_policy::ReleaseTxView {
+            release_ref,
             source_gateway,
             dest,
             amount,

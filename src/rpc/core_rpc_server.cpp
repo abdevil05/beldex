@@ -4117,8 +4117,12 @@ namespace cryptonote::rpc {
     // Any carried release replay-guard ref (HF23) — the R1/R6 fields.
     {
       const auto refs = cryptonote::extract_gateway_release_refs(tx);
+      // Report cardinality explicitly: exposing only refs.front() would hide a
+      // duplicate reference from the signing policy. Both fields come from the blob.
+      cmd.response["release_ref_count"] = refs.size();
       if (!refs.empty())
         cmd.response["release_ref"] = json{
+            {"version", refs.front().version},
             {"chain_id", refs.front().chain_id},
             {"evm_txid", tools::type_to_hex(refs.front().evm_txid)},
             {"log_index", refs.front().log_index},

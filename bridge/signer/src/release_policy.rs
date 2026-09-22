@@ -21,9 +21,9 @@
 //!   from the leader.
 //! * **R6 — release ref.** The proposal's burn tuple is what the L1 replay guard will record
 //!   (`tx_extra_gateway_release_ref` carries the raw tuple; the ref hash is derived on-chain),
-//!   so a signature can never discharge a *different* burn than the one verified. With the
-//!   tuple carried raw, R6 is the same equality as R1 — kept separate in the docs because it
-//!   guards a different property (replay binding, not provenance).
+//!   so a signature can never discharge a *different* burn than the one verified. R6 must
+//!   compare the reference decoded from the transaction blob, not merely the separate
+//!   proposal envelope checked by R1.
 //!
 //! An inspection failure (member's own RPC down) is an [`ProposalVerdict::Abstain`] — never a
 //! NACK: the member cannot distinguish a bad proposal from its own outage, and an honest
@@ -119,11 +119,20 @@ impl ReleaseProposal {
 // The inspection view (the member's own daemon's reading of the blob)
 // ============================================================================
 
-/// What a member's **own** daemon says the proposed blob actually does. Produced by the
-/// injected inspector (`gateway_decode_withdrawal`-style RPC / a local parser), never by the
-/// leader.
+/// Burn identity extracted from the transaction by the member's own inspector.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseRef {
+    pub chain_id: u64,
+    pub evm_txid: [u8; 32],
+    pub log_index: u32,
+}
+
+/// Independently decoded transaction semantics. The inspector must require exactly
+/// one supported-version release reference in the transaction blob.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReleaseTxView {
+    /// Burn identity decoded from the blob, never copied from proposal metadata.
+    pub release_ref: ReleaseRef,
     /// The gateway the tx spends from.
     pub source_gateway: String,
     /// The single wallet destination the tx pays.
@@ -161,7 +170,7 @@ where
     /// Leader only: build the withdrawal for a burn (side-effectful — talks to the daemon).
     pub build_tx: Build,
     /// Member: this node's own reading of a proposed withdrawal — `(proposal,
-    /// expected_recipient)` → the verified view (R2/R3/R4/R5 ground truth). The live
+    /// expected_recipient)` → the verified view (R2–R6 ground truth). The live
     /// implementation calls the member's own daemon's `gateway_decode_withdrawal` with the
     /// proposal's blob + disclosed `tx_key` + the expected recipient address.
     pub inspect: Inspect,
@@ -183,9 +192,7 @@ where
         use ProposalVerdict::{Abstain, Accept, Reject};
         let reject = Reject(NackReason::PayloadMismatch);
 
-        // R1 / R6: the proposal names exactly the burn this session is for (provenance), and
-        // — because the raw tuple is what the L1 replay guard records — exactly the burn the
-        // signature will discharge (replay binding).
+        // R1: the envelope names the observed burn. R6 separately binds the blob below.
         if p.chain_id != ev.chain.0 || p.evm_txid != ev.evm_txid || p.log_index != ev.log_index {
             return reject;
         }
@@ -202,6 +209,14 @@ where
             Err(_) => return Abstain,
         };
 
+        // R6: consensus records the reference INSIDE the signed transaction. A leader
+        // can keep the envelope honest while substituting another reference in the blob.
+        if view.release_ref.chain_id != ev.chain.0
+            || view.release_ref.evm_txid != ev.evm_txid
+            || view.release_ref.log_index != ev.log_index
+        {
+            return reject;
+        }
         // R5: the proposed hash is the gateway_input_message of *this* blob.
         if view.hash_to_sign != p.hash_to_sign {
             return reject;
@@ -339,6 +354,7 @@ mod tests {
     // ---- a toy withdrawal format the mock daemon builds + inspects ----------
     //
     // blob = [src_len u8][src][dest_len u8][dest][amount u128 le][fee u64 le]
+    //        [chain u64 le][evm_txid 32B][log_index u32 le]
     // hash_to_sign = sha256(blob)  (stands in for gateway_input_message)
 
     fn toy_blob(src: &str, dest: &[u8], amount: u128, fee: u64) -> Vec<u8> {
@@ -349,6 +365,9 @@ mod tests {
         b.extend_from_slice(dest);
         b.extend_from_slice(&amount.to_le_bytes());
         b.extend_from_slice(&fee.to_le_bytes());
+        b.extend_from_slice(&1u64.to_le_bytes());
+        b.extend_from_slice(&[0x77; 32]);
+        b.extend_from_slice(&0u32.to_le_bytes());
         b
     }
 
@@ -372,7 +391,17 @@ mod tests {
         );
         at += 16;
         let fee = u64::from_le_bytes(blob.get(at..at + 8).ok_or("truncated")?.try_into().unwrap());
+        at += 8;
+        let reference = blob.get(at..at + 44).ok_or("missing release reference")?;
+        if blob.len() != at + 44 {
+            return Err("unexpected trailing reference bytes".into());
+        }
         Ok(ReleaseTxView {
+            release_ref: ReleaseRef {
+                chain_id: u64::from_le_bytes(reference[..8].try_into().unwrap()),
+                evm_txid: reference[8..40].try_into().unwrap(),
+                log_index: u32::from_le_bytes(reference[40..].try_into().unwrap()),
+            },
             source_gateway: String::from_utf8_lossy(src).into_owned(),
             dest: dest.to_vec(),
             amount,
@@ -555,6 +584,33 @@ mod tests {
                 "R4 per-tx cap"
             );
         }
+    }
+
+    #[test]
+    fn substituted_blob_reference_is_rejected_even_with_honest_envelope_and_hash() {
+        let ev = burn(1000);
+        for offset in [0, 8, 40] {
+            let mut p = proposal_for(&ev);
+            let at = p.unsigned_tx_blob.len() - 44 + offset;
+            p.unsigned_tx_blob[at] ^= 1; // chain, txid, or log index in the blob only
+            p.hash_to_sign = sha256(&p.unsigned_tx_blob); // R5 still holds
+            assert_eq!(
+                policy().verify(&Duty::Release(ev.clone()), &p.encode()),
+                ProposalVerdict::Reject(NackReason::PayloadMismatch)
+            );
+        }
+    }
+
+    #[test]
+    fn missing_blob_reference_cannot_be_signed() {
+        let ev = burn(1000);
+        let mut p = proposal_for(&ev);
+        p.unsigned_tx_blob.truncate(p.unsigned_tx_blob.len() - 44);
+        p.hash_to_sign = sha256(&p.unsigned_tx_blob);
+        assert_eq!(
+            policy().verify(&Duty::Release(ev), &p.encode()),
+            ProposalVerdict::Abstain
+        );
     }
 
     #[test]

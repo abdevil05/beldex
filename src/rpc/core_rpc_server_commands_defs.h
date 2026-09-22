@@ -2825,7 +2825,9 @@ namespace cryptonote::rpc {
   ///
   /// Output:
   /// - `source_gateway_id`, `total_debit`, `fee`, `hash_to_sign`, `to_wallet`.
-  /// - `release_ref` -- {chain_id, evm_txid, log_index} if carried.
+  /// - `release_ref_count` -- number of references decoded from the transaction.
+  /// - `release_ref` -- {version, chain_id, evm_txid, log_index} for the first, if carried.
+  ///   Bridge signers must require count == 1 and version == 0 before signing.
   /// - `dest_all_outputs_match` -- every stealth output pays `address` (iff tx_key+address given).
   /// - `dest_amount` -- Σ decoded amounts paid to `address`.
   /// - `status` -- Generic RPC error code. "OK" is the success value.

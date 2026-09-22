@@ -377,3 +377,30 @@ by the repository administrator. These tests do not establish live-chain finalit
 See [storage lifecycle](../../utils/local-devnet/STORAGE_LIFECYCLE.md) for inventory,
 capacity forecasts and offline, recoverable archival of finalized outbox records.
 Pending duties and permanent replay records must not be removed.
+
+### Release-reference verification upgrade
+
+The signer requires `gateway_decode_withdrawal` to return `release_ref_count` and
+`release_ref.version` in addition to the decoded chain ID, EVM transaction hash
+and log index. Exactly one version-0 reference must be present in the transaction.
+The signer compares that independently decoded identity with the finalized burn
+before approving the proposal. Proposal-envelope metadata is never a fallback.
+
+Update/rebuild the native daemon before updating the signer. Older daemon replies
+lack the required fields and the updated signer abstains from release signing.
+Deploy the signer correction to all committee members before resuming releases;
+unpatched members retain the old admission behavior. This RPC extension does not
+change consensus serialization or the EVM contract.
+
+Before resuming, review pending signed release outboxes against the original burn
+identities: this admission fix does not revoke signatures produced by old code or
+retroactively validate historical payouts. Preserve evidence and replay state.
+
+Regression checks (the integration test uses a local mock RPC, not a live chain):
+
+```sh
+cargo test --locked --all-features --lib release_policy::tests
+cargo test --locked --all-features --test release_reference_validation
+```
+
+The mandatory `utils/local-devnet/signer-security-tests.sh` subset includes both.
