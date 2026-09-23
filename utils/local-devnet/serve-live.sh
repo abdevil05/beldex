@@ -70,7 +70,11 @@ else
   echo "!! could not fetch the genesis hash — live mode refuses an unbound network domain" >&2
   exit 1
 fi
-RELEASE_FEE="${RELEASE_FEE:-100000000}"
+# The contract is the fee source. An explicit legacy override is only an assertion.
+FEE_ENV=()
+if [ -n "${RELEASE_FEE:-}" ]; then
+  FEE_ENV+=("BRIDGE_SIGNER_RELEASE_FEE=$RELEASE_FEE" "BRIDGE_SIGNER_RELEASE_MAX_FEE=$RELEASE_FEE")
+fi
 # Mint hand-off: which node(s) auto-broadcast the signed mint payload, and with what.
 # Releases self-submit from every signer; MINTS need a gas key, which the signer never holds
 # — so a relayer command is piped the payload instead. Default: only committee index 0 does
@@ -282,8 +286,7 @@ for d in beldex-127.0.0.1-*/; do
   BRIDGE_SIGNER_EVM_CHAINS="$node_evm_chains" \
   BRIDGE_SIGNER_WATCH_POLL_SECS="$POLL_SECS" \
   BRIDGE_SIGNER_RELEASE_GATEWAY="$RELEASE_GATEWAY" \
-  BRIDGE_SIGNER_RELEASE_FEE="$RELEASE_FEE" \
-  BRIDGE_SIGNER_RELEASE_MAX_FEE="$RELEASE_FEE" \
+  env ${FEE_ENV[@]+"${FEE_ENV[@]}"} \
     "$SIGNER" serve > "serve-${d%/}.log" 2>&1 &
   PIDS+=("$!:${d%/}")
   started=$((started + 1))

@@ -2628,30 +2628,52 @@ where
         configs.iter().map(|c| (c.chain_id, c.contract)).collect();
     let release_gateway =
         std::env::var("BRIDGE_SIGNER_RELEASE_GATEWAY").unwrap_or_else(|_| gateway_id.to_string());
-    let release_fee: u64 = std::env::var("BRIDGE_SIGNER_RELEASE_FEE")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    let max_fee: u64 = std::env::var("BRIDGE_SIGNER_RELEASE_MAX_FEE")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(release_fee);
-    let per_tx_cap: u128 = std::env::var("BRIDGE_SIGNER_RELEASE_PER_TX_CAP")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(u128::MAX);
+    let optional_u64 = |name: &str| -> Result<Option<u64>, String> {
+        match std::env::var(name) {
+            Ok(value) => value
+                .parse()
+                .map(Some)
+                .map_err(|_| format!("invalid {name}")),
+            Err(std::env::VarError::NotPresent) => Ok(None),
+            Err(_) => Err(format!("invalid {name}")),
+        }
+    };
+    let configured_fee = optional_u64("BRIDGE_SIGNER_RELEASE_FEE")?;
+    let configured_max = optional_u64("BRIDGE_SIGNER_RELEASE_MAX_FEE")?;
+    let configured_cap = optional_u64("BRIDGE_SIGNER_RELEASE_PER_TX_CAP")?;
+    let mut release_fees = BTreeMap::new();
+    for chain in configs {
+        let fee = beldex_bridge_signer::redemption_limits::read_fee(
+            &HttpJsonRpc::new(chain.rpc_url.clone()),
+            &chain.contract,
+        )?;
+        beldex_bridge_signer::redemption_limits::validate_local(
+            fee,
+            configured_fee,
+            configured_max,
+            configured_cap,
+        )?;
+        release_fees.insert(chain.chain_id, fee);
+    }
+    let max_fee = release_fees.values().copied().max().unwrap_or(0);
+    let per_tx_cap = beldex_bridge_signer::redemption_limits::NATIVE_RELEASE_MAX;
 
     // Leader-side release build: gateway_create_transfer + the HF23 replay-guard ref +
     // the disclosed tx key (verifiers open the stealth outputs with it).
     let build_rpc = rpc.clone();
     let build_gw = release_gateway.clone();
+    let build_fees = release_fees.clone();
     let build_tx = move |ev: &ReleaseEvent| {
+        let release_fee = *build_fees
+            .get(&ev.chain.0)
+            .ok_or_else(|| BuildError::Unactionable("unknown release chain".into()))?;
         let recipient = String::from_utf8(ev.beldex_recipient.clone()).map_err(|_| {
             BuildError::Unactionable("burn recipient is not a utf-8 address".into())
         })?;
         let amount = ev
             .amount
             .checked_sub(u128::from(release_fee))
+            .filter(|amount| *amount > 0)
             .ok_or_else(|| BuildError::Unactionable("burn amount does not cover the fee".into()))?;
         build_rpc
             .borrow_mut()
@@ -2671,6 +2693,9 @@ where
     let insp_rpc = rpc.clone();
     let insp_gw = release_gateway.clone();
     let inspect = move |p: &ReleaseProposal, expected: &[u8]| {
+        if release_fees.get(&p.chain_id) != Some(&p.fee) {
+            return Err("proposal fee differs from fixed contract redemption fee".into());
+        }
         let addr = std::str::from_utf8(expected).map_err(|_| "recipient not utf-8".to_string())?;
         insp_rpc.borrow_mut().decode_withdrawal(p, addr, &insp_gw)
     };

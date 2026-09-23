@@ -404,3 +404,27 @@ cargo test --locked --all-features --test release_reference_validation
 ```
 
 The mandatory `utils/local-devnet/signer-security-tests.sh` subset includes both.
+
+
+### Contract-authoritative redemption fees (V4)
+
+Live coordination reads `redemptionFeeInitialized()` and `redemptionFee()` from
+one finalized canonical block of each configured proxy. It refuses missing,
+uninitialized or malformed contract policy. Each native payout uses that chain's
+fixed contract fee; members reject proposals with a different fee. Burns must
+leave a positive payout and debit at most 50,000 BDX including the fee.
+
+`BRIDGE_SIGNER_RELEASE_FEE`, if supplied, is now an assertion and must equal every
+configured contract's fee. `BRIDGE_SIGNER_RELEASE_MAX_FEE`, if supplied, must cover
+the contract fee. An explicit `BRIDGE_SIGNER_RELEASE_PER_TX_CAP` below the native
+50,000 BDX ceiling is rejected to prevent locally stranding future accepted burns.
+Malformed numeric overrides fail startup instead of silently using defaults.
+Omit the overrides to use each contract's policy. `serve-live.sh` no longer invents
+a default fee; an explicit `RELEASE_FEE` remains a compatibility assertion.
+
+Upgrade/configure the contracts, wait for finality, update reviewed implementation
+pins and deploy updated signers as a coordinated rollout. Legacy contracts need
+`initializeV4(fee)` and a minimum strictly greater than that fee. The fee is fixed
+for the deployment under this implementation; a fee change requires a reviewed
+upgrade that accounts for outstanding requests. Review previously accepted
+oversized/underfunded burns separately; this change cannot refund them.

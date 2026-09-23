@@ -71,6 +71,8 @@ pub mod health;
 pub mod http_deadline;
 #[cfg(feature = "evm-watcher")]
 pub mod implementation_pin;
+#[cfg(feature = "evm-watcher")]
+pub mod redemption_limits;
 pub mod session;
 pub mod share_store;
 pub mod transport;

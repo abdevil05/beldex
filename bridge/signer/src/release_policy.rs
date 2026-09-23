@@ -34,6 +34,9 @@ use crate::orchestrator::Duty;
 use crate::session::NackReason;
 use crate::watch::ReleaseEvent;
 
+/// Native consensus maximum debit, including the withdrawal fee.
+pub const NATIVE_RELEASE_MAX: u128 = 50_000_000_000_000;
+
 // ============================================================================
 // Proposal codec
 // ============================================================================
@@ -198,7 +201,7 @@ where
         }
         // R3 precondition: the burn must cover the fee (a fee > burn would underflow into a
         // nonsense expected amount).
-        if u128::from(p.fee) > ev.amount || p.fee > self.max_fee {
+        if u128::from(p.fee) >= ev.amount || p.fee > self.max_fee {
             return reject;
         }
 
@@ -230,7 +233,10 @@ where
             return reject;
         }
         // R4: spends the committee's release gateway, within the per-tx cap.
-        if view.source_gateway != self.release_gateway || ev.amount > self.per_tx_cap {
+        if view.source_gateway != self.release_gateway
+            || ev.amount > self.per_tx_cap
+            || ev.amount > NATIVE_RELEASE_MAX
+        {
             return reject;
         }
         Accept
@@ -247,7 +253,7 @@ where
             Duty::Release(ev) => {
                 // Over-cap burns are permanently unactionable under this policy (a cap raise
                 // is a new policy → new process lifecycle); everything else is workable.
-                if ev.amount > self.per_tx_cap {
+                if ev.amount > self.per_tx_cap || ev.amount > NATIVE_RELEASE_MAX {
                     Err(BuildError::Unactionable(
                         "burn exceeds the per-tx release cap".into(),
                     ))
@@ -610,6 +616,25 @@ mod tests {
         assert_eq!(
             policy().verify(&Duty::Release(ev), &p.encode()),
             ProposalVerdict::Abstain
+        );
+    }
+
+    #[test]
+    fn zero_payout_and_native_overcap_are_never_approved() {
+        let ev = burn(FEE as u128);
+        let p = proposal_for(&ev);
+        assert_eq!(
+            policy().verify(&Duty::Release(ev), &p.encode()),
+            ProposalVerdict::Reject(NackReason::PayloadMismatch)
+        );
+        let ev = burn(NATIVE_RELEASE_MAX + 1);
+        let p = proposal_for(&ev);
+        let mut pol = policy();
+        pol.per_tx_cap = u128::MAX; // local settings cannot relax consensus
+        assert!(pol.actionable(&Duty::Release(ev.clone())).is_err());
+        assert_eq!(
+            pol.verify(&Duty::Release(ev), &p.encode()),
+            ProposalVerdict::Reject(NackReason::PayloadMismatch)
         );
     }
 

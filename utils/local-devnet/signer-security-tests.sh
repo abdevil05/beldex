@@ -8,7 +8,7 @@ cd "$repo_dir/bridge/signer"
 cargo test --locked --all-features --bin beldex-bridge-signer
 cargo test --locked --all-features --test dkg_tag_validation
 cargo test --locked --all-features --test release_reference_validation
-for suite in release_policy config implementation_pin http_deadline dkg_tag evm_watcher beldex_watcher watch orchestrator coordinator reconcile rotation_ack committee session; do
+for suite in redemption_limits release_policy config implementation_pin http_deadline dkg_tag evm_watcher beldex_watcher watch orchestrator coordinator reconcile rotation_ack committee session; do
   cargo test --locked --all-features --lib "$suite::tests"
 done
 cargo test --locked --all-features --lib share_store::atomic_tests
