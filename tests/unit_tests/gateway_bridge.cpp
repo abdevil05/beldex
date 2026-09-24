@@ -850,6 +850,99 @@ TEST(GatewayBridgeRotation, gate_withholds_bond_until_all_chains_rotate)
   EXPECT_FALSE(cur.master_nodes_infos.at(c.mn[5])->bridge_seat.registered) << "bond released once all chains rotated";
 }
 
+TEST(GatewayBridgeRotation, empty_baseline_never_proves_handoff)
+{
+  auto c = make_committee(1);
+  master_node_list::state_t cur(nullptr);
+  seat_member(cur, c.mn[0], c.ed_pub[0], 100);
+  set_unbonding(cur, c.mn[0], 4000, 5000, {});
+  cur.finalize_bridge_unbonds(6000);
+  EXPECT_TRUE(cur.master_nodes_infos.at(c.mn[0])->bridge_seat.registered);
+  EXPECT_EQ(cur.master_nodes_infos.at(c.mn[0])->bridge_seat.bond_amount, cryptonote::BRIDGE_BOND);
+
+  // Later observations cannot reconstruct the missing historical obligations.
+  cur.observed_key_epoch = {chain_ep(1, 10)};
+  cur.finalize_bridge_unbonds(1000000);
+  EXPECT_TRUE(cur.master_nodes_infos.at(c.mn[0])->bridge_seat.registered);
+  EXPECT_TRUE(cur.master_nodes_infos.at(c.mn[0])->bridge_seat.serving_key_epoch.empty());
+}
+
+TEST(GatewayBridgeRotation, missing_observation_is_not_chain_retirement)
+{
+  auto c = make_committee(1);
+  master_node_list::state_t cur(nullptr);
+  seat_member(cur, c.mn[0], c.ed_pub[0], 100);
+  set_unbonding(cur, c.mn[0], 4000, 5000, {chain_ep(1, 1), chain_ep(2, 1)});
+  cur.observed_key_epoch = {chain_ep(1, 2)};
+  cur.finalize_bridge_unbonds(6000);
+  EXPECT_TRUE(cur.master_nodes_infos.at(c.mn[0])->bridge_seat.registered);
+  cur.observed_key_epoch.clear();
+  cur.finalize_bridge_unbonds(6000);
+  EXPECT_TRUE(cur.master_nodes_infos.at(c.mn[0])->bridge_seat.registered);
+  cur.observed_key_epoch = {chain_ep(1, 2), chain_ep(2, 2)};
+  cur.finalize_bridge_unbonds(4999);
+  EXPECT_TRUE(cur.master_nodes_infos.at(c.mn[0])->bridge_seat.registered);
+  cur.finalize_bridge_unbonds(6000);
+  EXPECT_FALSE(cur.master_nodes_infos.at(c.mn[0])->bridge_seat.registered);
+}
+
+TEST(GatewayBridgeRotation, invalid_baseline_never_proves_handoff)
+{
+  auto c = make_committee(1);
+  for (const auto& baseline : {chain_ep(0, 1), chain_ep(1, 0)})
+  {
+    master_node_list::state_t cur(nullptr);
+    seat_member(cur, c.mn[0], c.ed_pub[0], 100);
+    set_unbonding(cur, c.mn[0], 4000, 5000, {baseline});
+    cur.observed_key_epoch = {chain_ep(0, 2), chain_ep(1, 2)};
+    cur.finalize_bridge_unbonds(6000);
+    EXPECT_TRUE(cur.master_nodes_infos.at(c.mn[0])->bridge_seat.registered);
+  }
+}
+
+TEST(GatewayBridgeRotation, unbond_requires_baseline_before_mutating_seat)
+{
+  crypto::public_key pk; crypto::secret_key sk;
+  crypto::generate_keys(pk, sk);
+  auto c = make_committee(1);
+  master_node_list::state_t cur(nullptr);
+  seat_member(cur, pk, c.ed_pub[0], 100);
+  cryptonote::tx_extra_bridge_unbond op{};
+  op.master_node_pubkey = pk;
+  crypto::generate_signature(master_nodes::bridge_unbond_message(op), pk, sk, op.signature);
+  cryptonote::transaction tx{};
+  tx.type = cryptonote::txtype::bridge_registration;
+  ASSERT_TRUE(add_bridge_unbond_to_tx_extra(tx.extra, op));
+  cryptonote::block block{};
+  block.major_version = cryptonote::hf::hf23_bridge;
+  block.miner_tx.vin.push_back(cryptonote::txin_gen{5000});
+
+  for (const auto& baseline : std::vector<std::vector<bridge_chain_epoch>>{
+         {}, {chain_ep(0, 1)}, {chain_ep(1, 0)}})
+  {
+    cur.observed_key_epoch = baseline;
+    EXPECT_FALSE(cur.process_bridge_unbond_tx(NET_FC, block, tx));
+    const auto& seat = cur.master_nodes_infos.at(pk)->bridge_seat;
+    EXPECT_TRUE(seat.registered);
+    EXPECT_TRUE(seat.seated);
+    EXPECT_EQ(seat.requested_unbond_height, 0u);
+    EXPECT_EQ(seat.bond_unlock_height, 0u);
+    EXPECT_EQ(seat.bond_amount, cryptonote::BRIDGE_BOND);
+  }
+
+  cur.observed_key_epoch = {chain_ep(1, 1)};
+  ASSERT_TRUE(cur.process_bridge_unbond_tx(NET_FC, block, tx));
+  const auto& seat = cur.master_nodes_infos.at(pk)->bridge_seat;
+  ASSERT_EQ(seat.serving_key_epoch.size(), 1u);
+  EXPECT_EQ(seat.serving_key_epoch[0].chain_id, 1u);
+  EXPECT_EQ(seat.serving_key_epoch[0].key_epoch, 1u);
+  EXPECT_EQ(seat.requested_unbond_height, 5000u);
+  EXPECT_FALSE(seat.seated);
+  cur.observed_key_epoch[0].key_epoch = 2;
+  cur.finalize_bridge_unbonds(seat.bond_unlock_height);
+  EXPECT_FALSE(cur.master_nodes_infos.at(pk)->bridge_seat.registered);
+}
+
 TEST(GatewayBridgeRotation, gate_grandfathers_chain_added_after_unbond)
 {
   const size_t N = cryptonote::bridge_committee_size(NET_FC); // 6

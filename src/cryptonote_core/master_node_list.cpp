@@ -2300,6 +2300,16 @@ namespace master_nodes
       return false;
     }
 
+    // An absent baseline is unknown handoff state, not proof that there are no
+    // outstanding signing obligations. Refuse before mutating the seat so the
+    // operator can retry once initial chain observations have been established.
+    if (observed_key_epoch.empty() || std::any_of(observed_key_epoch.begin(), observed_key_epoch.end(),
+          [](const bridge_chain_epoch& entry) { return entry.chain_id == 0 || entry.key_epoch == 0; }))
+    {
+      LOG_PRINT_L1("Bridge unbond TX: missing or invalid rotation baseline");
+      return false;
+    }
+
     // Enter the unbonding state: the seat immediately stops being committee-
     // eligible for future epochs (refresh_bridge_seats excludes exiting seats),
     // but the bond stays locked — and the operator slashable — until
@@ -2439,19 +2449,19 @@ namespace master_nodes
       return true;
     }
 
-    // H.6.3 gate: has every chain in this seat's baseline snapshot rotated strictly past
-    // its baseline? Iterates the SEAT's snapshot (grandfathering, §6.2): a chain added
-    // after the seat unbonded is simply not in the snapshot, so it is never required. A
-    // chain no longer "registered" (implicit model: no longer present in `observed`) is
-    // skipped, so a retired chain never strands an honest bond. An empty snapshot (taken
-    // before any rotation was observed) is vacuously satisfied.
+    // H.6.3: require affirmative evidence for every snapshotted obligation.
+    // Missing observations are not proof of chain retirement. An empty/invalid
+    // baseline cannot establish handoff, including legacy pending unbonds.
+    // Chains genuinely added after the snapshot retain the existing grandfathering.
     bool rotation_completed_for(const std::vector<bridge_chain_epoch> &observed,
                                 const std::vector<bridge_chain_epoch> &serving)
     {
+      if (serving.empty())
+        return false;
       for (const auto &b : serving)
       {
-        if (!chain_epoch_present(observed, b.chain_id))
-          continue; // no longer registered (retired) → does not gate
+        if (b.chain_id == 0 || b.key_epoch == 0 || !chain_epoch_present(observed, b.chain_id))
+          return false; // unknown/invalid obligation or missing handoff evidence
         if (chain_epoch_get(observed, b.chain_id) <= b.key_epoch)
           return false; // this chain has not yet rotated past the seat's baseline
       }

@@ -320,7 +320,8 @@ namespace master_nodes
       // H.6.3 rotation gate: a per-chain snapshot of the global observed key epoch taken at
       // unbond-request time — "where each EVM chain stood when I asked to leave". The bond
       // is released only once every chain here has rotated strictly past its baseline (see
-      // finalize_bridge_unbonds). Present only for seats serialized at bridge_seat version
+      // finalize_bridge_unbonds). Empty baselines or missing observations fail closed.
+      // Present only for seats serialized at bridge_seat version
       // >= 1 (a seat that never unbonded stays version 0 and omits it).
       std::vector<bridge_chain_epoch> serving_key_epoch;
 
