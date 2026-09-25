@@ -26,6 +26,7 @@
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_core/gateway_utils.h"
+#include "cryptonote_core/bridge_deployments.h"
 #include "cryptonote_core/master_node_list.h"     // state_t + bridge_committee_resolver (Phase F consensus action)
 #include "cryptonote_core/master_node_quorum_cop.h" // quorum / quorum_manager
 #include "cryptonote_core/uptime_proof.h"          // complete uptime_proof::Proof for master_node_info's proof dtor
@@ -234,7 +235,7 @@ static void set_rotation_anchor(tx_extra_bridge_rotation_ack& ack)
 
 TEST(GatewayBridgeRotation, verify_evidence_threshold_and_binding)
 {
-  const network_type NET_R = network_type::MAINNET;
+  const network_type NET_R = network_type::FAKECHAIN;
   const uint16_t n = 6, t_plus_1 = 4;
   std::vector<crypto::ed25519_public_key> pubs(n);
   std::vector<crypto::ed25519_secret_key> secs(n);
@@ -282,7 +283,7 @@ TEST(GatewayBridgeRotation, verify_evidence_threshold_and_binding)
 
 TEST(GatewayBridgeRotation, non_ascending_and_bad_length_rejected)
 {
-  const network_type NET_R = network_type::MAINNET;
+  const network_type NET_R = network_type::FAKECHAIN;
   const uint16_t n = 6;
   std::vector<crypto::ed25519_public_key> pubs(n);
   std::vector<crypto::ed25519_secret_key> secs(n);
@@ -316,7 +317,7 @@ TEST(GatewayBridgeRotation, non_ascending_and_bad_length_rejected)
 // slash, unbond, or registration (all four ride txtype::bridge_registration).
 TEST(GatewayBridgeRotation, tx_extra_round_trip_and_dispatch)
 {
-  const network_type NET_R = network_type::MAINNET;
+  const network_type NET_R = network_type::FAKECHAIN;
   const uint16_t n = 6, t_plus_1 = 4;
   std::vector<crypto::ed25519_public_key> pubs(n);
   std::vector<crypto::ed25519_secret_key> secs(n);
@@ -817,6 +818,60 @@ TEST(GatewayBridgeRotation, ack_advances_observed_key_epoch_monotonically)
   // A cryptographically valid historical committee is not a perpetual oracle.
   EXPECT_FALSE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 4, {0, 1, 2, 3}, 3), 5003));
   EXPECT_EQ(observed_epoch(cur, 1), 3u);
+}
+
+TEST(GatewayBridgeRotation, canonical_registry_is_network_scoped_and_unambiguous)
+{
+  const auto* fixture = find_bridge_deployment(FAKECHAIN, 1);
+  ASSERT_NE(fixture, nullptr);
+  EXPECT_EQ(fixture->proxy, FAKECHAIN_BRIDGE_PROXY);
+  EXPECT_EQ(find_bridge_deployment(FAKECHAIN, 999), nullptr);
+  // No real-network deployments have been approved in this release.
+  for (auto network : {MAINNET, TESTNET, DEVNET})
+    EXPECT_EQ(find_bridge_deployment(network, 1), nullptr);
+  std::array<bridge_deployment, 2> duplicate = {*fixture, *fixture};
+  EXPECT_FALSE(valid_bridge_deployments(duplicate, true));
+  std::array<bridge_deployment, 1> zero_proxy = {*fixture};
+  zero_proxy[0].proxy.fill(0);
+  EXPECT_FALSE(valid_bridge_deployments(zero_proxy, true));
+  EXPECT_FALSE(valid_bridge_deployments(std::array{*fixture}));
+}
+
+TEST(GatewayBridgeRotation, valid_quorum_cannot_ack_wrong_proxy_or_unknown_chain)
+{
+  const size_t N = cryptonote::bridge_committee_size(NET_FC);
+  auto c = make_committee(N);
+  master_node_list::state_t cur(nullptr);
+  cur.height = 5000;
+  for (size_t i = 0; i < N; ++i) seat_member(cur, c.mn[i], c.ed_pub[i], 100 + i);
+  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 1, {0,1,2,3}, bridge_epoch_at(5000)), 5000));
+  set_unbonding(cur, c.mn[5], 4000, 5000, {chain_ep(1, 1)});
+
+  for (auto kind : {0, 1, 2})
+  {
+    auto ack = sign_rotation_ack(c, 1, 2, {0,1,2,3}, bridge_epoch_at(6000));
+    if (kind == 0) ack.contract[0] ^= 1;
+    if (kind == 1) ack.chain_id = 999;
+    if (kind == 2) ack.contract.assign(20, 0);
+    // Re-sign the altered statement: failure must be registry enforcement, not
+    // a trivial invalid-signature rejection after tampering with signed bytes.
+    const auto msg = bridge_rotation_ack_message(NET_FC, ack);
+    for (auto& observer : ack.observers)
+      crypto_sign_detached(observer.signature.data, nullptr,
+          reinterpret_cast<const unsigned char*>(msg.data()), msg.size(), c.ed_sec[observer.voter_index].data);
+    std::string reason;
+    EXPECT_FALSE(verify_bridge_rotation_evidence(ack, c.ed_pub, 4, NET_FC, reason));
+    EXPECT_EQ(reason, kind == 1 ? "rotation ack: unregistered bridge deployment"
+                               : "rotation ack: contract does not match canonical bridge proxy");
+    EXPECT_FALSE(run_rotation_ack(cur, c, ack, 6000));
+    EXPECT_EQ(observed_epoch(cur, 1), 1u);
+    EXPECT_EQ(observed_epoch(cur, 999), 0u);
+    cur.finalize_bridge_unbonds(6000);
+    EXPECT_TRUE(cur.master_nodes_infos.at(c.mn[5])->bridge_seat.registered);
+  }
+  ASSERT_TRUE(run_rotation_ack(cur, c, sign_rotation_ack(c, 1, 2, {0,1,2,3}, bridge_epoch_at(6000)), 6000));
+  cur.finalize_bridge_unbonds(6000);
+  EXPECT_FALSE(cur.master_nodes_infos.at(c.mn[5])->bridge_seat.registered);
 }
 
 TEST(GatewayBridgeRotation, gate_withholds_bond_until_all_chains_rotate)

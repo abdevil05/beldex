@@ -2,6 +2,7 @@
 //
 // Gateway address (HF22) consensus-state helpers. See gateway_utils.h.
 
+#include "bridge_deployments.h"
 #include "gateway_utils.h"
 
 #include <algorithm>
@@ -451,6 +452,19 @@ bool verify_bridge_rotation_evidence(const tx_extra_bridge_rotation_ack& ack,
   if (ack.contract.size() != 20)
   {
     reason = "rotation ack: contract must be exactly 20 bytes";
+    return false;
+  }
+  // Signatures bind bytes, not authority: require the exact deployment approved
+  // by native consensus before this statement can advance any chain epoch.
+  const auto* deployment = find_bridge_deployment(nettype, ack.chain_id);
+  if (!deployment)
+  {
+    reason = "rotation ack: unregistered bridge deployment";
+    return false;
+  }
+  if (!std::equal(ack.contract.begin(), ack.contract.end(), deployment->proxy.begin()))
+  {
+    reason = "rotation ack: contract does not match canonical bridge proxy";
     return false;
   }
   // The incoming Pevm address must be a well-formed 20-byte EVM address; the signed
