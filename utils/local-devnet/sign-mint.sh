@@ -13,6 +13,7 @@
 
 set -euo pipefail
 cd "$(dirname "$0")"
+. ./share-use-lock.sh
 
 PREIMAGE="${1:-}"
 [ -n "$PREIMAGE" ] || { echo "usage: ./sign-mint.sh 0x<preimage hex>"; exit 1; }

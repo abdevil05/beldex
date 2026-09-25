@@ -30,9 +30,8 @@
 #     honours SHARE_SUBDIR if it is set in your environment, and 04-rotate.sh checks the
 #     digest but not the signer, so signing with shares-next by accident produces a
 #     perfectly valid signature by the wrong key and fails as an opaque BadSigner on chain.
-#   * the retired share tree (step 8) is discovered by DIFFING the shares-gen* directories
-#     across the promotion, not by assuming it is shares-gen0. Assuming that is right
-#     exactly once, on the first rotation.
+#   * the retired share tree (step 8) comes from the durable promotion record, including
+#     when step 7 is resumed after directories were already moved.
 #
 # Env:
 #   BRIDGE_DIR      the bridge-contract checkout      (default: ../../../bridge-contract)
@@ -631,14 +630,15 @@ step6() {
 skip6() { note "step 6 skipped"; }
 
 # ===========================================================================================
-# step 7 — promote the share trees.  IRREVERSIBLE ON DISK.
+# step 7 — journaled, forward-only promotion (safe to resume after interruption).
 # ===========================================================================================
-gen_dirs() { ls -d "$TESTDATA"/beldex-127.0.0.1-*/devnet/shares-gen* 2>/dev/null | sed 's#.*/##' | sort -u || true; }
 
 step7() {
   banner "7 — promote shares-next to the live tree (promote-shares.sh)"
   STEP_TITLE="step 7, the share promotion"; FAILED_AT=7
   CURRENT_STEP=7
+  export RPC PROXY
+  export TESTDATA_DIR="$TESTDATA"
 
   run_logged "07-promote-dryrun.log" "$LOCAL/promote-shares.sh" --dry-run \
     || fail "the dry run failed — see $WORK/07-promote-dryrun.log. Nothing was moved."
@@ -652,29 +652,17 @@ which now holds a key the contract will reject. This swap fixes that:
 
 The dry run above lists exactly which directories move. Share material cannot be
 regenerated, which is why the retired tree is archived rather than removed, and why this
-is a gate: a half-applied swap leaves some nodes signing with one key and some with
-another, and the resulting threshold signature is garbage.
+is a gate: the journal and signer lock keep signing disabled during a partial swap.
+Rerunning the promotion completes the recorded handoff without replacing archives.
 EOF
 
-  local before after archive
-  before=" $(gen_dirs | tr '\n' ' ') "
+  local archive
   run_logged "07-promote.log" "$LOCAL/promote-shares.sh" \
-    || fail "the promotion failed — see $WORK/07-promote.log.
-   Check each node's devnet/ directory by hand before retrying: some may have been swapped
-   and some not. The contract is already on the new key, so the nodes that DID swap are the
-   correct ones."
-  after="$(gen_dirs)"
-
-  # Discover the archive rather than assuming shares-gen0. That assumption is right exactly
-  # once — on the first rotation — and silently wrong on every one after it, which would
-  # make step 8's retired-committee signature come from the wrong generation.
-  archive=""
-  for a in $after; do
-    case "$before" in *" $a "*) ;; *) archive="$a" ;; esac
-  done
-  [ -n "$archive" ] || fail "the promotion reported success but no NEW shares-gen* directory appeared.
-   Step 8 needs the retired tree to have the old committee sign with it. Look at
-   $WORK/07-promote.log and set ARCHIVE_DIR=shares-genN by hand if you can identify it."
+    || fail "promotion is incomplete — see $WORK/07-promote.log.
+   Stop signer/DKG processes and rerun this step to resume the durable journal.
+   Do not move share directories or delete the journal manually."
+  archive="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["archive"])' \
+    "$TESTDATA/.share-promotion.last.json")"
   ARCHIVE="$archive"
   ok "retired tree archived as devnet/$ARCHIVE"
   state_put ARCHIVE "$ARCHIVE"

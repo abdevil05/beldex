@@ -3192,6 +3192,25 @@ fn main() -> ExitCode {
         }
     };
 
+    // Keep this guard alive while any loaded shares may still be used.
+    #[cfg(unix)]
+    let _handoff_guard = if matches!(subcommand.as_deref(), Some("dkg" | "sign" | "serve")) {
+        match std::env::var("BRIDGE_SIGNER_SHARE_DIR") {
+            Ok(dir) => match beldex_bridge_signer::share_store::lock_managed_share_tree(
+                std::path::Path::new(&dir),
+            ) {
+                Ok(guard) => guard,
+                Err(e) => {
+                    eprintln!("share handoff: {e}");
+                    return ExitCode::FAILURE;
+                }
+            },
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
     match subcommand.as_deref() {
         Some("dkg") => match run_dkg(&cfg) {
             Ok(()) => ExitCode::SUCCESS,

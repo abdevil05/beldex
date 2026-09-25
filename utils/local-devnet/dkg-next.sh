@@ -27,6 +27,7 @@
 
 set -euo pipefail
 cd "$(dirname "$0")"
+. ./share-use-lock.sh
 
 SUBDIR="${SHARE_SUBDIR:-shares-next}"
 

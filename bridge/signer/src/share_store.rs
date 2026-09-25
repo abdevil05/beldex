@@ -251,3 +251,86 @@ mod tests {
         assert!(s.versions("pgw.share").is_empty());
     }
 }
+
+/// Hold for the entire DKG/sign/serve process, including after shares enter memory.
+/// Managed local-devnet trees share one flock with the promotion coordinator.
+/// The pending journal blocks new readers even after a coordinator crash releases
+/// its exclusive lock. Standalone custody paths are outside this local workflow.
+#[cfg(unix)]
+pub fn lock_managed_share_tree(path: &std::path::Path) -> std::io::Result<Option<std::fs::File>> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let parent = path
+        .parent()
+        .ok_or_else(|| std::io::Error::other("missing share parent"))?;
+    if parent.file_name().and_then(|n| n.to_str()) != Some("devnet") {
+        return Ok(None);
+    }
+    let parent = parent.canonicalize()?;
+    let node = parent
+        .parent()
+        .ok_or_else(|| std::io::Error::other("missing node directory"))?;
+    if !node
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .starts_with("beldex-127.0.0.1-")
+    {
+        return Ok(None);
+    }
+    let root = node
+        .parent()
+        .ok_or_else(|| std::io::Error::other("missing handoff root"))?;
+    let lock_path = root.join(".share-promotion.lock");
+    if let Ok(meta) = std::fs::symlink_metadata(&lock_path) {
+        if !meta.is_file() {
+            return Err(std::io::Error::other("handoff lock must be a regular file"));
+        }
+    }
+    let lock = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(lock_path)?;
+    lock.try_lock_shared()
+        .map_err(|e| std::io::Error::other(format!("share promotion lock held: {e}")))?;
+    if root.join(".share-promotion.pending").try_exists()? {
+        return Err(std::io::Error::other(
+            "incomplete share handoff; resume promote-shares.sh before signing or DKG",
+        ));
+    }
+    Ok(Some(lock))
+}
+
+#[cfg(all(test, unix))]
+mod handoff_tests {
+    use super::*;
+    #[test]
+    fn managed_signer_lock_blocks_promotion_and_pending_journal_blocks_restart() {
+        let root = std::env::temp_dir().join(format!("bridge-handoff-lock-{}", std::process::id()));
+        let shares = root.join("beldex-127.0.0.1-19191/devnet/shares");
+        std::fs::create_dir_all(&shares).unwrap();
+        let guard = lock_managed_share_tree(&shares).unwrap().unwrap();
+        let promoter = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(root.join(".share-promotion.lock"))
+            .unwrap();
+        assert!(promoter.try_lock().is_err());
+        // Verify compatibility with the Python coordinator's POSIX flock.
+        let result = std::process::Command::new("python3").arg("-c")
+            .arg("import fcntl,sys; f=open(sys.argv[1],'r+'); fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)")
+            .arg(root.join(".share-promotion.lock")).output().unwrap();
+        assert!(!result.status.success());
+        drop(guard);
+        promoter.try_lock().unwrap();
+        assert!(lock_managed_share_tree(&shares).is_err());
+        drop(promoter);
+        std::fs::write(root.join(".share-promotion.pending"), b"journal").unwrap();
+        assert!(lock_managed_share_tree(&shares).is_err());
+        std::fs::remove_file(root.join(".share-promotion.pending")).unwrap();
+        assert!(lock_managed_share_tree(&shares).unwrap().is_some());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

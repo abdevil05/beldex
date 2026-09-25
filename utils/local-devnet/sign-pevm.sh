@@ -46,6 +46,7 @@
 
 set -euo pipefail
 cd "$(dirname "$0")"
+. ./share-use-lock.sh
 
 KIND="${1:-}"
 PREIMAGE="${2:-}"
