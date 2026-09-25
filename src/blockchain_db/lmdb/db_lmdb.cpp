@@ -53,6 +53,7 @@
 #include "cryptonote_core/master_node_rules.h"
 #include "cryptonote_core/master_node_list.h"
 #include "cryptonote_core/uptime_proof.h"
+#include "cryptonote_core/gateway_utils.h"
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "blockchain.db.lmdb"
@@ -1554,9 +1555,13 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
   }
   else
   {
+    const int existing = mdb_dbi_open(txn, LMDB_GATEWAY_RELEASE_REFS, 0, &m_gateway_release_refs);
+    if (existing != MDB_SUCCESS && existing != MDB_NOTFOUND)
+      throw0(DB_ERROR(lmdb_error("Failed to inspect replay index: ", existing)));
+    m_gateway_release_refs_available = existing == MDB_SUCCESS;
     lmdb_db_open(txn, LMDB_GATEWAY_RELEASE_REFS, MDB_CREATE, m_gateway_release_refs,
                  "Failed to open db handle for m_gateway_release_refs");
-    m_gateway_release_refs_available = true;
+    // Availability is set only after checking/backfilling the completion marker.
   }
 
   lmdb_db_open(txn, LMDB_PROPERTIES, MDB_CREATE, m_properties, "Failed to open db handle for m_properties");
@@ -1625,6 +1630,22 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
         txn.commit();
         m_open = true;
         migrate(db_version, nettype);
+        mdb_txn_safe replay_txn;
+        if (auto rc = mdb_txn_begin(m_env, nullptr, 0, replay_txn))
+          throw0(DB_ERROR(lmdb_error("Failed to start replay-index migration: ", rc)));
+        try
+        {
+          initialize_gateway_release_refs(replay_txn, false);
+          replay_txn.commit();
+        }
+        catch (...)
+        {
+          replay_txn.abort();
+          m_gateway_release_refs_available = false;
+          mdb_env_close(m_env);
+          m_open = false;
+          throw;
+        }
         return;
       }
     }
@@ -1657,10 +1678,108 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
     }
   }
 
-  // commit the transaction
-  txn.commit();
+  try
+  {
+    initialize_gateway_release_refs(txn, mdb_flags & MDB_RDONLY);
+    txn.commit();
+  }
+  catch (...)
+  {
+    txn.abort();
+    m_gateway_release_refs_available = false;
+    mdb_env_close(m_env);
+    m_open = false;
+    throw;
+  }
   m_open = true;
   // from here, init should be finished
+}
+
+// The marker and rebuilt rows commit together. Table existence alone is not
+// evidence of completeness: older writable startup created empty tables.
+void BlockchainLMDB::initialize_gateway_release_refs(MDB_txn* txn, bool read_only)
+{
+  MDB_val_str(marker_key, "gateway_release_refs_backfill_v1");
+  MDB_val marker{};
+  const int status = mdb_get(txn, m_properties, &marker_key, &marker);
+  if (status != MDB_SUCCESS && status != MDB_NOTFOUND)
+    throw0(DB_ERROR(lmdb_error("Failed to read replay-index marker: ", status)));
+  const uint8_t complete = 1;
+  if (status == MDB_SUCCESS && marker.mv_size == sizeof(complete) &&
+      std::memcmp(marker.mv_data, &complete, sizeof(complete)) == 0 &&
+      m_gateway_release_refs_available)
+  {
+    m_gateway_release_refs_available = true;
+    return;
+  }
+  m_gateway_release_refs_available = false;
+  if (read_only)
+    return;
+
+  MINFO("Rebuilding permanent gateway replay index from canonical blocks");
+  if (int rc = mdb_drop(txn, m_gateway_release_refs, 0))
+    throw0(DB_ERROR(lmdb_error("Failed to clear incomplete replay index: ", rc)));
+  MDB_cursor* raw = nullptr;
+  if (int rc = mdb_cursor_open(txn, m_tx_indices, &raw))
+    throw0(DB_ERROR(lmdb_error("Failed to open replay backfill cursor: ", rc)));
+  std::unique_ptr<MDB_cursor, decltype(&mdb_cursor_close)> cursor{raw, mdb_cursor_close};
+  MDB_stat stats{};
+  if (int rc = mdb_stat(txn, m_blocks, &stats))
+    throw0(DB_ERROR(lmdb_error("Failed to count canonical blocks: ", rc)));
+  for (uint64_t height = 0; height < stats.ms_entries; ++height)
+  {
+    MDB_val block_key{sizeof(height), &height}, blob{};
+    if (int rc = mdb_get(txn, m_blocks, &block_key, &blob))
+      throw0(DB_ERROR(lmdb_error("Missing canonical block during replay backfill: ", rc)));
+    block b;
+    if (!parse_and_validate_block_from_blob(
+          blobdata{static_cast<const char*>(blob.mv_data), blob.mv_size}, b))
+      throw0(DB_ERROR("Invalid canonical block during replay backfill"));
+    if (b.major_version < hf::hf23_bridge)
+      continue;
+    for (const auto& hash : b.tx_hashes)
+    {
+      MDB_val lookup = zerokval;
+      MDB_val index_value{sizeof(hash), const_cast<crypto::hash*>(&hash)};
+      if (int rc = mdb_cursor_get(cursor.get(), &lookup, &index_value, MDB_GET_BOTH))
+        throw0(DB_ERROR(lmdb_error("Missing canonical transaction during replay backfill: ", rc)));
+      if (index_value.mv_size != sizeof(txindex))
+        throw0(DB_ERROR("Invalid transaction index during replay backfill"));
+      txindex index;
+      std::memcpy(&index, index_value.mv_data, sizeof(index));
+      if (index.data.block_id != height)
+        throw0(DB_ERROR("Incorrect transaction height during replay backfill"));
+      MDB_val tx_key{sizeof(index.data.tx_id), &index.data.tx_id};
+      if (int rc = mdb_get(txn, m_txs_pruned, &tx_key, &blob))
+        throw0(DB_ERROR(lmdb_error("Missing transaction base during replay backfill: ", rc)));
+      transaction tx;
+      if (!parse_and_validate_tx_base_from_blob(
+            blobdata{static_cast<const char*>(blob.mv_data), blob.mv_size}, tx))
+        throw0(DB_ERROR("Invalid transaction base during replay backfill"));
+      // Uses the same reference derivation and withdrawal targets as live apply.
+      for (const auto& rf : extract_gateway_release_refs(tx))
+      {
+        const auto ref = gateway_release_ref_hash(rf.chain_id, rf.evm_txid, rf.log_index);
+        for (const auto& input : tx.vin)
+        {
+          const auto* gw = std::get_if<txin_gateway>(&input);
+          if (!gw) continue;
+          std::array<unsigned char, 64> bytes{};
+          std::memcpy(bytes.data(), &gw->gateway_addr, 32);
+          std::memcpy(bytes.data() + 32, &ref, 32);
+          MDB_val key{bytes.size(), bytes.data()}, value{sizeof(height), &height};
+          // Retain the earliest occurrence, matching live NOOVERWRITE behavior.
+          int rc = mdb_put(txn, m_gateway_release_refs, &key, &value, MDB_NOOVERWRITE);
+          if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST)
+            throw0(DB_ERROR(lmdb_error("Failed to backfill release reference: ", rc)));
+        }
+      }
+    }
+  }
+  MDB_val value{sizeof(complete), const_cast<uint8_t*>(&complete)};
+  if (int rc = mdb_put(txn, m_properties, &marker_key, &value, 0))
+    throw0(DB_ERROR(lmdb_error("Failed to mark replay backfill complete: ", rc)));
+  m_gateway_release_refs_available = true;
 }
 
 void BlockchainLMDB::close()
@@ -1758,6 +1877,7 @@ void BlockchainLMDB::reset()
   if (auto result = mdb_put(txn, m_properties, &k, &v, 0))
     throw0(DB_ERROR(lmdb_error("Failed to write version to database: ", result).c_str()));
 
+  initialize_gateway_release_refs(txn, false);
   txn.commit();
   m_cum_size = 0;
   m_cum_count = 0;
@@ -6584,6 +6704,8 @@ void BlockchainLMDB::add_gateway_release_ref(
     const crypto::public_key& gateway_addr, const crypto::hash& ref, uint64_t height)
 {
   check_open();
+  if (!m_gateway_release_refs_available)
+    throw0(DB_ERROR("Gateway replay index requires historical backfill"));
   TXN_BLOCK_PREFIX(0);
   auto key_bytes = gateway_release_ref_key(gateway_addr, ref);
   MDB_val key{key_bytes.size(), key_bytes.data()};
@@ -6598,6 +6720,8 @@ void BlockchainLMDB::remove_gateway_release_ref(
     const crypto::public_key& gateway_addr, const crypto::hash& ref)
 {
   check_open();
+  if (!m_gateway_release_refs_available)
+    throw0(DB_ERROR("Gateway replay index requires historical backfill"));
   TXN_BLOCK_PREFIX(0);
   auto key_bytes = gateway_release_ref_key(gateway_addr, ref);
   MDB_val key{key_bytes.size(), key_bytes.data()};
@@ -6612,7 +6736,7 @@ bool BlockchainLMDB::has_gateway_release_ref(
 {
   check_open();
   if (!m_gateway_release_refs_available)
-    throw0(DB_ERROR("Gateway replay index unavailable in legacy read-only database; requires approved writable initialization/backfill"));
+    throw0(DB_ERROR("Gateway replay index unavailable in legacy read-only database; requires writable historical backfill"));
   TXN_PREFIX_RDONLY();
   auto key_bytes = gateway_release_ref_key(gateway_addr, ref);
   MDB_val key{key_bytes.size(), key_bytes.data()};
@@ -6630,7 +6754,7 @@ uint64_t BlockchainLMDB::get_gateway_release_ref_height(
 {
   check_open();
   if (!m_gateway_release_refs_available)
-    throw0(DB_ERROR("Gateway replay index unavailable in legacy read-only database; requires approved writable initialization/backfill"));
+    throw0(DB_ERROR("Gateway replay index unavailable in legacy read-only database; requires writable historical backfill"));
   TXN_PREFIX_RDONLY();
   auto key_bytes = gateway_release_ref_key(gateway_addr, ref);
   MDB_val key{key_bytes.size(), key_bytes.data()};

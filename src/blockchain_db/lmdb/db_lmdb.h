@@ -503,6 +503,7 @@ private:
   MDB_dbi m_gateway_tx_history; // HF22: gateway_addr -> (height||tx_hash) entries (DUPSORT)
   MDB_dbi m_gateway_release_refs{}; // HF23: (gateway_addr||release_ref) -> present
   bool m_gateway_release_refs_available = false;
+  void initialize_gateway_release_refs(MDB_txn* txn, bool read_only);
 
   MDB_dbi m_properties;
 

@@ -43,6 +43,7 @@
 #include "common/hex.h"
 
 #include "random_path.h"
+#include "cryptonote_core/gateway_utils.h"
 
 using namespace cryptonote;
 
@@ -275,8 +276,7 @@ TYPED_TEST(BlockchainDBTest, ReadOnlyLegacyGatewayIndexFailsClosed)
   EXPECT_THROW(this->m_db->get_gateway_release_ref_height(crypto::public_key{}, crypto::hash{}), DB_ERROR);
   ASSERT_NO_THROW(this->m_db->close());
 
-  // Existing writable initialization creates the empty table. This fixture has
-  // no historical releases; this is explicitly NOT a historical backfill test.
+  // Writable initialization certifies this empty history before enabling queries.
   ASSERT_NO_THROW(this->m_db->open(dir, cryptonote::FAKECHAIN));
   ASSERT_NO_THROW(this->m_db->close());
   ASSERT_NO_THROW(this->m_db->open(dir, cryptonote::FAKECHAIN, DBF_RDONLY));
@@ -377,3 +377,121 @@ TYPED_TEST(BlockchainDBTest, RetrieveBlockData)
 }
 
 }  // anonymous namespace
+
+// Exercise actual LMDB startup, including a table created empty by older code.
+TYPED_TEST(BlockchainDBTest, ReplayIndexHistoricalBackfill)
+{
+  for (bool missing_table : {false, true})
+  {
+    const auto dir = random_tmp_file();
+    this->set_prefix(dir.string());
+    this->m_db->open(dir, FAKECHAIN);
+    this->get_filenames();
+    crypto::public_key gateway{};
+    gateway.data[0] = 42;
+    tx_extra_gateway_release_ref release{};
+    release.chain_id = 1;
+    release.evm_txid.data[0] = 7;
+    transaction tx{};
+    tx.version = txversion::v4_tx_types;
+    tx.vin.push_back(txin_gen{0});
+    txin_gateway input{};
+    input.gateway_addr = gateway;
+    input.asset_id = crypto::null_aid;
+    input.amount = 100;
+    tx.vin.push_back(input);
+    ASSERT_TRUE(add_gateway_release_ref_to_tx_extra(tx.extra, release));
+    block b = this->m_blocks[1].first;
+    b.major_version = hf::hf23_bridge;
+    b.prev_id = get_block_hash(this->m_blocks[0].first);
+    b.tx_hashes = {get_transaction_hash(tx)};
+    {
+      db_wtxn_guard guard(this->m_db);
+      this->m_db->add_block(this->m_blocks[0], t_sizes[0], t_sizes[0], t_diffs[0], t_coins[0], this->m_txs[0]);
+      this->m_db->add_block({b, block_to_blob(b)}, 1000, 1000, t_diffs[1], t_coins[1], {{tx, tx_to_blob(tx)}});
+    }
+    this->m_db->close();
+
+    // Simulate an old/pruned DB with historical releases but no completion marker.
+    MDB_env* env = nullptr;
+    MDB_txn* raw = nullptr;
+    MDB_dbi refs, properties, prunable;
+    ASSERT_EQ(mdb_env_create(&env), 0);
+    ASSERT_EQ(mdb_env_set_maxdbs(env, 64), 0);
+    ASSERT_EQ(mdb_env_open(env, dir.string().c_str(), 0, 0600), 0);
+    ASSERT_EQ(mdb_txn_begin(env, nullptr, 0, &raw), 0);
+    ASSERT_EQ(mdb_dbi_open(raw, "properties", 0, &properties), 0);
+    const char marker_name[] = "gateway_release_refs_backfill_v1";
+    MDB_val marker{sizeof(marker_name), const_cast<char*>(marker_name)};
+    ASSERT_EQ(mdb_del(raw, properties, &marker, nullptr), 0);
+    ASSERT_EQ(mdb_dbi_open(raw, "gateway_release_refs", 0, &refs), 0);
+    ASSERT_EQ(mdb_drop(raw, refs, missing_table ? 1 : 0), 0);
+    ASSERT_EQ(mdb_dbi_open(raw, "txs_prunable", 0, &prunable), 0);
+    ASSERT_EQ(mdb_drop(raw, prunable, 0), 0);
+    ASSERT_EQ(mdb_txn_commit(raw), 0);
+    mdb_env_close(env);
+
+    const auto ref = gateway_release_ref_hash(release.chain_id, release.evm_txid, release.log_index);
+    this->m_db->open(dir, FAKECHAIN, DBF_RDONLY);
+    EXPECT_THROW(this->m_db->has_gateway_release_ref(gateway, ref), DB_ERROR);
+    this->m_db->close();
+    // A bad later block must abort even after a historical reference was inserted.
+    ASSERT_EQ(mdb_env_create(&env), 0);
+    ASSERT_EQ(mdb_env_set_maxdbs(env, 64), 0);
+    ASSERT_EQ(mdb_env_open(env, dir.string().c_str(), 0, 0600), 0);
+    ASSERT_EQ(mdb_txn_begin(env, nullptr, 0, &raw), 0);
+    MDB_dbi blocks;
+    ASSERT_EQ(mdb_dbi_open(raw, "blocks", 0, &blocks), 0);
+    uint64_t bad_height = 2;
+    MDB_val bad_key{sizeof(bad_height), &bad_height};
+    char invalid = 0;
+    MDB_val bad_blob{1, &invalid};
+    ASSERT_EQ(mdb_put(raw, blocks, &bad_key, &bad_blob, 0), 0);
+    ASSERT_EQ(mdb_txn_commit(raw), 0);
+    mdb_env_close(env);
+    EXPECT_THROW(this->m_db->open(dir, FAKECHAIN), DB_ERROR);
+
+    ASSERT_EQ(mdb_env_create(&env), 0);
+    ASSERT_EQ(mdb_env_set_maxdbs(env, 64), 0);
+    ASSERT_EQ(mdb_env_open(env, dir.string().c_str(), 0, 0600), 0);
+    ASSERT_EQ(mdb_txn_begin(env, nullptr, 0, &raw), 0);
+    ASSERT_EQ(mdb_dbi_open(raw, "properties", 0, &properties), 0);
+    MDB_val marker_value{};
+    EXPECT_EQ(mdb_get(raw, properties, &marker, &marker_value), MDB_NOTFOUND);
+    if (missing_table)
+      EXPECT_EQ(mdb_dbi_open(raw, "gateway_release_refs", 0, &refs), MDB_NOTFOUND);
+    else
+    {
+      ASSERT_EQ(mdb_dbi_open(raw, "gateway_release_refs", 0, &refs), 0);
+      MDB_stat stat{};
+      ASSERT_EQ(mdb_stat(raw, refs, &stat), 0);
+      EXPECT_EQ(stat.ms_entries, 0u);
+    }
+    ASSERT_EQ(mdb_dbi_open(raw, "blocks", 0, &blocks), 0);
+    ASSERT_EQ(mdb_del(raw, blocks, &bad_key, nullptr), 0);
+    ASSERT_EQ(mdb_txn_commit(raw), 0);
+    mdb_env_close(env);
+
+    this->m_db->open(dir, FAKECHAIN);
+    EXPECT_TRUE(this->m_db->has_gateway_release_ref(gateway, ref));
+    EXPECT_EQ(this->m_db->get_gateway_release_ref_height(gateway, ref), 1u);
+    this->m_db->close();
+    this->m_db->open(dir, FAKECHAIN, DBF_RDONLY);
+    EXPECT_TRUE(this->m_db->has_gateway_release_ref(gateway, ref));
+    EXPECT_EQ(this->m_db->get_gateway_release_ref_height(gateway, ref), 1u);
+    this->m_db->close();
+    // Rollback removes the rebuilt entry, and reset recreates a complete empty index.
+    this->m_db->open(dir, FAKECHAIN);
+    {
+      db_wtxn_guard guard(this->m_db);
+      this->m_db->remove_gateway_release_ref(gateway, ref);
+    }
+    EXPECT_FALSE(this->m_db->has_gateway_release_ref(gateway, ref));
+    this->m_db->reset();
+    this->m_db->close();
+    this->m_db->open(dir, FAKECHAIN, DBF_RDONLY);
+    EXPECT_FALSE(this->m_db->has_gateway_release_ref(gateway, ref));
+    this->m_db->close();
+    this->remove_files();
+  }
+}
